@@ -99,7 +99,7 @@ const SHOTS = process.env.CLUBV3_SHOTS || '';
       + `db_insert('mentors', ['mentorId'=>'MEN-CV','fullName'=>'Mo Mentor','email'=>'mo@example.org','status'=>'active','centre'=>'Egbeda','programme'=>'ngg','createdAt'=>${now},'updatedAt'=>${now}]);`
       + `db_insert('mentor_assignments', ['memberId'=>'NGG-CV-M1','mentorId'=>'MEN-CV','status'=>'active','startedAt'=>${now}]);`
       + `db_insert('member_checkins', ['memberId'=>'NGG-CV-M1','week'=>'2026-W42','wellbeing'=>'Struggling','note'=>'Exams are a lot','createdAt'=>${now}]);`
-      + `db_insert('applications', ['ref'=>'APP-CV1','kind'=>'teen','name'=>'Kemi Applicant','age'=>13,'centre'=>'Egbeda','track'=>'Coding','program'=>'anchor','email'=>'kemi@example.org','status'=>'new','photoUrl'=>'','createdAt'=>${now}]);`
+      + `db_insert('applications', ['ref'=>'APP-CV1','kind'=>'teen','name'=>'Kemi Applicant','age'=>13,'dob'=>gmdate('Y-m-d', strtotime('-13 years -2 months')),'centre'=>'Egbeda','track'=>'Coding','program'=>'anchor','email'=>'kemi@example.org','status'=>'new','photoUrl'=>'','createdAt'=>${now}]);`
       + `db_insert('summer_cohorts', ['cohortId'=>'SUM-CV','name'=>'CV Edition','year'=>2030,'status'=>'active','createdAt'=>${now}]);`
       + `db_insert('summer_students', ['studentId'=>'CV-S1','cohortId'=>'SUM-CV','token'=>'SUMQR-CV1','handle'=>'cvs1','fullName'=>'Graduating Kid','age'=>15,'centre'=>'Ijaiye','track'=>'Coding','parentEmail'=>'gk@example.org','status'=>'graduated','enrolledAt'=>${now},'updatedAt'=>${now}]);`
       + `db_insert('summer_students', ['studentId'=>'CV-S2','cohortId'=>'SUM-CV','token'=>'SUMQR-CV2','handle'=>'cvs2','fullName'=>'Quiet Grad','age'=>14,'centre'=>'Ijaiye','track'=>'Robotics','parentEmail'=>'','status'=>'graduated','enrolledAt'=>${now},'updatedAt'=>${now}]);`
@@ -230,7 +230,8 @@ const SHOTS = process.env.CLUBV3_SHOTS || '';
     await c.page.fill('textarea[placeholder^="Say what"]', 'The centre is closed for repairs. Classes resume the week after.');
     const chan = l => c.page.evaluate(src => { const b = Array.from(document.querySelectorAll('button[aria-pressed]')).find(x => x.offsetParent && x.innerText.trim() === src); if (b) b.click(); }, l);
     const pressed = () => c.page.evaluate(() => Array.from(document.querySelectorAll('div[role=dialog] button[aria-pressed="true"]')).map(x => x.innerText.trim()));
-    chk('a new announcement starts on App and Email, not SMS', JSON.stringify(await pressed()) === JSON.stringify(['App', 'Email']));
+    // cp_ann_default_channels(): app, email, Telegram when the site has a bot, and Community; SMS costs money per text.
+    chk('a new announcement starts on App, Email and Community, not SMS', JSON.stringify(await pressed()) === JSON.stringify(['App', 'Email', 'Community']));
     await chan('Email');
     await clickBtn(c.page, /^Submit for approval$/);
     chk('app-only to guardians with no family account is refused, never sent to nobody', await waitText(c.page, /Nobody in this audience can be reached by the app/, 8000));
@@ -251,7 +252,8 @@ const SHOTS = process.env.CLUBV3_SHOTS || '';
     await waitText(c.page, /Sent to an admin for approval/, 8000);
     { const r = q("SELECT status, channels, smsBody FROM club_announcements WHERE title = 'No class on Saturday 24th'")[0] || {};
       chk('a coordinator’s announcement waits for an admin, with its SMS version', r.status === 'pending' && /sms/.test(r.channels) && /Back Sat 31st, 10am/.test(r.smsBody)); }
-    chk('…and the screen follows it to Waiting', /No class on Saturday 24th/.test(await text(c.page)));
+    // The list reloads after the toast (annSave → loadAnn): wait for the row, not for the toast.
+    chk('…and the screen follows it to Waiting', await waitText(c.page, /No class on Saturday 24th/, 10000));
 
     console.log('\n── Applications ────────────────────────────────────────────');
     await nav(c.page, 'Applications');
@@ -268,6 +270,9 @@ const SHOTS = process.env.CLUBV3_SHOTS || '';
     await waitText(c.page, /Photo added/, 15000);
     try { fs.unlinkSync(png); } catch (_) {}
     chk('staff can add the applicant’s photo', ((q("SELECT photoUrl FROM applications WHERE ref = 'APP-CV1'")[0] || {}).photoUrl || '') !== '');
+    // The list reloads after "Photo added" (loadSection): opening Review before it lands opened the old
+    // row, still "Missing photo", where Accept is blocked. Wait for the reloaded row.
+    await c.page.waitForFunction(() => !/Missing photo/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
     await clickBtn(c.page, /^Review$/);
     await c.page.waitForTimeout(500);
     await inDialog(c.page, /^Accept and add to roster$/);

@@ -51,7 +51,9 @@ function chk(name, cond) {
    it needs as arguments loads the real file with nothing stubbed inside it. */
 function loadClient(fetchImpl) {
   const src = fs.readFileSync(SRC, 'utf8');
-  const win = { crypto: {} };
+  // The client starts the session heartbeat as it loads (listeners and a timer on window), so the
+  // stand-in window has to take them.
+  const win = { crypto: {}, addEventListener() {}, removeEventListener() {}, setInterval() { return 0; }, location: { pathname: "/" } };
   const doc = { cookie: 'ngg_csrf=csrf-token-123' };
   const load = new Function('window', 'document', 'navigator', 'fetch',
     'XMLHttpRequest', 'CustomEvent', src);

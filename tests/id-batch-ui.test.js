@@ -80,7 +80,7 @@ window.NGGApi = { admin: { members: {
 } }, public: {} };
 window.__filtered = null;
 </script>
-<script src="/dist/app.min.js"></script>
+<script src="/dist/app.min.js"></script><script src="/dist/app-study.min.js"></script><script src="/dist/app-more.min.js"></script>
 <script>
 /* The renderer the drawer calls, stubbed AFTER the bundle — the bundle defines
    these same globals, so a stub installed first is simply overwritten and the

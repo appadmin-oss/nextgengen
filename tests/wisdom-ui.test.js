@@ -212,10 +212,13 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
       cp.on('pageerror', e => errs.push('community: ' + String(e).slice(0, 200)));
       await cp.goto(BASE + '/community', { waitUntil: 'domcontentloaded' });
       await waitForBoot(cp);
-      const shown = await cp.waitForSelector('.cmm-feed .qow-cm .qow-text', { timeout: 30000 }).then(() => true, () => false);
+      /* Community v3 (the default /community): the quote sits under the post box, above every post
+         on the home feed — the qowEl slot in community-v3.dc.html. */
+      const shown = await cp.waitForSelector('.qow-cm .qow-text', { timeout: 30000 }).then(() => true, () => false);
       chk('community (' + label + '): the quote of the week leads the Today feed', shown
-          && await cp.$eval('.cmm-feed .qow-cm .qow-text', el => el.textContent) === s.text
-          && await cp.$eval('.cmm-feed', f => f.firstElementChild && f.firstElementChild.classList.contains('qow-cm')));
+          && await cp.$eval('.qow-cm .qow-text', el => el.textContent) === s.text
+          && await cp.evaluate(() => { const q = document.querySelector('.qow-cm'), a = document.querySelector('article[aria-label]');
+               return !!q && (!a || !!(q.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING)); }));
       chk('community (' + label + '): it is a card inside the feed, not the home page’s full-bleed band',
           await cp.$eval('.qow-cm', el => { const b = el.getBoundingClientRect(), f = el.parentElement.getBoundingClientRect();
             return b.left >= f.left - 1 && b.right <= f.right + 1 && parseFloat(getComputedStyle(el).borderTopLeftRadius) > 0; }));
@@ -255,7 +258,9 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     const turns = {};
     cells.forEach(t => { const m = t.match(/(Hausa|Igbo|Yorùbá)\s*#(\d+)/); if (m) (turns[m[1]] = turns[m[1]] || []).push(+m[2]); });
     chk('the schedule numbers each language’s turn', Object.values(turns).flat().length === cells.length && Object.keys(turns).length === 3
-        && Object.values(turns).every(n => n.every((x, i) => i === 0 || x === n[i - 1] + 1)));
+        // …counting up, and back to #1 after a language's last saying (four each here): the n-th turn shows
+        // the n-th saying, wrapping (wisdom.php), so a strip that crosses the wrap is right, whatever the week.
+        && Object.values(turns).every(n => n.every((x, i) => i === 0 || x === n[i - 1] + 1 || (x === 1 && n[i - 1] === 4))));
     await ap.click('.wis-tab:has-text("Igbo")');
     chk('the Igbo tab lists the four proverbs', (await ap.$$('.wis-item')).length === 4);
     await ap.click('.wis-tab:has-text("Yorùbá")');

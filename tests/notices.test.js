@@ -128,6 +128,8 @@ async function pageFor(memberId, viewport) {
       await until(P, () => document.querySelectorAll('#nte-body h3').length >= 7, null, 20000)
       && await val(P, '.nte-in.nt-org') === 'STREET TO STARDOM (STS)' && /MANAGEMENT OFFICIAL NOTICE/.test(await val(P, '.nte-in.nt-kind'))
       && /^REVISED SATURDAY RESUMPTION/.test(await val(P, '.nte-paper textarea[aria-label="Subject"]')) && await val(P, '.nte-in.nt-sign') === 'STS MANAGEMENT');
+    chk('…and a pasted notice saves itself with nothing else touched (it once waited for the next keystroke)',
+      await until(P, () => /\/broadcast\/NTC-[^/]+\/edit$/.test(location.pathname) && /^Saved/.test((document.querySelector('.nte-state') || {}).innerText || ''), null, 30000));
     const ed = P.locator('#nte-body');
     chk('…the body is the formatted notice, editable in place — sections are headings, dashes a list, no asterisks',
       (await ed.locator('li').count()) >= 15 && (await ed.locator('strong, b').count()) >= 2 && !/\*[A-Z]/.test(await ed.innerText()));

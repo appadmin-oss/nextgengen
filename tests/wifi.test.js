@@ -146,7 +146,7 @@ function cleanup() {
     chk('a silent gateway and one reporting a problem are listed as needing a look', /Silent for 3 hours/.test(body) && /reported a problem/i.test(body));
     chk('a centre without a gateway is shown, ready to add one', /Ajah/.test(body) && /No gateway yet/.test(body));
     chk('a working gateway with one wrong-key attempt is a warning, not “not working”', /Main hall router · 1 fetch with the wrong key/.test(body));
-    chk('CACENTRE runs the Wi-Fi: with no key set, the page says NGG isn’t sending its people there yet, and how to', /CACENTRE runs the Wi-Fi for the estate\. NGG isn’t sending its people there yet/.test(body) && /DIR_PUSH_SECRET_NGG/.test(body) && /connection NGG already has with CACENTRE/.test(body));
+    chk('CACENTRE runs the Wi-Fi: with no key set, the page says NGG isn’t sending its people there yet, and how to', /CACENTRE runs the Wi-Fi for the estate\. NGG isn’t sending its people there yet/.test(body) && /hooks\.attendance_secret/.test(body) && /connection NGG already has with CACENTRE/.test(body));
     await shot(P, 'wifi-1-gateways');
     await P.click('.cr-card:has-text("Main hall router")');
     await P.waitForSelector('.cr-sheet', { timeout: 10000 });
@@ -183,14 +183,14 @@ function cleanup() {
     await waitForBoot(P);
     await P.waitForFunction(() => /Speeds, devices, hours and data allowances/.test(document.body.innerText), null, { timeout: 30000 });
     const acc = await P.innerText('body');
-    chk('Who gets on shows the table and the speeds, edited in place', /From people’s records/.test(acc) && /Suspended, evicted or inactive/.test(acc) && /Download \(Mbit\/s\)/.test(acc));
+    chk('Who gets on shows the table and the speeds, edited in place', /From people’s records/.test(acc) && /Suspended, evicted, inactive/.test(acc) && /Download \(Mbit\/s\)/.test(acc));
     chk('…with the data allowances and what happens over one', /Data allowance a day \(MB\)/.test(acc) && /Used up their data allowance/.test(acc));
     await shot(P, 'wifi-4-access');
     await P.click('button:has-text("Why can’t somebody get on?")');
     await P.fill('[role="dialog"] input', '026-112');
     await P.click('[role="dialog"] button[type="submit"]');
     await P.waitForFunction(() => /Suspended, evicted or inactive/.test((document.querySelector('.cr-sheet') || {}).innerText || ''), null, { timeout: 10000 }).catch(() => {});
-    chk('the lookup says why somebody can’t get on', /Member 12/.test(await P.innerText('.cr-sheet')) && /Suspended, evicted or inactive/.test(await P.innerText('.cr-sheet')));
+    chk('the lookup says why somebody can’t get on', /Member 12/.test(await P.innerText('.cr-sheet')) && /Suspended, evicted, inactive/.test(await P.innerText('.cr-sheet')));
     await shot(P, 'wifi-5-lookup');
 
     await P.goto(BASE + '/control/wifi/wifi-guides', { waitUntil: 'domcontentloaded' });

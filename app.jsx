@@ -60,7 +60,7 @@ const ROUTES = [
   { id: "blog",        title: "The Journal · NGG",                         desc: "Long-form writing from mentors, members and the editorial team." },
   { id: "support",     title: "Help & support · NGG",                      desc: "Answers to common questions, the live status, and how to reach the NGG team: open a case from My NGG or the Family account." },
   { id: "contact",     title: "Contact · NGG",                             desc: "Questions about a session, mentoring, partnerships or press — a human replies within two working days." },
-  { id: "study",       title: "Study tools · NGG",                         desc: "Flashcards with spaced repetition, a focus timer, typing practice, a scientific calculator, a graph plotter and a dictionary — free study tools for NGG members.", chrome: "own" },
+  { id: "study",       title: "Study tools · NGG",                         desc: "The NGG Labs — Maths, Physics and English, climbed to your level one topic at a time — with flashcards, a focus timer, a calculator, graphs, a dictionary and typing practice.", chrome: "own" },
   { id: "telegram",    title: "Free messages on Telegram · NGG",           desc: "Get NGG's messages — sign-in codes, check-ins and notices — on Telegram, free, instead of by SMS. Android and iPhone." },
   { id: "policies",    title: "Member and family policies · NGG",          desc: "What a family agrees to when a child joins the NGG Club: taking part, safeguarding, medical care, privacy, updates, photos, trips and fees." },
   { id: "legal",       title: "Legal & data protection · NGG",             desc: "Privacy, terms, safeguarding, parental consent, cookies and your data rights under the NDPA/NDPR." },
@@ -88,6 +88,13 @@ const ROUTES = [
   /* A family's joining invoice, by its private token (/pay/<token>). Own
      chrome, never indexed: the address is a capability, sent by email. */
   { id: "pay",          title: "Complete membership · NGG",                desc: "", chrome: "own", index: false, addressable: false },
+  /* The Membership Agreement, by the family's private link (/mou/<token>, page-mou.jsx, domain/mou.php). */
+  { id: "mou",          title: "Membership Agreement · NGG",               desc: "", chrome: "own", index: false, addressable: false },
+  /* The NGG shop (page-shop.jsx, domain/shop.php). /shop is the catalogue and
+     is public; an order's page (/shop/order/<token>) is the buyer's private
+     link — Paystack returns them to it — so it is never indexed. */
+  { id: "shop",         title: "Shop · Souvenirs and merchandise · NGG",   desc: "NGG T-shirts, caps, mugs and souvenirs. Pay online with Paystack and collect at your centre, or have it delivered." },
+  { id: "shop-order",   title: "Your order · NGG shop",                    desc: "", index: false, addressable: false },
 
   // ── Staff & operational surfaces (own chrome, never indexed) ─────────────
   { id: "admin",        title: "Control Room · NGG",                       desc: "", chrome: "own", index: false },
@@ -130,6 +137,100 @@ const NOINDEX_PAGES = ROUTES.filter(r => r.index === false).map(r => r.id);
 /** Compare the registry against the render map. Returns the two ways they can
  *  disagree, plus the rows that are missing a title — the failure that shipped
  *  the Direct Apply page as "Page not found". Pure, so a test can call it. */
+/* ── The signed-in bundle, fetched when a route needs it ──────────────────
+   Production ships two bundles (build.js `MORE`): the public site, and
+   everything behind a sign-in. A public visitor downloads only the first. A
+   route whose page lives in the second waits for it here; so does a public
+   page that switches to a portal when somebody is signed in (NGG_MORE_ROUTES:
+   the dashboard turns into the member portal, Community into its app, the
+   two admin portals mount their workspaces). Anything this list misses is
+   caught by NggChunkGate — a ReferenceError while drawing loads the bundle
+   and draws again — so a missed route costs a moment's wait, never a crash.
+   In dev every file is already loaded (no <meta name="ngg-more">). */
+const NGG_MORE_ROUTES = ["mou", "admin", "summer-admin", "club-admin", "circle", "family", "mentor", "instructor", "id-cards", "designer", "dashboard", "community"];
+/* The STUDY bundle (build.js STUDY): the Labs, study tools, the timetable maker, Learn, the
+   chess engine and lesson blocks — heavy, single-purpose, and opened by few visitors. Tiered
+   loading, as games stream a level: the home page no longer parses them. Its own routes fetch it;
+   the signed-in bundle fetches it too (the dashboard borrows LrnExam, AsdHandIn, LxField). */
+const NGG_STUDY_ROUTES = ["study", "timetable", "learn"];
+let nggStudyPromise = null;
+/** Are the bundles this page needs here? */
+function nggChunksReady(page) { return NGG_MORE_ROUTES.includes(page) ? nggMoreReady() : NGG_STUDY_ROUTES.includes(page) ? nggStudyReady() : true; }
+function nggStudyUrl() { const m = document.querySelector('meta[name="ngg-study"]'); return m ? m.getAttribute("content") : ""; }
+function nggStudyReady() { return !!window.__nggStudyLoaded || !nggStudyUrl(); }
+function nggNeedStudy() {
+  if (nggStudyReady()) return Promise.resolve(true);
+  if (nggStudyPromise) return nggStudyPromise;
+  nggStudyPromise = new Promise((resolve, reject) => {
+    window.__nggStudyReady = () => resolve(true);
+    const el = document.createElement("script");
+    el.src = nggStudyUrl(); el.async = true;
+    el.onerror = () => { nggStudyPromise = null; reject(new Error("chunk_failed")); };
+    el.onload = () => { if (!window.__nggStudyLoaded) { nggStudyPromise = null; reject(new Error("chunk_failed")); } };
+    document.head.appendChild(el);
+  });
+  return nggStudyPromise;
+}
+let nggMorePromise = null;
+function nggMoreUrl() { const m = document.querySelector('meta[name="ngg-more"]'); return m ? m.getAttribute("content") : ""; }
+function nggMoreReady() { return (!!window.__nggMoreLoaded || !nggMoreUrl()) && nggStudyReady(); }
+/* The full Control Room stylesheet. Public pages hold a slim one (build.js, tools/css-split.js);
+   the full sheet is linked in the SAME place and the slim one removed once it has loaded, so the
+   signed-in areas see exactly the original cascade. Resolves either way: an unstyled moment is
+   better than a page that never opens. */
+function nggMoreCss() {
+  const m = document.querySelector('meta[name="ngg-more-css"]'), slim = document.getElementById("ngg-app-css");
+  if (!m || !slim || document.getElementById("ngg-app-css-full")) return Promise.resolve(true);
+  return new Promise(resolve => {
+    const l = document.createElement("link"); l.rel = "stylesheet"; l.id = "ngg-app-css-full"; l.href = m.getAttribute("content");
+    l.onload = () => { try { slim.remove(); } catch (_) {} resolve(true); };
+    l.onerror = () => resolve(true);
+    slim.after(l);
+  });
+}
+function nggNeedMore() {
+  if (nggMoreReady()) return nggMoreCss();
+  if (nggMorePromise) return nggMorePromise;
+  nggMorePromise = Promise.all([nggMoreCss(), nggNeedStudy(), (window.__nggMoreLoaded || !nggMoreUrl()) ? true : new Promise((resolve, reject) => {
+    window.__nggMoreReady = () => resolve(true);
+    const el = document.createElement("script");
+    el.src = nggMoreUrl(); el.async = true;
+    el.onerror = () => { nggMorePromise = null; reject(new Error("chunk_failed")); };
+    el.onload = () => { if (!window.__nggMoreLoaded) { nggMorePromise = null; reject(new Error("chunk_failed")); } };
+    document.head.appendChild(el);
+  })]).then(() => true);
+  return nggMorePromise;
+}
+/* Draws a page once what it needs is loaded: a short wait with words, an
+   honest error with a retry if the bundle could not be fetched (a dropped
+   connection is the commonest case on a phone). */
+class NggChunkGate extends React.Component {
+  constructor(p) { super(p); this.state = { ready: nggChunksReady(p.page), failed: false, tries: 0 }; }
+  /* Only a name the signed-in bundle defines is this gate's business; any
+     other error is thrown on, up to the app's own handling. */
+  static getDerivedStateFromError(e) { return e && e.name === "ReferenceError" && !nggMoreReady() ? { ready: false, failed: false, caught: true } : { fatal: e }; }
+  componentDidCatch(e) { if (e && e.name === "ReferenceError" && !nggMoreReady()) this.load(); }
+  componentDidMount() { if (!this.state.ready) this.load(); }
+  componentDidUpdate(prev) { if (prev.page !== this.props.page && !nggChunksReady(this.props.page)) { this.setState({ ready: false }); this.load(); } }
+  /* What this page needs: a signed-in route both bundles, a study route the study bundle; after a
+     ReferenceError (a name a bundle defines), everything. */
+  load() {
+    const p = this.props.page;
+    const need = NGG_STUDY_ROUTES.includes(p) && !NGG_MORE_ROUTES.includes(p) && !this.state.caught ? nggNeedStudy() : nggNeedMore();
+    need.then(() => this.setState({ ready: true, failed: false }), () => this.setState({ failed: true }));
+  }
+  render() {
+    if (this.state.fatal) throw this.state.fatal;
+    if (this.state.failed) return (
+      <div className="ngg-chunk-wait" role="alert">
+        <p>This part of the site didn’t load. Check your connection and try again.</p>
+        <button type="button" className="btn btn-primary" onClick={() => { this.setState({ failed: false, tries: this.state.tries + 1 }); this.load(); }}>Try again</button>
+      </div>);
+    if (!this.state.ready) return <div className="ngg-chunk-wait" role="status" aria-live="polite"><span className="ngg-chunk-spin" aria-hidden="true"/>Loading…</div>;
+    return this.props.render();
+  }
+}
+
 function routeAudit(renderKeys) {
   const keys = renderKeys || [];
   const ids = ROUTES.map(r => r.id);
@@ -236,10 +337,6 @@ function useScrollReveal(page) {
   }, [page]);
 }
 
-// In-page anchors that are scroll targets, not routes (skip link, section
-// jumps). They live in the URL hash; the browser scrolls to them and the
-// router leaves the current page untouched.
-const ANCHOR_IDS = ["main", "mentor-apply"];
 
 // Standard path-based routing. "/" → home, "/dashboard" → dashboard, etc.
 // The server (.htaccess SPA fallback) serves index.html for every app path,
@@ -261,6 +358,8 @@ function pageFromPath() {
   if (seg === "login" || seg === "signin") return "home";
   // What a scanned card opens: /q/<qr-token> (NGG member, Summer participant, volunteer) or /s/<handle>.
   if (seg === "q" || seg === "s") return "summerprofile";
+  /* The Maths Lab lives on the study page; its short addresses forward there (docs/MATH-LAB-PLAN.md §6). */
+  if (seg === "mathlab" || seg === "math-lab" || seg === "mathslab" || seg === "lab") { try { history.replaceState({ page: "study" }, "", "/study/lab" + window.location.search); } catch (_) {} return "study"; }
   /* /member/<area>/<tab> was the address of the 2026-10-11 Member Portal, which
      was withdrawn. Its links are in notifications and bookmarks, so each forwards
      to the dashboard section that holds the same thing. */
@@ -275,6 +374,10 @@ function pageFromPath() {
   }
   // A joining invoice: /pay/<token>.
   if (seg === "pay") return "pay";
+  // The Membership Agreement: /mou/<token>.
+  if (seg === "mou") return "mou";
+  // A shop order, by its private link: /shop/order/<token>. /shop itself is a plain route.
+  if (seg === "shop" && (window.location.pathname || "").replace(/^\/+|\/+$/g, "").split("/")[1] === "order") return "shop-order";
   // Volunteer service certificates: /cert/<certId> — public + printable.
   if (seg === "cert") return "certificate";
   // Official notices: /notice/<id>, and /notice (or /notices) for the list.
@@ -370,6 +473,12 @@ function App() {
     // Per-page document title + meta description — actually visible to
     // browser tabs, screen readers, share-link previews and SEO crawlers.
     const meta = PAGE_META[page] || { title: "Page not found · NGG", desc: "" };
+    /* Inside a Lab (/study/lab…, /study/physics…) the Lab sets its own title, description and
+       canonical for each view (mlbSeo in mlb-app.jsx), as the server did for the first load
+       (domain/lab-seo.php). Overwriting them here with "Study tools" is what made every Lab page
+       look like one page to a search engine. */
+    const inLab = page === "study" && typeof NGG_LABS !== "undefined" && NGG_LABS.some(l => new RegExp("^/study/" + l.seg + "(/|$)").test(window.location.pathname || ""));
+    if (inLab) { document.body.setAttribute("data-page", page); document.body.classList.toggle("own-chrome", OWN_CHROME_PAGES.includes(page)); return; }
     document.title = meta.title;
     const m = document.querySelector('meta[name="description"]');
     if (m && meta.desc) m.setAttribute("content", meta.desc);
@@ -418,54 +527,57 @@ function App() {
   useReveal([page]);
 
   const pages = {
-    home:      <HomePage      setPage={setPage}/>,
-    about:     <AboutPage     setPage={setPage}/>,
-    summer:    <SummerPage    setPage={setPage}/>,
-    centres:   <CentresPage   setPage={setPage}/>,
-    timetable: <TimetableMakerPage setPage={setPage}/>,
-    club:      <ClubPage      setPage={setPage}/>,
-    community:  <CommunityPage setPage={setPage}/>,
-    anchor:    <AnchorPage    setPage={setPage}/>,
-    profile:   <ProfilePage   setPage={setPage}/>,
-    dashboard: <DashboardPage setPage={setPage}/>,
-    learn:     <LearnPage     setPage={setPage}/>,
-    book:      <BookPage      setPage={setPage}/>,
-    media:     <MediaPage     setPage={setPage}/>,
-    parents:   <ParentsPage   setPage={setPage}/>,
-    volunteers:<VolunteersPage setPage={setPage}/>,
-    volunteer: <VolunteerRegisterPage setPage={setPage}/>,
-    "ngg-volunteer": <NggVolunteerPage setPage={setPage}/>,
-    mentors:   <MentorsPage    setPage={setPage}/>,
-    join:      <JoinPage      setPage={setPage}/>,
-    policies:  <PoliciesPage  setPage={setPage}/>,
-    telegram:  <TelegramPage  setPage={setPage}/>,
-    study:     <ToolsApp      setPage={setPage}/>,
-    blog:      <BlogPage      setPage={setPage}/>,
-    contact:   <ContactPage   setPage={setPage}/>,
-    support:   <HelpCentrePage setPage={setPage}/>,
-    "s-status": <StatusPage    setPage={setPage}/>,
-    "v-status": <VolunteerStatusPage setPage={setPage}/>,
-    summerprofile: <SummerProfilePage setPage={setPage}/>,
-    admin:     <ControlRoomPage setPage={setPage}/>,
-    "summer-admin": <SummerAdminPortal setPage={setPage}/>,
-    "club-admin":   <ClubAdminPortal   setPage={setPage}/>,
-    circle:     <CirclePortal   setPage={setPage}/>,
-    family:     <FamilyPage     setPage={setPage}/>,
-    mentor:     <MentorHome/>,
-    instructor: <InstructorHome/>,
-    apply:      <SelfRegisterPage/>,
-    review:     <ReviewDeskPage/>,
-    gate:       <GatePage/>,
-    enrol:      <EnrolDeskPage/>,
-    verify:     <ParentVerifyPage/>,
-    reshoot:    <ReshootPage/>,
-    "id-cards": <IdCardStudioPage setPage={setPage}/>,
-    designer:   <DesignerPage/>,
-    certificate: <CertificatePage/>,
-    notice:     <NoticePage setPage={setPage}/>,
-    pay: <MembershipPayPage setPage={setPage}/>,
-    "journal-entry": <JournalEntryPage/>,
-    legal:      <LegalPage setPage={setPage}/>,
+    home:      () => <HomePage      setPage={setPage}/>,
+    about:     () => <AboutPage     setPage={setPage}/>,
+    summer:    () => <SummerPage    setPage={setPage}/>,
+    centres:   () => <CentresPage   setPage={setPage}/>,
+    timetable: () => <TimetableMakerPage setPage={setPage}/>,
+    club:      () => <ClubPage      setPage={setPage}/>,
+    community:  () => <CommunityPage setPage={setPage}/>,
+    anchor:    () => <AnchorPage    setPage={setPage}/>,
+    profile:   () => <ProfilePage   setPage={setPage}/>,
+    dashboard: () => <DashboardPage setPage={setPage}/>,
+    learn:     () => <LearnPage     setPage={setPage}/>,
+    book:      () => <BookPage      setPage={setPage}/>,
+    media:     () => <MediaPage     setPage={setPage}/>,
+    parents:   () => <ParentsPage   setPage={setPage}/>,
+    volunteers:() => <VolunteersPage setPage={setPage}/>,
+    volunteer: () => <VolunteerRegisterPage setPage={setPage}/>,
+    "ngg-volunteer": () => <NggVolunteerPage setPage={setPage}/>,
+    mentors:   () => <MentorsPage    setPage={setPage}/>,
+    join:      () => <JoinPage      setPage={setPage}/>,
+    policies:  () => <PoliciesPage  setPage={setPage}/>,
+    telegram:  () => <TelegramPage  setPage={setPage}/>,
+    study:     () => <ToolsApp      setPage={setPage}/>,
+    blog:      () => <BlogPage      setPage={setPage}/>,
+    contact:   () => <ContactPage   setPage={setPage}/>,
+    support:   () => <HelpCentrePage setPage={setPage}/>,
+    "s-status": () => <StatusPage    setPage={setPage}/>,
+    "v-status": () => <VolunteerStatusPage setPage={setPage}/>,
+    summerprofile: () => <SummerProfilePage setPage={setPage}/>,
+    admin:     () => <ControlRoomPage setPage={setPage}/>,
+    "summer-admin": () => <SummerAdminPortal setPage={setPage}/>,
+    "club-admin":   () => <ClubAdminPortal   setPage={setPage}/>,
+    circle:     () => <CirclePortal   setPage={setPage}/>,
+    family:     () => <FamilyPage     setPage={setPage}/>,
+    mentor:     () => <MentorHome/>,
+    instructor: () => <InstructorHome/>,
+    apply:      () => <SelfRegisterPage/>,
+    review:     () => <ReviewDeskPage/>,
+    gate:       () => <GatePage/>,
+    enrol:      () => <EnrolDeskPage/>,
+    verify:     () => <ParentVerifyPage/>,
+    reshoot:    () => <ReshootPage/>,
+    "id-cards": () => <IdCardStudioPage setPage={setPage}/>,
+    designer:   () => <DesignerPage/>,
+    certificate: () => <CertificatePage/>,
+    notice:     () => <NoticePage setPage={setPage}/>,
+    pay: () => <MembershipPayPage setPage={setPage}/>,
+    mou: () => <MouPage setPage={setPage}/>,
+    shop: () => <ShopPage setPage={setPage}/>,
+    "shop-order": () => <ShopOrderPage setPage={setPage}/>,
+    "journal-entry": () => <JournalEntryPage/>,
+    legal:      () => <LegalPage setPage={setPage}/>,
   };
 
   /* ── The drift guard ──────────────────────────────────────────────────────
@@ -491,7 +603,7 @@ function App() {
       <div className="app-shell app-shell-admin">
         <SkipLink/>
         <OfflineBanner/>
-        {pages[page]}
+        <NggChunkGate page={page} render={pages[page]}/>
         <ToastHost/>
         <DialogHost/>
         {/* The Control Room has its own palette (⌘K, CONTROL_ROOM.md §4.1). */}
@@ -510,7 +622,7 @@ function App() {
       <div id="ngg-route-live" aria-live="polite" aria-atomic="true" className="sr-only"/>
       <main id="main" style={{flex:1}}>
         <PageTransition pageKey={page}>
-          {page === "_notfound" ? <NotFound setPage={setPage}/> : (pages[page] || <NotFound setPage={setPage}/>)}
+          {page === "_notfound" || !pages[page] ? <NotFound setPage={setPage}/> : <NggChunkGate page={page} render={pages[page]}/>}
         </PageTransition>
       </main>
       <Footer setPage={setPage} page={page}/>

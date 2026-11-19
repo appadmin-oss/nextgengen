@@ -113,7 +113,7 @@ not shown at all, so your sidebar may be shorter than a colleague's.
 
 | Section | What it is for |
 |---|---|
-| Members | The year-round roster. Search, filter, edit, bulk actions, ID printing. |
+| Members | The year-round roster. Search, filter, edit, bulk actions, ID printing. **Registration**: each new member's registration checklist and who is helping them. |
 | Applications | People who applied and have not been processed yet. |
 | Volunteers | Volunteer roster and their status. |
 | Mentors / Mentorship | Mentor records and mentor–member pairings. |
@@ -492,6 +492,103 @@ Every change a staff account makes is written to the **audit log**
 naming the action, the count and every refusal — not one entry per row —
 so "who suspended forty people on Tuesday" has a readable answer.
 
+### Registration: helping a new member finish registering
+
+Control Room → Members → **Registration** (`people`). Every NGG member has a
+registration checklist; a member accepted from an application gets theirs at
+once. A named **supervisor** at the member's centre helps them through it, and
+the member and their guardians see how far along they are.
+
+**It follows the NGG entry steps** — the card NGG hands a family: *Enquiry ·
+Orientation · Payment · Submit documents · Online registration · ID card · Attend
+lectures.* Every item sits in one step, and the checklist reads in that order.
+Enquiry is behind the family before the checklist exists (the application at
+/join). **Attend lectures is not an item anyone ticks: the day the last item is
+done is the day the member resumes.** That date is recorded once (*Resumed* on
+the member's checklist, and on the list) and never moves, even if an item is
+reopened later; the family, the member and the supervisor are told that day.
+
+| Step | Items on every checklist by default |
+|---|---|
+| Orientation | **Orientation attended** — at the centre, covering the policies, the membership fee, the monthly commitment fee and the NGG T-shirt (a note of who came). |
+| Payment | **Joining fees paid** — the joining invoice (membership fee and first month's commitment fee), while fees are switched on. |
+| Submit documents | **File handed in**; **Passport photograph** (on the record); **Membership Agreement (MoU) handed in** (see below); **Latest school report card** (a photo or scan, dated within 400 days); **Personal timetable on the site** — the member's school week entered at /timetable, signed in as them, with lessons on at least three school days. |
+| Online registration | Guardian linked, consents, date of birth, school, emergency contact, courses placed. |
+| ID card | **ID card printed** (a proof does not count). |
+
+Orientation, the file and the report card are ordinary items staff added: you
+may change, reorder or retire them like any other. A new item asks for its step.
+
+The checklist has two kinds of item:
+
+- **From the record.** Guardian linked, consents recorded (taking part,
+  emergency medical care and records granted; photos and the website answered),
+  photo on file, date of birth, school, emergency contact, courses placed, the
+  membership fee paid (only while fees are switched on) and the ID card
+  printed (a proof does not count). These are done when the member's record
+  shows them, and only then: a photo of a birth certificate does not give the
+  record a date of birth. Fix the record, and the item passes.
+- **Items staff add.** A title, what the supervisor should do, the evidence it
+  takes (a photo, a document, or a note), whether the supervisor must be at the
+  member's centre that day, and how old the evidence may be.
+
+| You want to… | Do this |
+|---|---|
+| See who has not finished | **Show: Still registering**. Each row has their progress, what is left and who is helping. **Nobody helping yet** lists the ones without a supervisor. |
+| Give a member a supervisor | Open the member → **Assign a supervisor**, or select several from one centre → **Assign a supervisor**. Pick from **Suggested** and press **Assign**. |
+| Understand a suggestion | Each line says why, from what the system already holds: check-ins at that centre's gate on recent Saturdays and in the last six weeks, the check-in desk rota, the timetable there, what the person says they are free for, how many members they already support, and that their safeguarding is cleared. A member's own mentor is marked **Already their mentor**. |
+| Ask someone who has not been at the centre lately | Under **Not seen at …**, press **Assign with a reason** and say why. The reason is kept in the audit log. Nobody uncleared is ever listed. |
+| See what is left for one member, and the evidence | Open the member. **Still to do**, **Done** and **Evidence submitted** (every attempt, accepted or refused, with the reason). **Open file** shows a submitted file. |
+| Reject an item that was verified | Open the member → **Done** → **Reject**, and say what was wrong. It reopens and the supervisor is told why. Items from the record cannot be rejected: correct the record. |
+| Add, change, reorder or retire an item | **Add an item** at the top; open an item under **Items staff added** to **Change**, **Move up**, **Move down** or **Retire** it. A retired item leaves every checklist but keeps its history; **Bring it back** restores it. |
+| Start checklists for members who joined before this existed | **Start N checklists** at the top (at most 500 a press; it says how many are left). Nobody is told until a supervisor is assigned. |
+| Help a member yourself | Assign yourself, then use **Show: Mine to help**. Open the member and press **Submit** (or **Check again** for an item from the record). |
+| Chase the ones that are stuck | **Show: Needs a follow-up** — a follow-up is due today, or nothing has moved in 14 days. Open each, call or message the family, then **Log a follow-up**: how, what happened, a note, and the day to try next (required while they are still registering, at most 60 days ahead). Every follow-up is listed on the member, newest first. |
+
+**Who may supervise.** Staff holding `people` whose centres include the
+member's; an NGG mentor at that centre whose screening is recorded; an NGG
+volunteer mentor or instructor at that centre whose safeguarding is cleared.
+Nobody supports more than 12 members at once: a thirteenth is refused and
+named. The assignment checks all of this again when you press it, member by
+member, whatever the screen showed; a scoped admin is refused for members
+outside their centres.
+
+**What counts as evidence.** The supervisor submits from **My registrations**
+in the Mentor Portal (My role → My registrations), or from this screen if they
+are staff. An item counts only when the evidence is the kind the item asks for
+(a photo is JPG, PNG, WebP or HEIC; a document is a PDF, a Word file or a photo
+of the page; at most 10 MB, uploaded here, not a link elsewhere), is no older
+than the item allows, comes from the member's assigned supervisor, and — when
+the item says so — the supervisor checked in at the member's centre that day.
+A refused attempt says why in words, and is kept.
+
+**Who is told — the follow-ups.** Nothing waits on somebody remembering.
+- **The family**, by email and in the family account, on day 1, day 3 and
+  day 7 after the checklist starts, then weekly — only while something is
+  needed from them, and in words of what to **bring** and **where** ("the
+  printed Membership Agreement, signed by a parent and a witness … bring
+  things to Egbeda on a meeting day"). It stops the day registration is done.
+- **The supervisor**, in the app, when assigned, once a week while any of
+  their members is open, and on the day a follow-up they logged falls due.
+- **Staff with `people` for that centre**, once a day, when a registration
+  has made no progress in 14 days, or a follow-up is due and nobody is
+  helping. A follow-up logged as *They may not continue* goes to the inbox
+  as a member request, for a person to decide.
+- Every checklist starts with its first follow-up due three days on.
+The member sees "Your registration: 6 of 9 done" on **Me**, with what is left
+and the supervisor's first name; a guardian sees the same on **Today**. Neither
+sees any evidence, or anyone else's.
+
+| Refusal | What it means |
+|---|---|
+| cannot supervise there | Not staff with `people` for that centre, and not a cleared NGG mentor or volunteer there. |
+| not seen at the centre — give a reason | No check-in, rota or class there in six weeks. Assign with a reason, or pick someone suggested. |
+| the supervisor is at the cap | They already support 12 members. |
+| not in a centre you administer | Outside your centre scope. |
+| This item needs a photo; that is a PDF | The evidence was the wrong kind of file. |
+| That is 45 days old | Older than the item accepts. |
+| This item needs you at … | The supervisor had not checked in at the member's centre that day. |
+
 ---
 
 ## Centres
@@ -505,8 +602,10 @@ the page.
 CACENTRE owns the buildings, so **CACENTRE's locations list is the one list of
 places** (CACENTRE → *Attendance → Desks and settings → Locations*). The
 CACENTRE gate sends that list to NGG whenever it changes, and NGG's centres
-follow it. You will see a note at the top of this page once the list has
-arrived, and a **From CACENTRE** chip on each centre that comes from it.
+follow it. Once the list has arrived, *Members → Centres* opens with a note,
+**Centres come from CACENTRE.**, that says where to add, rename or retire a
+place and when the last update came in. Under each centre's name and code, the
+row says **From CACENTRE** or **Not a CACENTRE location**.
 
 | In CACENTRE you… | In NGG this happens |
 |---|---|
@@ -748,6 +847,7 @@ and history stay in the Control Room (below).
 
 - **Intake form** — build the form families fill in.
 - **Sign-up links** — Summer School's shareable links: a **Public sign-up** for families, a **Review desk** for approving those sign-ups, and a **Registration desk** where staff enrol a walk-in child (details, photo, consent) with a desk password.
+  The public Summer School page's **Apply here** (on a centre) and **Apply for this** (on a course) open the live **Public sign-up** for that centre, or one for every centre if it has none of its own. The form opens with the centre and course they pressed already chosen (the course's faculty too), as long as the form offers them. A draft the family already started on that device is never overwritten. With no public sign-up open, the page says registration isn't open online and points to the centres.
 
 The door's **Check-in desks** are no longer here: they check in members and volunteers all year, so they have their own section (Control Room → Check-in → Check-in desks), with the **Duty rota** beside them.
 - **Pending sign-ups** — applications waiting on you.
@@ -943,7 +1043,15 @@ one of them:
 
 Edit them in **Learning → Divisions & courses** (needs `curriculum`): the
 icon, the name, the label the member card prints, the sentence families read
-on the join form, and the courses. **Summer School keeps its own catalogue**
+on the join form, the courses, and the division's **major**.
+
+The **major** is the course a child starts on when their record names only
+the division ("Tech", "Media") and no course. The NGG defaults are
+Technology → **Coding**, Creative & Performing Arts → **Music**, Media &
+Content Strategy → **Video Production**, and Business → **Project
+Management**. The major must be one of the division's own courses; changing it
+re-proposes every child who was on the old major by default (never one you
+placed). **Summer School keeps its own catalogue**
 (Summer School → Structure) and nothing here changes it. A course already
 holding members, lessons or classes asks before it is taken off; its members
 keep it on their record. *Reset to the NGG divisions* puts the table above
@@ -951,6 +1059,101 @@ back.
 
 The NGG join form asks for a **division first**, then a course inside it, and
 says what joining costs before anybody applies.
+
+### Reviewing applications (Inbox → Applications)
+
+| You want to… | Do this |
+|---|---|
+| Accept a child | **Accept & create member**: the start date, and the centre when the application names none. Each child is their own member, even when brothers and sisters applied from one parent's email. A declined application, or a child who is now outside 10 to 17, is refused with the reason. Pressing it twice, or in two tabs at once, makes **one** member: the second press says *already had a record* and names them. The application remembers the member it became. |
+| A converted child | Cannot be **waitlisted or rejected** from the application (*already a member*): that used to send the family a refusal after their welcome. Change their membership on the member record. |
+| Put a child on the waiting list | **Waitlist**. The family is emailed and the main parent is texted. The application stays in the inbox, marked *Waitlisted*, and you accept it from there when a place opens. |
+| Decline | **Reject**, with an optional line the family reads in the email and text. |
+| See only your centres | A centre-limited admin sees, exports, accepts and declines their own centres' applicants only. |
+
+**What the family receives when you accept (13 Nov 2026).** Two emails, in this order:
+
+1. **Welcome to Next Generation Genius.** It gives the child's **member number**
+   (the one on the ID card, e.g. 026-014), then what happens next: set a password
+   with the button (the link works for seven days), pay the joining invoice, and,
+   for the parents, the NGG Family app at /family.
+2. **Complete <child>'s NGG membership.** The joining invoice: the membership fee
+   and the first month, with the link to pay. It no longer opens with a second
+   "Welcome".
+
+When the child sets their password from the welcome link, they land on their
+dashboard, not the public home page.
+
+**What they wrote stays with them.** The member record shows the application's
+answers that the member row has no field for. **Overview → In their own words**
+has their vision, what they enjoy, where they want to lead and how they heard of
+NGG. **Family & mentor → Second parent or guardian** has the second guardian.
+Read these before a first mentor meeting instead of asking the family again.
+
+A family who sends the form again for the same child (same email and date of
+birth) is emailed a 6-digit code and must enter it before the application
+changes. Without it, anyone who knew the email and the birthday could replace
+a child's guardian and photo.
+
+### Volunteer registrations (Mentors → Volunteers)
+
+Both volunteer forms (Summer School at /volunteer, NGG all year at
+/join/volunteer) now ask for **two referees** and a signed **safeguarding
+declaration**. An applicant **under 18** names a parent or guardian who agrees.
+
+- The review shows the referees, the declaration and the guardian; under-18s
+  carry an *Under 18 · guardian* chip. Approving one asks you to confirm you
+  have **spoken to the guardian**; that is recorded as their consent.
+- Approval issues the ID, but a volunteer sees children (the instructor
+  roster, the mentor portal) only once **safeguarding is set to Cleared**.
+  Contact the referees before you clear them.
+- Somebody already volunteering for one programme who applies for the other
+  is a new application; approving it makes them serve **both**.
+- NGG's form only offers centres that run the Club. **Settings → Sign-ups**
+  now has a separate switch for NGG volunteer registration.
+
+### Invoices, receipts and certificates (from 4 Nov 2026)
+
+Every invoice, receipt and Math Lab certificate is a printable A4 page.
+Open one, then press **Print or save as PDF**.
+
+- **Numbers** follow on with no gaps: `NGG-INV-2026-00001`,
+  `NGG-RCP-2026-00001` and `NGG-ML-13-2026-00001` (13 is the level). A
+  cancelled invoice keeps its number and says it was cancelled. Invoices and
+  receipts made before 4 Nov keep the numbers they were issued with.
+- **A receipt never changes.** It is printed from what it said when the
+  payment settled. A later rename or fee change does not touch it.
+- **A transfer still being checked** gets an *Acknowledgement*, not a
+  receipt. The receipt follows when the second person confirms it.
+- **Math Lab level certificates** were given when a member cleared a level of
+  the old twenty-one-level ladder (70%, or a Distinction at 90%). That ladder
+  was replaced on 3 Nov 2026 by the **Maths Lab** at `/study/lab` (the
+  Arcade's *Maths Lab* band opens it), so no new level certificates are
+  issued; every one already issued stays valid and verifiable.
+- **Maths Lab certificates** come in two kinds, both NGG documents (numbered,
+  in the family's Documents, checkable at `/verify`, printed in the same
+  certificate design):
+  - a **stage certificate** (`NGG-MLS-…`) for every stage of ten topics, when
+    all ten are mastered and the stage boss is beaten — it records the boss
+    score when the boss was the session that earned it;
+  - the **course certificate** (`NGG-MLC-…`), the full one, once every stage
+    of a course is done.
+  They are issued automatically the moment they are earned (a member who had
+  already earned one gets it the next time they open the Lab), once each, and
+  a topic that later slips in a review does not take one back. In the Lab they
+  are linked from the Map (each stage), Courses and Progress.
+- **Families** find them in the Family Portal under Money → Documents.
+- **Verify:** the QR code opens `/verify/<number>`. Anyone holding the
+  document can check it there with the check code printed under the QR.
+  Without the code, nothing is shown.
+
+**Details on documents** (Money → Membership payments → *Details on
+documents*): the legal name, RC number, TIN, address, fees contact,
+signatories, VAT and days to pay.
+- A blank detail is left off the page.
+- Issued receipts and certificates keep the details they were issued with.
+  A detail that was blank on them prints once you fill it in.
+- VAT is *Exempt* by default. At 7.5% the VAT is shown inside the amount
+  charged, so the total stays what the account charged.
 
 ### Joining fees: the membership invoice
 
@@ -975,9 +1178,71 @@ Nobody can use it, the super admin included. A member whose dues were settled to
 a date before then still shows "Membership and dues settled up to …" on their
 Fees, and those periods are still never charged. To take money off an account
 now: record the payment that was made, or waive a specific amount with its
-reason (Money → the member's account).
+reason (Money → the member's account). A waiver is capped at what is **payable
+now** — the training place is never part of it (it is written off by the MOU,
+not waived), so waiving more than is owed cannot leave credit behind.
+
+**Reading a member's account** (Money → Dues & arrears → open a member). It
+reads like a bank statement, in three parts:
+
+- **The summary**: *Payable now* in large type, and beside it the sum that
+  makes it — what was charged, by kind (membership, monthly dues, fines,
+  adjustments), less what was received, by kind (payments, waivers) — so
+  **Total charged − Total received = Payable now** on the page. When more has
+  been paid than charged it says *In credit*. The programme month, reminders
+  and the MOU are listed here, each with its button.
+- **What is owed**: every charge with something left on it, oldest first by
+  the day it fell due — payments always settle the oldest charge first, so the
+  top line is what the next payment pays — with what was paid of it and what
+  is left.
+- **Statement**: every entry, newest first, with a charge or payment column
+  and the balance after it. A voided entry stays listed, struck out of the
+  figures. Open any line to see it or void it.
+
+The **training place** sits below, on its own: it is covered by NGG and never
+in the figures above. (Before 3 Nov 2026 the account showed *Charged* with the
+training place inside it, and the figures did not add up.) The family's Fees
+page reads payments the same way: a charge partly paid shows what was already
+paid of it.
+
+**The money report for a period** (Money → Dues & arrears → Transactions).
+Pick *From* and *To*; above the list of entries is a **statement for the
+period** for every account in your centres: *Owed at the open*, plus
+*Charged*, less *Received*, less *Waived* (and any other credits), equals
+*Owed at the close* — the sum is printed, so it can be checked on the page.
+*Collected* is what was received as a share of what was due. *Month by month*
+gives the same sum for each month (each opens where the last closed) and
+downloads as a CSV for the treasurer. The figures are real money only — the
+training place is never in them — and "owed" is net: a family paid ahead
+offsets a debt elsewhere, so the per-family list is **Who owes**. *What* and
+*State* narrow the list of entries but not the statement (fines on their own
+have no opening balance); a member search narrows both, which gives one
+family's year as a statement.
+
+**What a payable is made of.** Wherever a figure owed is broken down — the
+family's *To pay now*, the member's *To pay*, the *made of* column on Who owes —
+the lines come from one place and add up to it: monthly commitment fees grouped
+with their months named (a missed month is said: "February – April, June
+2026"), membership, each fine with its reason, and, for a member who left before
+the MOU was complete, the **training place** line. That line used to be missing,
+so a family that left early saw a breakdown smaller than the amount asked for.
+
+**On their phones.** A member's Money screen and the family's Fees page read
+the same account. The member's card for the training place says where they
+are: *Earning off · N%*, *MOU complete* with its date, or *Owed* if they left
+before completing. Each month on the family statement closes on *Owed at
+month end*, and the latest agrees with *To pay now*. Both call monthly dues
+the **commitment fee**.
 
 The family pays through the link (Paystack), or by bank transfer or cash.
+
+**Money that arrived and could not be applied.** When a family pays an invoice
+that was replaced or cancelled while their payment page was open, or pays an
+amount that does not match, the money is listed at the top of **Money →
+Membership payments** until somebody decides it: **Apply to account** (posted as
+a payment, so their balance goes down), **Refunded** (refund it in Paystack
+first, then record the refund reference) or **Dismiss** (with a reason). Each
+decision is recorded with the name of who made it.
 
 **Paying the balance online.** After joining, a member's account (their
 dashboard) and the family portal show **Pay ₦… online** whenever there is
@@ -990,6 +1255,24 @@ invoice is cancelled as *superseded* and the next press makes a new one for the
 new figure. A transfer waiting to be verified blocks online payment until it is
 checked, so nobody pays twice. Policy fines on the conduct ledger are not
 included yet; dues, training fees and fines posted to the fees ledger are.
+
+**Paystack's charge is paid by the family (from 3 Nov 2026).** Paying online,
+the family pays what is owed **plus Paystack's charge**, worked out so that
+after Paystack takes its cut NGG receives the whole amount. The figure is shown
+before anybody presses Pay — on the pay page ("₦7,000 plus Paystack's ₦209
+charge"), on the family app's **Pay ₦7,209 online** button and pay sheet, and
+on the member's own account — with the free way beside it: **a bank transfer to
+NGG has no charge**. The account records only the ₦7,000; the charge is
+Paystack's, not something owed to NGG. The receipt lists it as *Paystack
+charge* and its total is what left the family's account.
+
+The terms live under **Money → Dues & arrears → Amounts → Paying online**:
+the switch (off = NGG absorbs the charge), the percentage (1.5%), the flat
+charge (₦100), the payment size under which the flat charge is waived (₦2,500)
+and the cap (₦2,000) — Paystack's local card terms. If your Paystack plan
+differs, change them there. A checkout started before a change keeps the
+charge it was started with. Donations are unchanged: a donor gives what they
+choose.
 
 **Money → Membership payments** lists every invoice, joining and balance:
 
@@ -1036,6 +1319,23 @@ active. Everything below is set on that tab.
 - **When a day is excluded** — later than N minutes, past the red line, a half
   day, no check-out, safeguarding not cleared. An excluded day is kept with its
   reason, and the volunteer sees it.
+
+**Reading a pay period.** Each period is a settlement that has to close:
+*Earned*, less what was *paid to volunteers*, less what was *kept for NGG
+fines*, less what was *held for Afrovanguard's fines*, is *Still to pay*. The
+sum is printed beside the figure, so "₦40,000 earned, ₦6,000 to pay" is
+explained on the page. The list's *NGG fines owed* column is what each
+volunteer owes NGG now; what pay will take is worked out when it is paid.
+
+### Donations
+
+**Money → Donations** (the Settings capability). Every figure is counted over
+every gift: *Raised* (and by channel), *Gifts* and *donors* (one donor giving
+twice is one donor), *Largest gift*, and *Not completed*. A checkout that
+Paystack has not confirmed is *Pending* for 48 hours and *Abandoned* after
+that: nobody paid, and it is not money on its way. *By month* is what was
+raised in each month (CSV for the treasurer). The list shows the newest 500;
+**Export CSV** has every gift.
 - **Pay period** — weekly, every two weeks or monthly, and the most days paid in
   one period (0 = no limit; days over it are kept as excluded).
 
@@ -1250,6 +1550,42 @@ you. Once imported, *Media Lab* can be put on the timetable. Consent and the
 13+ age rules of Canva and CapCut are taught in week 1, before anybody
 photographs a person. A readable copy is `docs/curriculum/media-lab-2026.csv`.
 
+**Since 7 Nov 2026 the Media Lab's six Club-wide lessons are retired** (welcome
+and files, staying safe, researching, honest AI use, the creative process, team
+roles). Retired, not deleted: anything a member already did against them still
+resolves, and a copy an instructor edited stays theirs and stays live. The 42
+lessons filed under the media courses are unchanged.
+
+**Data Appreciation and Desktop Publishing** replace them, as courses **every
+member takes** — like Chess, they are added to everybody's courses, placed or
+not, whichever way the Club enrols. They never name a member's course: "My
+course", the card's division and course channels still come from what the
+member chose. Each is twelve Saturdays at *Year 1 · Foundation*, seeded
+automatically, with exams, mastery tiers and a certificate in its own style.
+
+- *Data Appreciation* (rebuilt 7 Nov 2026 as what every computer user should
+  know, basics to intermediate): data and storage units, files, folders and
+  names, saving and the 3-2-1 backup, shortcuts and accurate data entry,
+  spreadsheets and formulas (SUM, AVERAGE, fill, absolute references), sort,
+  filter and tidy tables, averages and charts, searching and checking sources
+  (SIFT), passwords, 2-step verification, scams and Nigeria's data law, sharing
+  and file types, and a project that uses all of it.
+- *Desktop Publishing*: page set-up, type, hierarchy, the grid and the four
+  layout principles, colour and contrast (RGB/CMYK), images, resolution and
+  rights, an event flyer, a newsletter, bleed/trim/safe area, a print-ready PDF
+  and a print brief, and a four-page Club magazine. Free tools only — Canva,
+  Google Docs, LibreOffice, Scribus — because Microsoft Publisher's support ends
+  in October 2026.
+
+Every lesson has a diagram or worked-example screenshot inside it, a slide deck
+(materials → *Slides*; arrow keys move, it prints one slide a page), vetted
+outside reading with a line on what to do with it, two routes ("if this is new
+to you" / "if you already can"), and an assessment that is not only multiple
+choice: a practical, an outside exercise with proof, an ordering or a written
+answer. Week 1 of each carries the course's **learning guide** — all twelve
+weeks on one printable page. The pictures and decks ship with the site
+(`assets/learn-media/core/`), so they work with no media host configured.
+
 **Progress** shows, per lesson, how many members of that course have started
 and finished it, and the average score. A scoped admin sees their centres only.
 
@@ -1363,6 +1699,28 @@ A lesson page carries, in this order: last session's review (which can always
 be skipped — being away is not a reason to be shut out of this week), what
 they'll learn, the lesson itself with **Read it to me** and a speed control,
 next session's questions, and *How did that go?* at the end.
+
+**How the week-later review works (and what counts).** Each lesson's questions
+are asked again at the start of the member's next lesson **in the same
+course**, from memory. Three rules decide it:
+
+- *Last week's lesson* means the previous lesson in that course — not
+  whatever lesson sits before it in the member's list. (It used to mean the
+  latter, so anybody taking two courses was almost never asked.)
+- **Passing on the lesson day does not count as remembering.** A member may
+  answer the questions straight after reading the lesson, and passing still
+  completes it — but they are asked again at the next session. Only an answer
+  given **two or more days** after they opened the lesson is recorded as
+  recall (`reviewedAt`), and once it is, they are not asked twice. A review is
+  never offered in the same sitting as the lesson it reviews.
+- **A wrong answer is marked, not given away.** After a try the member sees
+  which questions they got wrong; the right answers appear once they pass, or
+  after **3** tries. Before this, the answers appeared after the first try
+  beside *Submit again*, so every second attempt passed and a lesson's score
+  meant nothing.
+
+`/learn/review` lists both kinds of waiting: lessons not finished, and lessons
+*passed on the day — still to remember*.
 
 Around the lesson, so somebody coming back has somewhere to start:
 
@@ -1507,28 +1865,33 @@ has no question source — see **Settings → AI** and the `study_bank` block in
 
 ### Study tools (/study)
 
-Members open **Learn → Study tools** in their portal (or go to `/study`). It is
-their own kit, and nothing in it is seen by staff. Five tabs, with similar
-tools together and handing work to each other:
+Members open **Labs** under **Your apps**, or **Learn → Labs & tools ↗**, in their portal (or go to
+`/study`). It is their own kit, and nothing in it is seen by staff. Four tabs, each named for what the
+member came to do (owner, 6 Nov 2026: the old seven-tab row put "Maths", a calculator, beside "Maths
+Lab", a course, and "Course labs" beside the Labs):
 
 - **Today** — the focus timer (25-minute blocks with breaks, or 15, 45, 50),
   beside the week: focus minutes by day, the study streak, cards due and the
   best typing speed.
+- **Labs** — one card per subject Lab (**Maths Lab**, **Physics Lab**, and each new Lab as it is added;
+  the list comes from the Lab registry). Inside a Lab the **Labs** tab stays lit and **All Labs** leads
+  back. A second tab, **Course tools**, holds one set per division, the member's own first:
+  Tech (a code playground for HTML, CSS and JavaScript, and a password-strength
+  checker), Creative (metronome with tap tempo; piano with scales and chords),
+  Media (colour contrast to the accessibility standard; palette maker),
+  Business (break-even and profit, budget planner, savings and interest).
 - **Revise** — **Flashcards** with spaced repetition (a card they know comes
   back after a day, then six, then weeks; one they miss comes back the same
   day; typed, pasted "front — back", or written by the study helper from a
   lesson); **Quiz me** (five multiple-choice questions on one of their lessons,
   and the ones they miss become flashcards with one press); **Summarise notes**
   (their own class notes summarised, with key terms that become flashcards).
-- **Maths** — a scientific **calculator** (a sum with x in it is one press from
-  its graph), a **graph plotter** with a table of values, and **number bases**.
-- **Words** — a **dictionary** (any word looked up can be added to a "My words"
-  deck) and **typing practice**.
-- **Course labs** — one per division, the member's own first:
-  Tech (a code playground for HTML, CSS and JavaScript, and a password-strength
-  checker), Creative (metronome with tap tempo; piano with scales and chords),
-  Media (colour contrast to the accessibility standard; palette maker),
-  Business (break-even and profit, budget planner, savings and interest).
+- **Tools** — a scientific **calculator** (a sum with x in it is one press from
+  its graph), a **graph plotter** with a table of values, **number bases**, a **dictionary** (any word
+  looked up can be added to a "My words" deck) and **typing practice**.
+
+Old addresses forward: `/study/maths…` and `/study/words…` open the same tool under **Tools**, and
+`/study/labs` (once Course labs) is the Labs hub, with Course tools one tab across.
 
 The study helper (flashcards from a lesson, quizzes, note summaries) uses the
 same daily allowance as the helper on a lesson page, and refuses to summarise
@@ -1721,17 +2084,81 @@ words. The member's panel and this drawer are drawn by one component from one
 server answer, so they cannot disagree. On a day or week rate, "still to come"
 reaches as far as the meeting calendar is set.
 
+### Telling families about dues — before, after, and when they say they paid
+
+**Money → Dues & arrears → Reminders** (needs `fees`; a centre-scoped admin
+sees and sends for their own centres). Three kinds of message reach a family,
+and every one goes to **every linked guardian**, not one email address:
+
+| Message | When | Where it goes |
+|---|---|---|
+| **Before it falls due** | *N* days before monthly dues (the 1st) or a membership renewal (the join anniversary) — 7 by default | the family app of each guardian, each guardian's email and the parent email on the record, Telegram where a guardian's phone is linked to the NGG bot, SMS (off by default; one per family, only when Telegram did not reach them), and the member's own portal |
+| **Arrears reminder** | money already owed, no more often than every *N* days (at least 7) | the same channels |
+| **Payment note received / answered** | the moment a parent sends *I've paid*, and when the desk approves or declines it | the family app and email; the answer says what is still to pay — or, when nothing is owed today, the next amount and date |
+
+- **Each family hears once per due date.** December's dues and a renewal that
+  fall on the same day are one notice with both lines and the total. The
+  background job and the **Send today's … now** button share one log, so
+  pressing it, or the job running every 15 minutes, never tells anyone twice.
+- **Who is not told, and why** — a family paid ahead past the date (their
+  credit is spent on the charges in date order), a family that asked not to be
+  chased (*Stop reminders* on their account), and a family with no way to be
+  reached (no linked guardian, no parent email, no phone). The **Coming up**
+  table shows, for the next fortnight, each family, what falls due, the amount,
+  the day they will be told (or *Told* with the date), and how many apps,
+  emails and phones will reach them — *No way to reach them* is the list to fix
+  in People → Members.
+- **Sent to families** is the record: each notice, its amount, and the
+  channels that actually delivered it. *Nobody reached* means every channel
+  failed — usually no mail server and no linked guardian.
+- **Payment notes waiting**: open *I've paid* notes. When one waits longer than
+  the hours set (48 by default, 12 to 168), every staff member holding `fees`
+  for that centre gets one nudge a day saying how many and how old the oldest
+  is. The notes themselves are answered in **Inbox → Member requests**.
+
+**Settings** — *Amounts → Before dues fall due*: the switch, how many days
+before (1–30), each channel, and the desk nudge. Telegram and SMS are listed as
+*not available on this site* until the bot or the SMS gateway is set up under
+Settings. Notices start when dues are on; they need nothing else switched on.
+
 ### Conduct & fines — one home for fines
 
-**Money → Conduct & fines** is where fines live, start to finish. It has four
+**Money → Conduct & fines** is where fines live, start to finish. It has five
 views, and each person sees only those their permissions reach:
 
 | View | Needs | What it holds |
 |---|---|---|
+| **Rules** | `fees`, `people` or `summer` | **Every rule in one place** — the rulebook's four (late, absence, permission, evidence) and every written rule — each as *trigger → consequence (fine and/or frog jumps) → what happens on repeat → cap* |
 | **Fines** | `fees` | This term's fines at a glance, **Upload fines**, the **fine rules**, and the one-time clearance |
 | **Compliance** | `people` or `summer` | Everybody with something on record, and each person's record |
 | **Policy** | `summer` | The thresholds: absences allowed, lates, suspension, the fines the policy issues |
 | **Calendars** | `summer` | Which days count — the Summer School days and the NGG member days |
+
+#### The Rules page
+
+One table, one row per rule, read the same way whoever wrote it:
+
+- **When** — what breaks it (*arrives after 10:00*, *phone out in class*).
+- **Costs** — the fine, the frog jumps, or both.
+- **On repeat** — e.g. *every 3rd time in a term: a 7-day suspension and a
+  ₦1,000 re-entry fee*, or *every 2nd time: referred for review*.
+- **Cap** — the most it can cost in a term.
+- **Broken** — how many times it has been recorded.
+
+Who can change what: a written rule is added or edited by somebody holding
+`fees` (**Add a rule**); the rulebook's four rows by somebody holding
+`people`. A row you cannot change says so instead of offering a button.
+
+**Recording a breach.** *Record a breach* (or **Members → select people →
+Broke a rule…**, or a person's conduct drawer) records that a written rule
+was broken, for up to 100 people at once, on today or a date in the last 90
+days. The fine, the frog jumps and any escalation follow automatically, the
+same way the rulebook's own do. Refused rows are named: not found, a staff
+account, outside your centres, your own account, or already recorded for that
+day. One audit entry per press.
+
+**Announce the rules** writes an *Our rules* notice from the table and opens
+it in the notice editor as a draft — read it, then send it like any notice.
 
 Dues & arrears is about money owed and paid; it no longer has an upload.
 Old links to *Dues & arrears → Upload fines* open Conduct & fines. In Summer
@@ -1795,6 +2222,11 @@ the Management notice states it, every figure editable:
 - **Frog jumps** are listed on Compliance under *Frog jumps to do*, with who,
   how many and why; select and **Mark done** as they are done at the centre.
   They never block anybody.
+- **A fine is money; frog jumps are on top of it.** A late, an absence or a
+  broken rule usually costs both. Each set of frog jumps shows, in *Fine for
+  it*, the fine charged for the same incident and whether it is owed, paid or
+  waived. Ticking the jumps off clears the exercise only; the fine stays on the
+  member's account (*Policy fines owed*) until it is paid or waived.
 
 *Which rulebook* can be set back to the older ladder (warnings, Dormant Track,
 eviction), whose settings are kept under *NGG members — the older ladder*.
@@ -2174,6 +2606,33 @@ also acknowledge from Messages — signing the notice there is the same thing.
 
 **Quick message** is the old one-line notification, kept for short alerts.
 
+### Announcements reach the member portal and Community (from 3 Nov 2026)
+
+What you announce no longer lives only behind the bell:
+
+- **In the member portal**, an unread quick message, club announcement or
+  official notice from the last fortnight sits at the **top of the member's
+  Today**, ahead of their to-dos, until they read it (a notice opens on its own
+  page; a message opens in their notifications). It is also in the bell, as
+  before.
+- **In Community**, each one can be posted as a **pinned Announcement in the
+  commons**, by the person who sent it (for a club announcement, by its
+  approver). It is posted once however often it is resent, and an official
+  notice that is **withdrawn comes down from Community too**.
+  - Quick message: **Show it in Community** (on by default).
+  - Official notice: **Delivery → Show it in Community** (on by default; it
+    links to the full notice).
+  - Club announcement: the **Community** channel chip (on for new ones).
+  - A message for **one centre** is headed "For Egbeda centre — …", because the
+    commons is shared by every centre. A **Summer School-only** message, or one
+    for **guardians only**, never goes to Community — it is the NGG members'
+    space; the screen says so and the sender is told.
+- **Money reminders never go to Community** — they are one family's business.
+  The member sees their own in their portal, in words for them: "₦7,000 due
+  1 Dec — your parent or guardian has been told" before it falls due, and "Your
+  account: ₦2,000 to pay — your parent or guardian has been sent a reminder"
+  for arrears. The child is told, never chased.
+
 ### Club announcements (Club portal → Announcements)
 
 A coordinator or centre lead writes an announcement; an **admin approves** it
@@ -2339,6 +2798,9 @@ not the child's:
   number), the date, and a photo of the receipt if they have one. It arrives in **Member requests** as *Payment made*, marked *From
   their family account*, and moves no money until you approve it against the
   statement — exactly as a member's claim used to.
+  The parent is told at once that it arrived (with their reference and how
+  long checking takes), and told again — in the family app and by email — when
+  you approve or decline it.
 - **The child asks.** The member's app no longer has *I've made a payment*. On
   their account screen there is one button, **Ask my parent**: every connected
   parent gets a message in their family account and an email asking them to
@@ -2453,6 +2915,31 @@ hours the family app shows. The doors, the grace minutes and when sign-out opens
 **attendance settings** (Control Room → Settings), which the family app now reads rather
 than printing a fixed 09:00 and 14:00 — if sign-out is set to open at 14:00, move it to
 15:00 there so families are not let go before the day ends. On the
+the Saturday, block by block, with what members do, what mentors watch for, what
+instructors deliver, what admin must have ready and what families are told. Every portal
+and the Saturday reminders read it; change a block and they all change.
+
+| You want to… | Do this |
+|---|---|
+| Change a block's time, name or words | Open the block → **Change this block**. With **Move the blocks after it too** on (the default), a later end moves the rest of the day with it, keeping every length and gap. Off, a time that runs into the next block is refused and named. |
+| Add a block | **Add a block**: its name, what it comes after, how many minutes. The blocks after it move later by its length. |
+| Remove, reorder or copy a block | Open the block → **Remove this block** (the blocks after it move up), **Move up** / **Move down** (the two swap places; the day still ends when it did), **Duplicate**. |
+| Start the day at a different time | **Move the day**: the whole day, or from one block on, to a new start. Nothing may run past midnight or move more than five hours at once. |
+| Give one centre a different day | **A centre's own day**: a copy of the main day, used at that centre every Saturday until you remove it. |
+| Change one Saturday only | **Change one Saturday**: that Saturday everywhere, or at one centre. It starts as a copy of the day in force there. |
+| Cancel a Saturday | **Mark a Saturday off**, everywhere or at one centre, with a line families read. Nothing is sent that day and every portal says so. A note without "off" is shown above that Saturday's plan. |
+
+Which day applies at a centre on a Saturday is the first that exists of: that
+Saturday at that centre → that Saturday everywhere → the centre's own day → the
+main day. **Versions of the day** lists them; the address names the one on
+screen, so a link opens it. A centre-scoped admin changes only their own
+centres' days. **What it is for** on each block (check-in, mentor breakout,
+classes, break, close) decides the reminders: members are not reminded at
+check-in, instructors are reminded at the classes block, the mentor breakout
+sets the mentors' planning window. Families who take check-in news get the plan
+an hour before the day starts (never before 8:00), a not-arrived notice 45
+minutes in and the close at the day's end, all by their child's centre's day.
+On the
 Saturday register a mentor ticks, per child, the values seen and the duties: On time
 (the gate's arrival time is shown), Assignment in, Checked out — and can **Add detail**: one line
 (up to 500 characters) of what they saw, saved with the register. It shows under the child's name,
@@ -2462,6 +2949,9 @@ opens their profile; **Go to the weekly review** takes the mentor straight to Af
 **The Saturday plan (Before).** The mentor's part of the day is the
 **Musing & mentor breakout** block of the formation schedule (9:30–11:00 by
 default), so its window — and what follows it — come from Control Room →
+**Musing & mentor breakout** block of the formation schedule (8:30–10:00 by
+default; the block whose kind is *Mentor breakout*, at the mentor's centre, that
+Saturday), so its window — and what follows it — come from Control Room →
 Learning → Saturday formation, never from a fixed number. The *Pod huddle*
 always opens it (the register is taken there) and the *Close* always ends it;
 between them the mentor times every item in five-minute steps, moves items up
@@ -2664,7 +3154,9 @@ nightly jobs) still run.
 
 **School results.** A member uploads their term report on their dashboard
 (**School results** tab), checks the scores and writes a plan for at most three
-subjects, each with a "when and where". It goes to their mentor, who approves it
+subjects, each with a "when and where". No target is under 85% (or under the
+score they already have): the plan starts there, and neither the member's nor
+the mentor's screen lowers it further. It goes to their mentor, who approves it
 or sends it back with a note in the Mentor Portal's **School results** tab
 (`/mentor/class?tab=results`; the email's `/mentor?tab=results` lands there). Approved, it is live; the family
 hears only if the member chose that. Plans whose study sessions are mostly
@@ -3485,8 +3977,11 @@ they all behave the same way. Worth knowing once:
 ### The first screen is the same for everyone
 
 On a phone or computer that has not signed in here before, every email or ID
-gets the same next screen: a password box, and **No password? Email me a
-sign-in code** under it. That is deliberate. The screen used to skip straight
+gets the same next screen: a password box with **Sign in**, then "or" and a
+full-width **No password? Email me a sign-in code** button. (Below that, on its
+own line: **Got a code from staff? Enter it**. On the very first screen the same
+two ways in sit under **Already have a code?** as **From my email** and **From
+staff**.) That is deliberate. The screen used to skip straight
 to "code sent" for people without a password and go to the password box for
 staff, which told anyone who typed an address whether it belonged to a member
 of staff. Most members simply press the code button. A device somebody has
@@ -3514,9 +4009,17 @@ its email with N other members" on the row).
   straight away. If the same password was set on several of the accounts, the
   same question lists those.
 - **Forgot your password?** sends one email with a **Set {name}'s password**
-  link for each account.
+  link for each account, not a code: the screen says so, so nobody waits for a
+  code that is not coming.
+  A member of staff whose address is also their child's gets their own link in
+  that email, marked **staff account**, and it sets the staff password only.
+  (Before 12 November 2026 they were emailed the child's link and no way to
+  reset their own.)
 - A suspended account is never offered, and neither is a staff account that
-  signs in by password only (staff keep using their password).
+  signs in by password only (staff keep using their password). Until 12
+  November 2026, a child whose address was shared with a staff parent, or with
+  a suspended brother or sister entered first, was told their emailed code was
+  wrong every time; that is fixed.
 - Each child can always sign in with their own Member ID or card number.
 
 ### Who signs in where
@@ -3582,11 +4085,28 @@ current answer or code first. Where it is required, it cannot be turned off.
   - **Optional:** people are shown the alert.
   - **Required:** anyone without one sets it up before their portal opens.
 - **Actions** on a row, or on a selection:
-  - **Let them in without it for 10 minutes.** This is for a child at the desk
-    who has forgotten their answer. Do it only with the person in front of
-    you. It is one person at a time, never a bulk action. If they are already
-    on the question screen, they press "I've been let in by staff" and they
-    are in. Every let-in is in the audit log.
+  - **Let in for 10 minutes**, as Google Workspace admins do (*Turn off for
+    10 minutes*). For somebody who cannot sign in: a forgotten password or
+    answer, a new phone, an email they cannot open. Open their row and press
+    *Let in for 10 minutes*.
+    - For the next 10 minutes, their sign-in needs **only their email or ID**:
+      they type it, press *Continue*, and they are in. No password, no code,
+      no second step. A guardian types their email on the NGG Family app.
+    - It lets in **one** sign-in. The next one on that email or ID gets the
+      normal door again.
+    - If their second-step screen is already open, it **opens by itself**.
+    - You are also shown a **one-time code**, for somebody who is not in front
+      of you. Read it to them. On any sign-in screen they choose *I have a code
+      from staff* and type their email or ID and the code. It works once,
+      within the 10 minutes.
+    - When two children share one email and both are let in at once, the
+      email is ambiguous: they use the ID on their card, or the code.
+    - Afterwards they are taken to **set a new second step**, without the old
+      one. They are emailed (and notified) that it was done. It is in the
+      audit log.
+    - One person at a time, never a bulk action. Do it only with the person in
+      front of you, or on the phone with them: anyone who types their email or
+      ID in those minutes gets in.
   - **Reset.** Clears what they set, so they choose a new one.
   - **Require it** of one person, whatever the policy. **Back to the policy**
     undoes that.
@@ -3693,7 +4213,7 @@ under the name, and a lesson's state sits under its title in My course.
   screens for hosting one, adding players and entering results. A loading bar
   or an error with **Try again** now shows on the phone too.
  instead of wrapping onto a second
-line: the Mentor, Companion and area tabs (My mentor / Companion / Community)
+line: the Mentor, My week and area tabs (My mentor / My week / Projects & ideas)
 in all three portals, the mentor portal's Saturday tabs, the quick replies, and
 the Control Room's tab rows. A fade at the edge shows there is more to swipe
 to, and the chosen tab is scrolled into view.
@@ -3717,7 +4237,7 @@ read: the words "Voice note (0:42)" are what it carries, so a mentor should
 listen to one within the usual reply window.
 
 **The Anchor Journal and the portal are one journal.** The desktop sidebar
-has **Your apps → Anchor Journal / Community**; Today has **Write today's
+has **Your apps → Anchor Journal / Labs / Community**; Today has **Write today's
 reflection**; the simple view has a **My journal** tile. All open in the same
 tab, and the journal has a **My NGG** link back. In the journal, **Share
 with [mentor]** (off by default) shares that entry with the mentor, who is
@@ -3785,7 +4305,7 @@ their supporting role. The child sees "Also helping you: … · Coding".
 | "Backup code used — N left" | You signed in with a backup code, not your app | Re-enrol your authenticator soon |
 | A member sees lessons but no assignments | Older builds compared the member's status and centre exactly; an imported "Active", a blank status or "egbeda " matched nothing | Fixed: those compare the way the rest of the record does. A member still sees nothing if they are suspended, or their course is not the assignment's |
 | "Not a Member ID or email" at sign-in | Older builds refused card numbers | Card numbers (`VOL-INS-26-001`, `026-014`) are accepted now |
-| A child cannot remember their sign-in question | Their second step | **Members › Sign-in security** → their row → *Let them in for 10 minutes*, or *Reset* |
+| A child cannot remember their sign-in question, or a volunteer has a new phone | Their second step | **Members › Sign-in security** → their row → *Let in for 10 minutes* (at the desk) or *Give a one-time code* (by phone), or *Reset* |
 | "No phone on your record" at the card door | The volunteer record has no phone, so the card can never be checked | Use *Email me a sign-in code instead*, or add their phone |
 | A screen looks empty | Almost always a filter | **Clear all filters** |
 | "Guardian consent required" on **Promote to NGV** | The member is under 18, or has no date of birth on file. Promotion shares their details with Afrovanguard | Record the guardian's decision under **Publication consent → Share with NextGen Vanguard**, with the guardian's name and how it was given. Then promote |
@@ -3906,6 +4426,26 @@ Someone who both teaches and mentors gets the **Instructor Portal** at `/instruc
 ## Feedback in the Inbox
 
 Feedback that an older version saved as an ordinary request is now shown as feedback, with **Thank and close** and **Pass to centre lead**, never Approve or Decline.
+
+## The session exam, mastery tiers and Club certificates
+
+**Every session opens with an exam on last session's lesson.** It is on by default (Control Room → Curriculum → Schedule → "Open each session with last week's review"). It is a standard exam, the same for every member:
+
+- **Before it starts** the member sees the number of questions, the time, the pass mark and the bands (Distinction 85%+, Merit 70%+, Pass at the lesson's pass mark), and makes an **honour pledge**: from memory, on their own, no notes, no other person, no AI. The clock does not start until they do.
+- **The questions** are last session's, plus up to three from two or more weeks earlier — the ones they got wrong before come back first. Every member gets them in a different order, with the options shuffled.
+- **The clock is the server's.** Answers save as they go; a dropped connection resumes the same sitting; what was saved is handed in at the deadline.
+- **Follow-ups.** After written answers are marked, everybody gets the same number (two) of short follow-up questions about their own strongest written answers. A follow-up that does not hold up never costs marks by itself: the answer is **held for an instructor**.
+- **One official sitting.** Reopening the lesson shows the result. A member who was away may skip to today's lesson; the exam stays due.
+
+**Instructors** see it in the Mentor/Instructor Portal → Class → Curriculum → **Session exams**: the questions the class finds hardest (how many got each right, and the wrong answer chosen most — the misconception to teach to next), and each sitting with its band, the honour pledge, the follow-ups and their replies, and **signals to ask about** ("mostly pasted", "left the page 4 times", "handed in after time", "a follow-up did not hold up"). Signals are never marks and never proof. A held answer is marked there.
+
+**There is no AI detector, on purpose.** They wrongly flag writers whose first language is not English (Liang et al., 2023), and the Club's members would be the ones wronged.
+
+**Question kinds for lesson writers** (Control Room → Curriculum → a lesson): multiple choice — give each wrong option a reason it is tempting, which the member sees if they pick it; **Put the steps in order** (type the steps in the right order; members get them shuffled); **Outside exercise** (a link to an exercise on another site; members hand back their proof and what they did, marked like a written answer and followed up in the exam); and the written kinds as before. A published lesson still needs one question that is not multiple choice or ordering.
+
+**Mastery tiers**, per course, on each course page in Learn: Starter, Apprentice (a quarter of the lessons), Practitioner (half, and two session exams passed), Expert (three quarters, exams averaging Merit), Master (every lesson, exams averaging a Pass), and **God of the course** — a Master who passes the course **Trial** (questions drawn from the whole course, with follow-ups) at 85%. The Trial can be retaken after seven days.
+
+**Club certificates** are issued automatically, once each, numbered and verifiable at /verify like every NGG document: a **course certificate** when every lesson of a course level is completed (NGG-CLB-…), a **promotion certificate** when an instructor moves a member up a programme year (NGG-CLP-…), and **God of the course** (NGG-CLG-…). Each is styled by its course's family — music, technology, the arts, media, business or craft — with the course's own lesson titles woven into the background. They are signed by the **Head of the Club** and the **Programme Director**: set both names in Control Room → Money → Documents.
 
 ## Placing children in the curriculum, and checking off what they have done (Instructor Portal)
 
@@ -4064,23 +4604,26 @@ Data allowances are counted at CACENTRE now, not here.
 The Gateways page shows when the list was last sent, how many people were on
 it, and anything CACENTRE refused. A super admin can press **Send now**.
 
-- *"CACENTRE has no site for CP (12)"*: add a site at CACENTRE (Admin → Wi-Fi →
-  Sites & routers) whose code is the centre's card code, here `cp`. Until then
-  those 12 people can sign in only at the hubs.
-- *"doesn't recognise NGG's key"*: the Wi-Fi uses the connection NGG already
-  has with CACENTRE for the person directory, so the key is `DIR_PUSH_SECRET_NGG`.
-  It must be the same value in NGG's `api/config.php` (`dir_push_secret`) and in
-  CACENTRE's `includes/.env`. There is no separate Wi-Fi key.
+- *"CACENTRE could not place CP (12)"*: the centre is not one of CACENTRE's
+  locations. Add the location at CACENTRE (Attendance → Locations); the next
+  send makes its Wi-Fi site there by itself. Until then those 12 people can sign
+  in only at the hubs. (A centre that IS a CACENTRE location never shows this:
+  NGG names the place with each person, and CACENTRE makes the site the first
+  time.)
+- *"doesn't recognise NGG's key"*: the Wi-Fi rides the connection NGG already
+  has with CACENTRE's gate for attendance, so the key is `hooks.attendance_secret`
+  in NGG's `api/config.php`, the same value as `NGG_SECRET` on the gate. Once
+  attendance works, so does this. There is no separate Wi-Fi key.
 - *"NGG isn't sending its people there yet"*: that key isn't set. Until it is,
   the gateways and the members' PINs stay NGG's, as before.
 
 **Moving a centre's router to CACENTRE.** Once NGG is connected, routers are
 added at CACENTRE: *Add a router at CACENTRE* opens it, and a centre with no
-router says which site code to use there (the centre's card code, in small
-letters). An NGG router moves in three steps, listed on its card under
+router has its site made at CACENTRE from the location of the same name once
+NGG has sent its list — nothing to type. An NGG router moves in three steps, listed on its card under
 *Moving it to CACENTRE*:
 
-1. At CACENTRE, add the site and a router for it.
+1. At CACENTRE, add a router for the centre's site.
 2. Paste CACENTRE's one line on the router. This removes NGG's script.
 3. Press **It now runs from CACENTRE** here.
 
@@ -4138,12 +4681,27 @@ says so with *Try again* rather than showing a PIN that no longer works.
 - **Speeds follow down**: the network's defaults, then a region's own, then a
   centre's own. Set only what differs; "set here" switched off means "follow".
 
+
+**When the list doesn't reach CACENTRE (406).**
+- A 406 means CACENTRE's web host refused the request before CACENTRE saw it.
+- NGG now splits the list and tries again in smaller parts, so everybody else still gets through.
+- Anybody refused even when sent alone is named in the Wi-Fi status note. Check that person's name and email for unusual characters, or ask CACENTRE's host which firewall rule fired.
+
+**Who loses Wi-Fi.**
+- Only an active (or graduated) member is on.
+- A deleted, merged, inactive, suspended or pending record is off at the next send.
+- Once CACENTRE is updated, someone who stops being on the list at all (deleted from NGG) is withdrawn too.
+
 ## Courses: placing every child (Members → Courses) and Course health (Learning)
 
 A child's courses decide their lessons, Community channels, timetable and which instructors' classes they are in. They are now set **once, here**, and every portal reads the same list.
 
-- **Proposed:** for a child nobody has placed, their record proposes courses, from the track and the interests on the card, within one division. The child sees them marked "not confirmed yet".
-- **Needs a look:** the proposal needs a person to decide. Examples: their card names another division (a Tech child whose card also says Media), a division word gave a whole division, or nothing names a course. Open the child to see why.
+- **Proposed:** for a child nobody has placed, their record proposes **one course** (since 7 Nov 2026). The child sees it marked "not confirmed yet".
+  - The track names a course ("Coding", "Piano") → that course. Interests on the card do not add more.
+  - Only interests name courses ("Coding, Robotics") → the first one, flagged, with the others listed so you can choose.
+  - The record only names a division ("Tech", "Media") → **the division's major**: "Tech" is Coding (since 14 Nov 2026; set per division in Learning → Divisions & courses). One course, never every course in the division. (Before 7 Nov such a child took all seven or eight courses at once; from 7 to 14 Nov they took none until placed.)
+  - "Music" on its own is the Music course, not every instrument. "Music" plus "Piano" on the card is Piano.
+- **Needs a look:** the proposal needs a person to decide. Examples: their card names more than one course, it names another division (a Tech child whose card also says Media), or nothing names a course. Open the child to see why.
 - **Confirm proposed:** select children, then Confirm. Their proposal becomes their courses.
 - **Add / Remove / Set courses:** choose from the course list. To place a child in two divisions on purpose, do it here.
 - **Course health** (Learning) lists every course: the children in it, its instructors, lessons, class times and channel. A course failing children comes first. Open one to see what is missing and go straight to where it is fixed.
@@ -4281,9 +4839,15 @@ A member (from Records) or a parent (from the family account) can appeal any
 decision on the record: a warning, the Dormant Track, a suspension, an
 eviction, a fine or a fee. It arrives in **Requests**.
 
-- **Overturn it** lifts the decision and everything it carried (its fine, a
-  suspension's re-entry fee). **Keep it** leaves it standing. Both need a
-  reason; the family reads it.
+- **Uphold — lift the fine** (or **lift the sanction**) overturns the
+  decision and everything it carried (its fine, a suspension's re-entry fee).
+  **Keep the fine** leaves it standing. Both need a reason; the family reads it.
+- The appeal shows the member's **other open requests**. A family often
+  appeals a fine because a leave request is still waiting: open it from there
+  and decide it too. Excusing the leave does not lift the fine on its own.
+- Every request kind names what its buttons do: leave is **Excuse the
+  absence** / **Refuse the leave**, a question for the mentor is **Answer and
+  close**, a replacement card is **Print a new card**.
 - Whoever issued or confirmed the decision can't decide its appeal
   ("somebody else reviews the appeal").
 - A proposed eviction can't be confirmed while its appeal is open.
@@ -4313,3 +4877,624 @@ nothing is added until you press Add. Report rows arrive confirmed.
 lessons done here, average score, outside learning and hours, days attended in
 the last 90, and when they last learnt anything. "Nothing learnt in 30 days"
 is the list to follow up.
+
+
+## Photos: stored in the bucket, optimised once, served from the bucket
+
+New uploads go to the file-storage bucket (R2) once one is set in **Settings →
+API keys → File storage**. Cloudinary is asked **once** per photo for the sizes
+the pages use; the small copies are stored back in the bucket and every page
+loads them from there, so viewing photos costs no Cloudinary credits.
+
+In **Settings → Diagnostics → Photo storage**:
+- **Move held photos to the bucket**: the photos still kept on this server. The
+  server copy is kept; missing files are left alone. It also runs every hour.
+- **Optimise photos**: makes the sizes now. It also runs every ten minutes.
+- **Use their Cloudinary photos**: for a record whose file is gone but whose
+  person has a photo in Cloudinary.
+
+## Maths Lab: the 170-Point Mathematics Mastery Framework (`/study/lab`)
+
+The Mathematics Clinic's idea, built into the Lab: understand **why** maths
+works, never only memorise it; never skip a foundation; never write a child
+off as "bad at maths" when a foundation was simply never taught.
+
+- **All 170 points are open**, in 17 stages of ten, grouped into five
+  **bands**: *Foundations* (Primary, Stages 1–4), *Algebra and number*
+  (JSS · Junior school, 5–7), *Senior core* (SSS · Senior Mathematics, 8–12),
+  *Further Mathematics* (SSS · Further Mathematics, 13–16) and *Beyond*
+  (mechanics, university and research, 17). The map shows each stage's band;
+  Progress shows how many points of each band a member holds.
+- **Gods of Maths (the summit, Stages 18–20, MC-171 … MC-200).** Above the
+  framework sits a sixth band, marked with a crown, at olympiad level (NMC,
+  Cowbellpedia, PAMO, IMO):
+  - *Stage 18, The Theory of Numbers*: divisors, the Euclidean algorithm,
+    congruences, Fermat and Euler, the Chinese remainder theorem,
+    Diophantine equations, factorials, digit tests and the totient.
+  - *Stage 19, Counting like a God*: casework, arrangements, stars and bars,
+    inclusion–exclusion, pigeonhole, binomial identities, Catalan numbers,
+    recurrences, expected value and invariants.
+  - *Stage 20, The Summit*: Vieta, telescoping, AM–GM, Cauchy–Schwarz,
+    functional equations, polynomials, complex numbers, power of a point,
+    triangle centres and proof.
+
+  Each topic needs the school topics it grows from (e.g. Stage 18 starts
+  from *Prime numbers, HCF and LCM*). Stages 18–20 make the **Gods of Maths**
+  course (60 hours), with its own stage and course certificates. Nineteen of
+  the thirty topics carry a *Why it works* proof, including Euclid's proof
+  that the primes never end and the proof that √2 is irrational.
+- **Tough, but never bare.** Every Stage 5–7 and Gods of Maths topic has at
+  least four kinds of question and at least one **Challenge** question.
+  Challenge questions are marked with a lightning chip in the player.
+  - **What a challenge needs:** an idea rather than the routine, such as a
+    shortcut ($a^2 - b^2$ from $a + b$ and $a - b$), a second step, or a
+    trap the routine falls into.
+  - **Help is always there:** every question still has a hint that names the
+    idea, a worked solution, and a reason for every wrong option. In
+    practice, the challenge chip says *take your time; the hint is there if
+    you need it*.
+- **The Daily Olympiad Problem** (Home, then `/study/lab/daily`). One Gods of Maths problem a day, the same for every member, whatever stage they are in.
+  - **Help:** the hint is free. There are three tries, and a wrong try names what went wrong.
+  - **When it is over** (solved, or out of tries), the answer and the full worked solution are shown.
+  - **Rewards:** solving at the first try with no hint earns 50 XP; any other solve earns 25 XP. Home and the page show how many days in a row the member has solved it, and how many in all.
+  - It never moves the map: it is a taste of the summit, not a step on the path.
+- **The path, the way Duolingo's works** (owner, 5 Nov 2026, with screenshots of Duolingo):
+  - **Stage banner.** The open stage's banner is filled in its band's colour (blue Foundations, green Algebra and number, purple Senior core, crimson Further Mathematics, brown Beyond, gold Gods of Maths) and stays at the top of the screen while the member scrolls its path.
+  - **Guidebook.** The Guide button on that banner opens the stage's Guidebook (`/study/lab/guide/N`). It shows each topic's key idea (from its proof, where it has one), the tip to reach for, and a worked example to open. Reading it does not count as studying a topic.
+  - **How it looks** (owner, 5 Nov 2026: "Improve UX. It looks rough"): each topic is a raised coin that presses down when tapped. A known topic's coin is filled in its band's colour; the next topic is gold; a locked topic is grey. Closed stages are quiet cards with a stripe of their band's colour, and band names are plain dividers, not boxes. Labels under the chest and the mini review say when they open ("at 5 topics", "after 2 topics"). On a phone the "Up next" card is hidden, because the gold Start coin on the path already says it.
+  - **Chest.** Half way along each stage there is a chest. It opens once five of the stage's ten topics are known, for 25 bonus XP, once only.
+  - **Mini review circle (purple dumbbell).** It sits before each stage's boss: five quick questions from that stage's practised topics. It opens once two topics of the stage have been practised.
+  - **The way back.** A floating arrow appears when the member's next topic is off screen, and takes them straight back to it.
+- **Mini review after a long stretch of practice.** After 20 answers in a day, Home and the end of a practice session offer a five-question mini review of what the member learned EARLIER: their recent mistakes first, then the topics practised longest ago.
+  - A right answer keeps a known topic safe for longer.
+  - A missed one sends it back for a quick refresh, so it reappears in reviews.
+  - Each right answer earns 5 XP. The count starts again after each mini review.
+- **Finding a topic.** The Map has a search box. Type a word (*log*, *fractions*, *circle*) and every matching topic in every stage is listed, with its stage and whether it is open; press one to go to it. Typing *log* finds the three logarithm topics.
+- **Logarithms.** They are taught in Stage 7 (*Logarithms as inverse powers*; *Laws of logarithms and logarithmic equations*) and used in Stage 16.
+  - **What is covered:** exact powers; change of base; exponential equations solved with logs; logs of numbers in standard form (the "using tables" questions); $\ln$ and $e$; the curve $y = \log x$; doubling and half-life times; $\ln$ in calculus.
+  - **Explorer:** the log topics have their own, with sliders for a base and a power.
+  - **Typing answers:** a learner can type `log( )` and `ln( )` in an answer, from the keypad or the keyboard. Any base is accepted where the value is the same.
+- **More Labs.** The Physics Lab is the second and the English Lab the third (both below). Each Lab has its own map, questions, climb, certificates and papers, and shares the engine. See `docs/LABS.md` for the developer's how-to.
+- **Exam practice (the Exams tab, `/study/lab/exams`).** Three timed papers, open to every member whatever their stage.
+  - **The papers:**
+
+    | Paper | Questions | Time | Score |
+    |---|---|---|---|
+    | Timed practice paper | 40, options A–E | 40 minutes | out of 100 |
+    | Timed maths module | 27 | 43 minutes | an estimate on a 200–800 scale |
+    | Standard exam | 50, options A–D | 45 minutes (half the real 1½ hours) | out of 100, a grade A1–F9, and a title: Genius 70%+, Super Genius 85%+, Grandmaster 100% |
+
+    On the timed maths module about a quarter of the answers are typed. The screen says the 200–800 figure is an estimate.
+  - **No exam body is named on screen** (owner, 6 Nov 2026: "Do NOT mention these exam bodies since we'll not be copying their questions"). The papers, bands and courses say what they cover, not whose exam they resemble. A test fails if a name creeps back into anything a learner reads.
+  - **New every time:** each paper is drawn fresh from the Lab's own questions, including 40 five-option and 15 typed-or-choice kinds written in the style of the past papers the owner supplied. None is copied from a past paper.
+  - **The standard exam covers the syllabus in fixed shares and leans hard.** Each area has its share of the 50 questions (Number 20%, Algebra 26%, Geometry & Measure 24%, Graphs & Functions 10%, Statistics & Trigonometry 20% — the syllabus's sections, since no exam body publishes counts per topic), and inside each area about 20% easy, 45% medium and 35% hard. The Physics and English standard exams give each area an equal share.
+  - **It runs like the exam hall** (every paper does): a numbered navigator of all the questions (answered, current, flagged), Previous and Next, a flag to come back to, and any answer can be changed — or rubbed out by pressing it again — until the paper is handed in. Hand in asks first and says how many are unanswered and flagged. Nothing says right or wrong until the end. Keys: A–D (or E) choose, ← → move, F flags.
+  - **Timing:** the clock is the server's. At zero the paper is handed in, and late answers are refused. Each answer is saved as it is chosen (a typed one when the learner moves on), so time running out loses nothing saved. A question left blank counts as unanswered.
+  - **The report** gives the score, the time used, and the right answers by area (Number, Algebra, Geometry & Measure, …). Under it: **what to study next** — each weak area (under 60%) with the topics missed there, each a link to its lesson; the **pace** per question against this paper's allowance and the real exam's; **last time** on the same paper, up or down; and on the standard exam a **predicted grade** from the last three standard exams, always called an estimate.
+  - A paper never changes the map. Papers taken are listed with their scores, and the best score shows on each paper's card.
+  - The same exam-style questions also turn up in ordinary practice of their topics: an exam-style factor-theorem question is practice for *Remainder theorem and factor theorem*.
+- **Stages 5–7 are deeper.** Each algebra topic used to have one or two
+  kinds of question. It now has four to six, plus six new proofs: the
+  *n*th term, why dividing by a negative reverses an inequality, crossing
+  graphs, adding fractions, √(ab) = √a·√b, and what a logarithm undoes.
+- **Why it works.** The foundations (Stages 1–4, starting from why
+  1 + 1 = 2) and every topic built on a law, formula or theorem (91 topics
+  in all, e.g. Pythagoras, the quadratic formula, the laws of indices,
+  differentiation from first principles) show a short argument on the topic
+  page. It appears one line at a time, each with the reason it is true. Topics
+  that are a skill or a convention have none. Practice on those topics
+  includes two kinds of question from the argument: *why is this line true?*
+  and *put the argument in order* (arrow buttons; no dragging).
+- **Explore it.** About 60 topics have an interactive panel with sliders that
+  work by keyboard and touch. Among them: the number line, arrays,
+  area-model brackets, fraction bars, the angle sum, Pythagoras' squares,
+  sectors and radians, straight lines, parabolas and the discriminant, the
+  unit circle (CAST), a chord becoming a tangent, strips under a curve, a die
+  rolled 1,000 times, series and compound growth.
+- **Foundations to fix first** (Progress, and Home when it applies). When a
+  member keeps getting a topic wrong, the Lab traces it back to the
+  **earliest** topic underneath it that they do not yet know, and offers
+  *Start here*. Practising the hard topic harder fixes nothing when the gap
+  is lower down.
+- **A topic that needs a later stage's idea** (e.g. *Graphical solution of
+  linear equations* in Stage 6 uses coordinates from Stage 10) is not locked
+  by it. The topic introduces what it needs, and the page says where the
+  full topic is.
+- Rounding rules are stated under the answer box ("correct to 2 decimal
+  places"). Any answer that rounds to the right value is accepted.
+- **Home** reads top to bottom:
+  1. where the member is (stage and band);
+  2. **Up next**, one step explained in a sentence, with one button;
+  3. **Your progress**: topics known, streak, level, and the current stage's
+     topics, with *Open the map*;
+  4. then foundations to fix, courses, how the climb works, and badges.
+- **The map, made readable (5 Nov 2026).**
+  - **Labels:** every topic on the path is named beside its circle, so a child sees *Division with remainders*, not ten identical stars. The boss is labelled too.
+  - **Band banners:** each band (Foundations … Gods of Maths) opens with a banner showing its level, its stages and how many of its topics the member knows. The summit's banner is gold with a crown.
+  - **Jump bar:** a row of band buttons at the top of the map opens a band's first unfinished stage in one press.
+  - **Closed stages:** each shows ten dots, one per topic (filled = known, gold = next, pale = locked), and says *Opens when the stages before it are known* when it cannot be started yet.
+- **Finding a topic (the path).** The Map is a path, like Duolingo's, drawn
+  in the Control Room's style. Each stage has a header, followed by its ten
+  topics as round buttons: black with a tick when known, gold with *Start* on
+  the one to do next, white when open, and grey with a lock when not yet
+  open. The stage boss (a trophy) comes last. **Only the member's focus
+  stage, the one holding their next lesson and marked *You are here*, is
+  open.** Every other stage shows just its header and progress, and opening
+  one closes the others. Pressing a
+  topic shows its name and a *Start* button. On a computer, a side panel shows
+  the streak, stars, XP and *Up next*.
+- **Courses** open as the member reaches them. A course whose first stage
+  the member has not reached shows **Locked** with the reason, for example
+  "Opens at Stage 5 — know all of Stage 4 first, 3 of 10 so far", and has no
+  Enrol button. Enrolling shows *Enrolled*, and *Continue* goes straight to
+  the course's next topic.
+- **Each course shows what it holds**: its stages in order, by name, each
+  marked done, *on now* or ahead, with how many of its ten topics the member
+  knows. An enrolled course also says how close the next certificate is
+  ("4 topics to go for your Stage 2 certificate").
+- **Praise in practice**, on Duolingo's pattern:
+  - The words vary from answer to answer.
+  - A run of right answers is counted with a flame, and called out at 3, 5
+    and 8 in a row.
+  - The answer after a miss is greeted ("Back on track").
+  - A wrong answer gets a lift and the working, never just "wrong".
+  - Praise names the work (careful working, coming back, managing without
+    the hint), never the child's cleverness: that keeps them trying at the
+    hard ones.
+  - Practice only. Placement gates, checks and bosses still give no answers
+    until the end.
+- **The end of a session** has a headline (*Perfect!*, *Session complete!*,
+  *Good effort!*, *You finished it. Keep going!*) and three tiles: XP
+  earned, accuracy with a word (*Flawless*, *Amazing*, *Great*, *Getting
+  there*, *Building up*), and the best run (or the time on task). A good
+  session gets a short confetti burst, skipped when the device asks for
+  reduced motion.
+- **Completing a stage** (all ten topics known and its boss beaten) takes
+  over the whole screen, Duolingo style:
+  - a medal with rays and confetti, and *Stage N complete* with the stage's
+    name;
+  - tiles for topics known, the boss beaten, and the session's XP;
+  - the certificate just earned, with its number and a link to open it;
+  - one big button: *On to Stage N+1* and its name.
+  Completing a course does the same with a trophy. Escape or *Close* returns
+  to the result underneath.
+- **Finding a certificate afterwards.** The Lab has a **Certificates** tab:
+  every certificate the member holds, newest first, each with *Open* and
+  *Print*, and what is next to earn underneath.
+  - A certificate not yet opened puts a number on that tab, and a banner at
+    the top of the Lab's Home (*New certificate … Open my certificate*).
+    Opening it clears both.
+  - The celebration has *All my certificates* too.
+  - Families still see every certificate under Documents.
+- **Opening another stage on the map** shows it with *Back to my stage*.
+  Closing it returns to the member's own stage.
+- **A topic is a lesson in steps**, one screen at a time: *Explore* (the
+  interactive), *Why it works* (the proof), *Worked example*, then *Practise*
+  (with the *Mastery check* and the topics it builds on). A step bar shows
+  where the member is. *Continue* and *Back* sit at the bottom.
+- **Practising.** Answers are numbered: on a computer, keys 1–9 choose and
+  Enter checks. The result shows the score once, says what to do next, and
+  lists the questions missed first with their worked solutions open.
+  *Practise again* starts a fresh set. Going back to the topic opens it on
+  *Practise*.
+- **The placement gate, reviews and the stage boss test the skill itself.**
+  The "why is this line true?" proof questions appear only in practice and
+  in the mastery check.
+- **Everyone studies; nobody guesses their way through.**
+  - **No skipping.** *Continue* opens only once the step has been done: an
+    explorer slider moved, every line of the proof read, every line of the
+    worked example shown. Steps ahead cannot be opened early.
+  - **The server enforces it.** Reaching *Practise* records the study, and
+    practice and the *Mastery check* are refused for a topic that has not
+    been studied, whatever the page sends. A topic already studied or known
+    can be moved through freely.
+  - **The check opens on readiness.** The *Mastery check* opens only when
+    practice shows the member is ready.
+  - **A failed check is not retaken at once.** It owes **5 right practice
+    answers, without a hint**, before it opens again; the topic page counts
+    them down.
+  - **A lost stage boss** sends every topic it caught the member on back to
+    practice, each owing the same 5 answers and a new mastery check. The boss
+    stays locked until those topics are mastered again.
+- **Written for an eleven-year-old.** Every explorer opens with a *Try this*
+  challenge, one thing to do and one thing to notice. The readouts and the
+  early proofs use everyday words ("one number word for each object", not
+  "one-to-one correspondence"). Keep new copy to that standard: easy to
+  follow, never dumbed down.
+
+## Physics Lab (`/study/physics`)
+
+The second Lab (owner, 6 Nov 2026: "make physics a breeze for everyone"). It runs on the same engine as the Maths Lab, so everything in the Maths section applies: the climb, lessons, practice, mastery checks, reviews, bosses, the mini review, chests, certificates and the Daily problem. Its tab sits next to the Maths Lab's in Study tools.
+
+- **The road: nine stages of ten topics (PH-001 … PH-090), in six bands.**
+
+  | Band | Stages | What it covers |
+  |---|---|---|
+  | *Foundations* (JSS · Basic Science) | 1–2 | measurement and matter, forces and machines |
+  | *Mechanics* (SS 1–2) | 3–4 | motion and Newton's laws, energy and momentum, circles, pendulums, floating |
+  | *Heat, waves and light* (SS 2) | 5 | heat, waves, light |
+  | *Electricity and the atom* (SS 3) | 6 | electricity, magnetism and the atom |
+  | *Fields and modern physics* | 7–8 | heat transfer, stationary waves, resonance, Doppler, fields, a.c., electrolysis; photons, energy levels, de Broglie, E = mc², semiconductors, black bodies, X-rays, logic gates |
+  | *Physics Olympiad* (the summit) | 9 | dimensions, estimation, orbits, rotation, magnetic braking, engines and refrigerators, the greenhouse effect, capacitors, relativity, quantum wells |
+
+  Stages 7–8 were added to cover what senior past papers ask most. Stage 9 follows the olympiad problems the owner supplied.
+- **Courses:** Physics Foundations, Mechanics, Heat Waves and Light, Electricity and the Atom, Fields and Modern Physics, and Physics Olympiad. Each earns its own certificate. Stage certificates say "Physics Lab", carry Physics formulas behind the name, and verify at `/verify` like any NGG document.
+- **Every question is our own.** Answers are worked out from the question's numbers, every wrong option is a common mistake, and every question has a hint and worked steps. The olympiad problems come in small guided steps: each step gives the result of the one before, so a learner who missed a step can still do the next. No exam body is named anywhere.
+- **Answers with units.** A learner may type the unit or leave it off ("12", "12 N" and "12N" are all accepted). The unit is shown next to the box and printed with the answer. g is taken as 10 m/s².
+- **Diagrams that follow the standard conventions, with a guide.**
+  - Circuits use the school symbols: the cell's long line is +, and meters are lettered circles, with the voltmeter across the part it measures.
+  - Force diagrams, levers, graphs, ray diagrams (mirrors, refraction, lenses with F and 2F), springs, pendulums, pipes, energy levels and more are drawn from each question's own numbers.
+  - Every diagram has **"How to read this diagram"**: its symbols drawn as a key, and what the figure shows.
+- **Explore it: predict first, then see.** 27 interactive simulations: forces and carts, motion graphs, projectiles, pendulums, waves, circuits, refraction, lenses, moments, springs, pressure, energy, collisions, circular motion, heating curves, gas laws, transformers, half-life, standing waves, the photoelectric effect, orbits and quantum wells.
+  - Each opens with one question: the learner picks what they think will happen. Only then does the simulation appear.
+  - After they try it, it says whether their guess held, and why.
+  - This predict–observe–explain approach is the best-evidenced way to teach with simulations: a wrong guess that is then explained is what sticks.
+  - The simulations stop moving on devices set to reduce motion, and everything works from the keyboard.
+- **The timed Physics paper (Exams tab):** 40 four-option questions in 40 minutes, covering Stages 1–8, drawn fresh every time. Scored out of 100 and broken down by area. A Maths paper cannot be started from the Physics Lab, and the other way round.
+- **Daily Physics Puzzle:** one problem a day from the Physics Olympiad stage, the same for everyone. It is separate from the Daily Olympiad Problem in Maths.
+- **Separate from Maths.** A member's Physics climb, topics, sessions and certificates are their own and never change their Maths ones. XP and the study streak are shared: studying any Lab keeps the streak alive.
+
+
+### The member portal, made plainer for children (6 Nov 2026)
+
+The owner found the portal hard to navigate, unintuitive and patchy. What changed, and why:
+
+- **Plain words in the menu.** In the full view, **Companion** is now **My week**, **Community** under
+  Mentor is **Projects & ideas** (the club feed, team projects and ideas), **Scorecard & goals** is
+  **Goals & scores**, **Passport** is **Badges**, **Records** is **My requests** and **Support** is
+  **Ask NGG**. The screens are the same and so are their addresses (`/dashboard/records` and so on), so
+  bookmarks and links keep working.
+- **No word means two things.** "Learn" was both an area of the portal and an app under **Your apps**.
+  Your apps now lists **Anchor Journal**, **Labs** and **Community**. **Labs** opens the Labs hub, which
+  lists every subject Lab from the Lab registry, so a new Lab appears there on its own.
+- **A tab that leaves the portal says so.** **Learn → Labs & tools ↗** opens the Labs in their own app,
+  and its description says so.
+- **Tabs wrap on a phone.** An area's tabs wrap onto a second line rather than scrolling off the edge
+  with no sign that there is more.
+- **Today stops contradicting itself.**
+  - While **Getting started** is on screen, it is the list of next steps. The banner and **To do** no
+    longer repeat its first step, and neither says "All caught up" while steps are still open.
+  - Once a member hides that list, the banner and To do carry the open step.
+  - The streak is read from one place, so the chip and the **Streak** tile agree.
+  - The **This term** tile shows "Week 9 of 14" rather than the session's code name.
+- **The account card is on Today only when something is owed** (dues, fines, or a training fee). The
+  rest of the time it is under **Account → Money**.
+- **Assignments.** With none set, the card reads "Nothing set right now" without a dangling "· due –".
+- **The Mentor screen** drops the side links that repeated its own tabs; the tabs already carry the
+  counts.
+
+## English Lab (`/study/english`)
+
+The third Lab, on the same engine as Maths and Physics: the same climb, practice, mastery checks, stage gates, certificates, Daily problem and timed paper.
+
+- **The road:** eight stages of ten topics (EN-001 … EN-080), following English Studies from JSS to SS 3:
+  1. Words and Sentences — parts of speech, plurals, tenses, capital letters, punctuation, spelling, synonyms and antonyms.
+  2. Building Sentences — agreement, prepositions, conjunctions, question tags, tenses, irregular verbs, apostrophes, homophones, prefixes and suffixes, articles.
+  3. The Sounds of English — vowels, diphthongs, consonants, silent letters, word and emphatic stress, rhymes and intonation (written questions in IPA; stress shown in capitals, e.g. reCORD).
+  4. Grammar in Use — passive voice, reported speech, conditionals, phrasal verbs, idioms, clauses, who/whom, tricky agreement, modals, gerunds and infinitives.
+  5. Reading and Meaning — main idea, inference, words in context, fact and opinion, figures of speech, tone, summary, register, nearest and opposite in meaning.
+  6. Writing Well — combining sentences, formal and informal letters, paragraphs, linking words, concise writing, common usage errors, semicolons and colons, writing for the occasion, argument.
+  7. Word Power — Latin and Greek roots, word families, collocations, words people confuse, one-word substitutes, the vocabulary of health, law and government, farming and money, and the media, sport and technology, and what a sentence really means.
+  8. The Senior Paper (the summit) — the grammatical name and function of a word, phrase or clause; comprehension answers in your own words; summary, one point per sentence; counting sounds and syllables; consonant clusters; the semi-formal letter; narrative, descriptive, expository and argumentative essays; mixed conditionals and “must have”.
+- **Why stages 7 and 8 (6 Nov 2026):** the senior English paper has four parts — essay, comprehension and summary, lexis and structure, and oral English — and asks things the first six stages did not teach. They were added after Stage 6, so nobody's progress moved.
+- **Questions:** multiple choice (every wrong option names the slip), typed words and short sentences, "which part of this sentence is wrong?", and "put the words in order". A typed answer is marked on the skill: capitals, spacing and the final full stop are ignored unless the question is about them (the capital-letters and punctuation topics).
+- **Courses:** English Foundations, Speech Work, Grammar in Use, Reading and Meaning, Writing Well, Word Power, The Senior Paper. Stage certificates say "English Lab".
+- **Daily Word Challenge** comes from The Senior Paper. **The timed English paper** (Exams tab): 40 four-option questions in 40 minutes across all eight stages, new every time.
+- **How a lesson teaches (6 Nov 2026).**
+  - **The rule** (all 80 topics): the rule in one line, then right examples (✓, green) and the slip people make (✗, struck through in red), each with its reason. It is read before practice opens.
+  - **Hear and say** (the sounds topics, question tags, syllables and clusters):
+    - *How to say it*: where the tongue and lips go, and whether the voice is on.
+    - *Hear the difference*: eight rounds of a minimal pair (ship / sheep) in four different voices. The answer buttons stay shut until the word has been played.
+    - *Say it*: hear the model (normal or slow), press Speak, and see which words came through.
+  - **The voice is recorded, not live.** Every clip was made once with a free open-source British neural voice (Kokoro) and ships with the site. Nothing to configure, nothing to pay, the same voice on every phone.
+  - **"Say it" listening.** The browser's own speech recogniser does the listening for free. If a Spitch key is set in Settings (the one Quote of the Week uses), Spitch's recogniser, trained on Nigerian speech, is used first.
+  - **When you add speaking text**, a developer runs `tools/english-voices.py` to record it. The test suite fails until they do.
+- **What it does not do yet:** mark a whole essay or letter. Writing is practised in the parts that can be marked instantly. A judged essay needs a teacher queue or a rubric-checked AI step, and is a separate piece of work. Recorded minimal-pair listening and dictation are available; recognising the words in a recording is not a score for accent quality.
+- No exam body is named anywhere a learner reads; the questions are NGG's own.
+
+### The Labs remember what a member has seen (13 Nov 2026)
+
+A Lab session used to draw its questions without regard to the last one. In
+English, a member starting a topic again met mostly the same questions: 61% of
+them on average, and six to eight of eight on 35 topics.
+
+- **Each Lab remembers the member's last eight sessions** and draws questions
+  they have not seen in them first. When a topic runs short, it falls back to
+  "not in the last two sessions", and only then to "not already in this one".
+  A session is never shortened to avoid a repeat, and no question appears twice
+  in one session.
+- The memory is per member and per Lab. Another member's sessions, or the same
+  member's Maths, do not count against an English session.
+- The timed paper avoids the papers a member has just sat.
+- **Twenty-one English topics got more questions**, the thinnest ones first:
+  every English topic now has at least 24 different questions.
+- Measured on the real banks, the next session repeats 0% of the last one in
+  Maths and Physics, and 4% in English. A third session soon after may still
+  meet some questions in English: the banks are 24 to 27 deep.
+- The climb is unchanged. It walks the topic in order on purpose.
+
+### The Labs' explorers, easier to use (6 Nov 2026)
+
+These changes apply to every explorer in both Labs: 16 in maths and 27 in physics.
+
+- **The readout sits under the picture**, above the sliders. On a phone the numbers used to be pushed
+  below the fold, so a learner moved a slider and could not see what it changed.
+- **After a guess, the prediction shrinks to one line**: "Your guess: …". Once the learner has tried
+  it, the line turns green with a tick, or amber with "It is: …" naming the answer. The explanation
+  stays at the bottom.
+- **Reset** appears once the learner has tried the explorer. It puts every control back to where it
+  started.
+- **The projectile** is drawn to the scale of its launch speed, with a metre scale along the ground.
+  The previous throw at the same speed stays on screen as a faint trace marked "last: 30°", so the
+  30°-versus-60° comparison the prediction asks about can be seen directly.
+- The sliders have a rounded focus ring for keyboard users.
+
+
+## Family reports and the daily attendance email
+
+**Monthly report** (days 1–5 of each month, for the month before), **end-of-session report** (in the ten days after a
+session in Sessions ends), and **Summer School report** (in the ten days after an edition's season ends, to the
+parent's email). Each is a formal document: who the child is (name, ID number, centre, courses, mentor, report
+number), a one-paragraph summary, attendance with the day-by-day register (late minutes, unexcused absences, days
+with no sign-out), learning (lessons completed with scores, exams with their band, certificates, overdue lessons),
+conduct, **fees, dues and fines** (what was charged and paid in the period, each fine with its reason, the balance
+to pay on the day it was issued and what is still owed), the Leadership Index and mentor's note, and a signature
+block.
+
+- Every guardian who follows the child gets it by email and in the family inbox, where they sign it. The email's
+  button opens the printable copy ("Print or save as PDF").
+- A report is **sealed when issued**: reopening it later shows what it said that day, even after a payment.
+- Staff preview any member's report for a month from Families (`GET /api/admin/families.php?report=<memberId>&month=YYYY-MM`);
+  the preview lists the reports already issued.
+
+**Daily attendance email** — after 5pm on a programme day, each member of staff holding the programme's
+attendance permission gets one email: NGG Club to holders of *checkin*, Summer School to holders of *summer*.
+Centre by centre within their scope: present of expected, and the names of who was late (with minutes), absent,
+and did not sign out. A coordinator scoped to two centres only sees those two. Set the setting
+`reports_attendance_daily` to `0` to stop it.
+
+
+### The report's design, and dues as PDFs (7 Nov 2026)
+
+- **The family report** is now the formal A4 document from the design handoff, in NGG's own colours and with the real
+  logo: letterhead, title and reporting period, the student's details, a summary sentence with four key figures
+  (attendance, lessons, latest exam, balance), then 1 Attendance (day-by-day register with Present / Late / Absent
+  tags), 2 Learning, 3 Conduct, 4 Fees, dues and fines (every charge and payment line, what is still owed, oldest
+  first, and the balance), 5 Mentor comments, 6 Acknowledgement and signatures. Empty sections say so ("No conduct
+  records this period.") rather than disappearing; a paid-up account reads "Nothing to pay". The email carries the
+  summary and figures and a button to the full report, which prints or saves as a PDF.
+- **Summer School reports** open from a signed link in the parent's email; nobody needs an account.
+- **Dues as PDFs:**
+  - **Money → Dues & arrears → Dues register (PDF)**: every family owing in your centres, grouped by centre, with
+    what each balance is made of, how old the oldest unpaid charge is, the last payment, and each centre's total.
+    The same figures as "Who owes".
+  - **Money → Dues & arrears → Download balances**: everyone owing in your centres, largest first, as
+    **Images (PNG)**, a **PDF** or a **CSV**. Fifteen members to a part ("Part 1 of 3"): member, centre, **Days**
+    (days since the oldest unpaid charge fell due), dues, fines and payable, with the total payable at the foot
+    of every part. The images are one file per part, ready to post to a parents' group; the PDF is the same
+    pages on A4. **Dues + Fines = Payable** on every row: "Dues" is everything payable that is not a fine
+    (monthly dues, membership, training owed on leaving, adjustments), and the CSV splits it into those parts.
+    Pick a centre in the form to send one centre's list. If the browser asks to allow several downloads, allow it.
+  - **A member's account → Statement (PDF)**: every charge and payment with the running balance, what is still owed
+    and the balance to pay.
+  - Families have the same statement in the family account (Fees → Statement → PDF), and a member has it on their
+    own Fees page.
+  - Each opens as a page with **Print or save as PDF**; choose "Save as PDF" in the print dialogue. Printing a
+    register or a statement is written to the audit log.
+
+## Running the shop (Control Room → Shop, and `/shop`)
+
+*Source: the owner's brief, 17 Nov 2026 ("Create a shop for NGG. To sell souvenirs and mercs"), and the upgrade the same day ("Upgrade the shop massively … for better and effective management"). The server is `api/_lib/domain/shop.php` and `shop-manage.php`; the pages are `page-shop.jsx` and `src/modules/control/cr-tab-shop.jsx`. The research behind it is `docs/SHOP-MANAGEMENT-PLAN.md`.*
+
+The shop sells NGG souvenirs and merchandise to anyone, on `/shop`, and at a table at events and centres. Online buyers pay through Paystack and collect at their centre's desk, or have it delivered when delivery is on.
+
+### Who owns what
+
+| Tab | What it is for | Capability |
+|---|---|---|
+| **Today** | What needs doing now: orders to pack, refunds due, low stock, today's sales | `fees` |
+| **Orders** | Handing over, refunds, exchanges, notes, pick lists, packing slips | `fees` |
+| **Sell** | Selling at a table, and cash sessions | `fees` |
+| **Stock** | What is left, what is low, every change and why, the stock-take | read: `content` or `fees`; change: `content` |
+| **Products** | The catalogue: names, prices, sizes, stock, pictures, pre-orders | `content` |
+| **Codes** | Discount codes | `fees` |
+| **Reports** | Sales by product and size, Paystack's fees, refunds, net; CSV | `fees` |
+| **Settings** | Open or close the shop, delivery, unpaid orders, low stock | `fees` |
+
+`fees` is not part of the admin bundle; it is granted per person in Access & roles. A fees holder who is scoped to centres sees only the orders collected at their centres, and sells only inside a session at one of their centres; deliveries belong to head office.
+
+### Before the first sale
+
+1. Paystack must be set up: Settings → API keys holds the Paystack secret key, and the Paystack webhook points at `/api/hooks/paystack.php`. Payments **and refunds** report back through that one webhook. Without the key the shop page shows its products but says it cannot take orders.
+2. Buyers pay the **payment processing fee** (Paystack's charge) on top of the price, worked out by the same settings as membership payments (Money → Dues & arrears → Amounts → Paying online). They see it before they press Pay.
+3. Collection is offered at every active NGG centre that is a building. NGG Online is never offered.
+
+### Add a product (content)
+
+1. Control Room → Shop → **Products** → **New product**.
+2. Fill in the name, category, price in whole naira and a description.
+3. Picture: paste an `https://` link, or upload a file.
+4. Sizes or options: type them separated by commas (`S, M, L, XL`). Leave the field empty for a product with no options, such as a mug.
+5. Stock: leave **Limited stock** off for no limit. Turn it on and give one number per option, in the same order (`10, 12, 8`). A size at 0 shows as sold out. **Warn when this many are left** sets the product's low-stock line; empty uses the shop's default, 0 never warns.
+6. **Pre-order until** (optional): until the end of that day the product sells past its stock. Use it to take orders before a print run; Reports gives the counts per size.
+7. Status: **Draft** is seen by staff only (it can still be sold at a table). **On sale** shows on `/shop` at once. **Retired** takes it off the page; past orders keep it.
+8. Press **Add product**. If the server refuses, the reason appears under the field concerned.
+
+A price change never alters an order already placed; each order keeps the prices it was charged. A count changed in the product form is recorded as a **correction**; for deliveries in, damage and give-aways use **Stock → Adjust stock** so the reason is kept.
+
+### Stock (content)
+
+Every change to a count is kept with its reason, who made it and when: sold online, sold at a table, order cancelled, refund (back on the shelf), exchange, received, damaged, given away, returned to the shelf, correction, stock-take. Open a row in **Stock** to see its history.
+
+- **Adjust stock**: choose the product, size and reason, and how many. Received and returned add; damaged and given away take away; a correction can go either way and needs a note.
+- **Stock-take**: count the shelf and type each number. Each difference is recorded as a stock-take with your name; matching numbers change nothing. If one line is wrong, nothing is saved.
+- A count can go **below nought** when a table sells more than was recorded. That is deliberate (a queue is never stopped for a count); do a stock-take.
+- **Low stock**: a size at or below its line shows as Low; at nought, Sold out. Once a day, after 7 in the morning, the staff who hold `fees` or `content` get one email listing them (Settings → Low stock turns it off).
+
+### Open the shop (fees)
+
+1. Control Room → Shop → **Settings**.
+2. Turn **Shop open** on. The shop refuses to open until at least one product is on sale.
+3. If you deliver, turn **Offer delivery** on and set the **Delivery fee**.
+4. Check the two notes buyers read: **About collecting** and **About delivery**.
+5. **Unpaid orders**: how many hours an unpaid order lives (24 by default, 6 to 168), and whether the buyer gets one reminder after two hours.
+6. Press **Save** in the bar that appears.
+
+To close the shop, turn **Shop open** off and save. `/shop` then says the shop is closed. Orders already paid are still handed over as normal.
+
+### Take an order through to collected (fees)
+
+1. A buyer pays. Paystack confirms it and the order appears under **Orders** as **Paid**. The buyer's email carries the order number (`SHP-…`) and, for a collection, a six-digit **pickup code**.
+2. To pack several orders, tick them and use **Print pick list** (totals per item and size) and **Print packing slips** (one page per order, without the pickup code).
+3. Open the order and press **Mark ready**. For a delivery you can add a **delivery note** (the courier, a waybill number, the day); it goes to the buyer. Several orders can be marked ready at once from the list.
+4. When the buyer collects it, press **Mark collected** and type the **pickup code** they give you. A wrong code is refused. If they have lost it, switch on "They don't have the code" and say how you know the order is theirs; it is kept on the order's timeline.
+5. A delivery is finished with **Mark delivered** (one at a time or several at once; the buyer is emailed). This cannot be undone.
+
+Every order has a **timeline**: ordered, paid, ready, collected, refunds, exchanges, reminders, and staff notes (**Add a note…**).
+
+**Exchange a size** (the wrong T-shirt): open a paid order, **Exchange a size…**, choose the item, the new size and how many. The old size goes back on the shelf, the new one comes off, and no money moves.
+
+**Waiting for payment** orders hold no stock. The buyer can pay later from the link in their email (**Pay now** on the order page); **Send the pay link again** emails it (at most once an hour). An order still unpaid after the hours set in Settings is cancelled by itself; if the money arrives afterwards anyway, the order is paid and opens again.
+
+The list is paged on the server: filter by status (including **Refund due** and **Refunded**), by **Sold** (online or at a table) and by when it was **Ordered**; search by order number, name, email or phone. **Download CSV** gives every order in a date range for the accounts.
+
+### Refund an order (fees)
+
+1. Open the order and press **Refund…**.
+2. The amount suggested is the goods and delivery. At most what the buyer was charged can go back. Paystack keeps its processing fee, which the buyer paid on top.
+3. Choose how: **Through Paystack** (for an online order), or **Paid back another way** (cash or a transfer, and every table sale).
+4. Write why. If items come back, type how many of each go **back on the shelf**.
+5. Press **Refund**.
+
+A Paystack refund shows as **Waiting for Paystack** until Paystack confirms it; it can take up to 10 working days to reach the buyer. The buyer is emailed when it is processed. If the webhook is slow, open the order and press **Check now** on the refund; the shop also asks Paystack every hour. A refund Paystack fails says so on the timeline, and the money is still due.
+
+**Cancel order…** on a paid order puts its stock back and offers the refund in the same step: **Refund through Paystack now**, **Paid back another way**, or **Leave it due** (it then shows under the **Refund due** filter and on **Today**). An unpaid order can be cancelled without a reason; nothing was charged.
+
+### Sell at a table (fees)
+
+1. Shop → **Sell** → **Open a cash session**. Name it ("Open day, Egbeda"), choose the centre, and type the cash already in the drawer (the float).
+2. Tap **Add** on each item (choose the size first), adjust the numbers in **This sale**, choose **Cash**, **Bank transfer** or **POS terminal**, and press **Record sale**. The sale is completed at once and comes off the same stock as the online shop. Cash needs an open session; transfers and the terminal do not.
+3. At the end, open the session in the list and press **Close the session…**. Count the drawer. The screen shows what should be there (float + cash taken − cash paid back). If the count is short or over, say why; the difference is kept as counted.
+
+### Discount codes (fees)
+
+Shop → **Codes** → **New code**. A code takes a percentage or an amount off the **goods** (never the delivery), and always leaves at least ₦100 to pay. You can set a minimum spend, a cap on uses, once per buyer (by email), and dates. A code is counted when the order is paid. **Paused** stops it for now; **Archived** retires it.
+
+### Reports (fees)
+
+Shop → **Reports** shows the last 30 days; **Change dates** picks any range of up to a year, and optionally one product (for a pre-order, the counts per size are the print order).
+
+- **Gross**: what orders paid, after discounts, with delivery. **Paystack's fees**: what Paystack kept, as Paystack reported it on each payment. **Refunds**: processed in the range. **Net** = gross + the processing fees buyers paid − Paystack's fees − refunds.
+- By how it was paid, sell-through (sold against sold plus what is left), by day, and by product and size, with **Download by product (CSV)**.
+
+### When something is wrong
+
+| You see | It means | Do this |
+|---|---|---|
+| "Paid while short of stock" on an order's timeline | Two buyers paid for the last item at the same moment | Restock, or refund it |
+| "Sold past the recorded stock" on a table sale | The table sold more than the count said | Do a stock-take |
+| A payment on the unapplied-payments record with an `NGGS-` reference | Paystack reported money that did not match an order, or reached an order staff had cancelled | Check it in Paystack; refund or apply it by hand |
+| A refund stuck at **Waiting for Paystack** | The webhook did not arrive | Press **Check now**; check the webhook address in the Paystack dashboard |
+| A refund marked **Failed** | Paystack could not refund it (some bank-transfer and USSD payments) | Pay it back another way and record it as such |
+| "The order changed while you were looking" | Someone else moved the order first | It reloads; look again |
+| "Allow pop-ups for this site to print" | The browser blocked the print window | Allow pop-ups for the Control Room, then print again |
+| The shop page says it can't take orders | Paystack is not set up, or no centre takes collections and delivery is off | See "Before the first sale" |
+
+
+## Photos: the quality gate
+
+NGG does not take low-quality photos. A photo that is too small (under 600 × 800), too dark, washed out,
+unevenly lit, flat or blurry is refused where it comes in — the application, a guardian's retake, a member's
+"change my photo", the profile, a volunteer's record and a staff upload — with the reason in plain words
+("The photo is blurry. Hold the phone steady, tap the face to focus, and retake."). The family sees it at once,
+before anything is sent; the server checks the photo again wherever it is stored.
+How it decides is in `docs/PHOTO_QUALITY.md`. A super-admin can switch it off (`photo_quality_gate` = off) during
+a storage outage.
+
+## Membership Agreements (MoU)
+
+**Members → Agreements.** The Membership Agreement is the MoU, signed online.
+
+- **It is a scholarship.** Clause 3 states that the member's place is an **NGG scholarship** — ₦1,500,000 over the
+  three years by default — funded by NGG, and that what the family pays is a contribution, not the price of the place.
+  The printed copy opens with the award (the child's name, the value, the family's contribution); the family's page
+  and every email carry it too. Change the figure under **Money → Amounts → Scholarship value of an NGG place**. It is
+  stated, never charged, and an agreement keeps the figure it was signed with.
+- **Not for online members.** Members whose centre is an online one have different terms: this agreement is never
+  sent to them, they are not listed under *Not started*, and it is not on their registration checklist.
+
+- **It starts by itself** when you press *Accept & create member* on an NGG application: the family gets the
+  welcome email and, after it, a private link to read and sign. For members who joined before, press
+  *Send to N members without one* (or select some under *Not started* and choose *Send the agreement*).
+- **The family** reads each part as a short summary with the full wording a tap away, answers five quick
+  questions (a wrong answer shows what the agreement says; they try again — nobody is locked out), confirms
+  their details and the off-site trips choice, and signs: a typed full name and a signature (drawn, or made from
+  the typed name). A witness signs on the same screen, or they leave it to NGG. They are emailed their copy at once.
+- **Then it is printed, signed in ink and brought to the centre.** After signing online the family is shown
+  (and emailed) *Print the agreement to sign*: the printed copy carries the agreement's number and version at the
+  foot of every page and a section to sign in ink — parent or guardian, witness, and NGG. No printer: open the
+  agreement here and press *Print it to sign in ink*.
+- **You receive the paper copy.** It is listed under *Paper copy to receive*. Open it → *Receive the signed copy*,
+  and with the paper in your hand turn on each check: every page there with this agreement's number; a parent or
+  guardian signed and dated it in ink; a witness signed and printed their name; the names match the record;
+  nothing crossed out or added. If one is not true, give it back to the family — do not receive it. Then take a
+  photograph of the signed page with the phone's camera (the whole page filling the picture; at least 1600 × 1000
+  pixels, or it is refused as too small to read). Who received it, where and when are recorded; *See the
+  photograph* opens it later.
+- **A family that cannot sign online** signs the paper only: print it from here, they sign at the centre, and when
+  you receive it you also type what the paper says — who signed (father, mother or guardian), the witness's name
+  and the off-site activities answer. Their consents are recorded from it.
+- **You countersign** — only after the paper copy is received. It appears under *To countersign*. Open it, press *Countersign*, give your role and sign.
+  If nobody witnessed it at home, you are the witness too, and the copy says so. The family is emailed the
+  completed agreement with a link to the printable copy (*Print or save as PDF*).
+- **Resend** makes a new link and stops the old one; the link is also copied so you can send it by WhatsApp.
+  **Withdraw** (with a reason) keeps the record and lets you start a new one.
+- **Its consents are the member's consents.** Signing writes taking part, emergency medical care, records,
+  updates, photos and the website (granted) and off-site trips (as chosen) to the consents ledger.
+- **The money in it is the website's.** The monthly contribution, membership fee and training place are read
+  from Money → Amounts on the day the family signs and frozen on that agreement.
+- The registration checklist's item *Membership Agreement (MoU) handed in* is done once the paper copy is received
+  **and** NGG has countersigned. An agreement countersigned before the paper step existed needs its paper copy
+  received too.
+- A member with a signed agreement cannot be merged without a person deciding: the agreement names one child.
+
+## Receipts as PDF and image
+
+Every receipt can be downloaded as a **PDF** (A4) or an **image** (PNG), drawn by the server — nothing depends on
+the phone's browser, fonts or printer. You will find *Download PDF* and *Download image* on the receipt page, beside
+*Print*; on the family's payment page after paying; in the receipt email; and in Money → Membership payments
+(*PDF*, *Image* beside each paid invoice's receipt number). The image is the receipt cropped to fit a phone screen —
+the easiest thing to forward on WhatsApp. Both are drawn from the receipt as it was issued, so they always match it.
+
+
+## My week — a child's personal timetable
+
+**/timetable?easy=1**, and what a signed-in member with no timetable yet sees at /timetable. Four short screens, all
+by tapping: **School** (which days, when it starts and ends, or "I don't go"), **What else do you do?** (homework,
+study, extra lessons, Arabic school, football, chores, church, mosque, music… then the days, the time and how long),
+**Your NGG sessions** (their own sessions at their centre, already ticked), and **Is this your week?** (day by day;
+anything that overlaps is said in words) then **Save my week**. It saves to their account and meets the registration
+item *Personal timetable on the site*. The full maker — colours, printing, wallpapers, one-off changes — is one link
+away (*Full timetable maker*, or /timetable?full=1). Help a child at the centre: sign in as them and open
+/timetable?easy=1; they can do the rest themselves.
+
+
+## WhatsApp: families answer registration reminders
+
+When WhatsApp (Kapso) is set up (Settings → API keys → WhatsApp (Kapso)), every registration reminder also goes on
+WhatsApp, to the guardians on the family account (else the parent phone on the record), with three answers:
+**This Saturday · Next week · I need help**. Families answer with a tap, or by typing 1, 2 or 3.
+
+| They answer | What happens, with nobody at a desk |
+|---|---|
+| This Saturday / Next week | A follow-up is logged as theirs (*The family, on WhatsApp*) and the next follow-up is set for the day after. They are thanked and told what to bring. |
+| I need help | Logged as *needs help*, due tomorrow; the staff inbox and the child's helper are told to call. |
+| A photo or document | Kept on this site and put on the child's registration as *Sent by the family on WhatsApp*. The helper checks it and submits it against the right item — a photo never ticks anything by itself. |
+| STOP / START | No more WhatsApp reminders (email continues) / reminders again. |
+| Anything else | The Control Room inbox, as before. |
+
+Open a child under Members → Registration to see the WhatsApp conversation. **Buttons at any time:** WhatsApp
+allows free buttons only within 24 hours of the family's last message. To have tappable buttons on every reminder,
+get a Utility template approved in Kapso with the body *Next Generation Genius: {{1}}* and three quick-reply buttons
+(This Saturday · Next week · I need help), and put its name in **Reply-button template**. Without it, families
+reply 1, 2 or 3, which works the same.

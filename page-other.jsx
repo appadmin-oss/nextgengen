@@ -656,7 +656,7 @@ function JoinPage({ setPage }) {
   const [summer] = useState(() => {
     let q = "";
     try { q = (new URLSearchParams(window.location.search).get("program") || "").toLowerCase(); } catch (_) {}
-    return q === "summer" || (typeof window !== "undefined" && window.__nggProgram === "summer");
+    return q === "summer";   // the URL is the state: it survives a refresh and a shared link
   });
   return summer ? <SummerSignupForward setPage={setPage}/> : <ClubApplyPage setPage={setPage}/>;
 }
@@ -668,7 +668,15 @@ function SummerSignupForward({ setPage }) {
     setState({ s: "loading" });
     NGGApi.public.summerSignup(centre).then(r => {
       if (r && r.url) {
-        try { window.__nggProgram = null; history.replaceState({ page: "apply" }, "", r.url); } catch (_) {}
+        /* What the family pressed rides along: "Apply for this" on Piano at Ijaiye opened a form
+           that asked for the course again. The form takes each only where it offers it. */
+        let to = r.url;
+        try {
+          const q = new URLSearchParams(window.location.search), u = new URL(r.url, window.location.origin);
+          ["centre", "track"].forEach(k => { if (q.get(k)) u.searchParams.set(k, q.get(k)); });
+          to = u.pathname + u.search;
+        } catch (_) {}
+        try { history.replaceState({ page: "apply" }, "", to); } catch (_) {}
         setPage("apply");
       } else setState({ s: "none" });
     }, () => setState({ s: "error" }));
@@ -702,14 +710,85 @@ function SummerSignupForward({ setPage }) {
  */
 const NGG_VOL_DRAFT_KEY = "ngg_ngg_volunteer_draft_v1";
 const NGG_VOL_LANES = [
-  { key: "mentor",     icon: "🧭", name: "Mentor",          line: "Walk with a small circle of members through the year. Listen first." },
-  { key: "instructor", icon: "🎓", name: "Facilitator",     line: "Lead club sessions and activities — your skill, shared every week." },
-  { key: "admin",      icon: "🗂", name: "Operations",      line: "Records, events, media, parent liaison — what keeps a centre running." },
+  { key: "mentor",     icon: "ph-compass",        name: "Mentor",      line: "Walk with a small circle of members through the year. Listen first." },
+  { key: "instructor", icon: "ph-chalkboard-teacher", name: "Facilitator", line: "Lead club sessions and activities: your skill, shared every week." },
+  { key: "admin",      icon: "ph-folders",        name: "Operations",  line: "Records, events, media, parent liaison: what keeps a centre running." },
 ];
-const NGG_VOL_BLANK = { role: "", centre: "", area: "", activities: [], firstName: "", lastName: "", otherName: "", sex: "", dob: "", email: "", phone: "", photoUrl: "", why: "", availability: "", visibilityConsent: false };
+const VOL_SAFE_BLANK = { referees: [{ name: "", relation: "", contact: "" }, { name: "", relation: "", contact: "" }], declaration: false, guardian: { name: "", phone: "", email: "", consent: false } };
+const NGG_VOL_BLANK = { role: "", centre: "", area: "", activities: [], firstName: "", lastName: "", otherName: "", sex: "", dob: "", email: "", phone: "", photoUrl: "", why: "", availability: "", visibilityConsent: false, safe: VOL_SAFE_BLANK };
+const VOL_DECLARATION = "I have no criminal conviction, caution or pending case involving children or violence, and I have never been barred from working with children. I agree to NGG checking my referees and my identity before I work with members, and I will follow the safeguarding code.";
+
+/* The safeguarding part of every volunteer registration (both doors):
+   two referees, the declaration, and under 18 the guardian, who must agree.
+   The server checks the same (volunteer_apply_safeguarding). */
+function volSafeProblem(v, age) {
+  const r = (v && v.referees) || [];
+  if (r.filter(x => x.name.trim() && x.contact.trim()).length < 2) return "Give two referees who are not family, with a phone number or email for each.";
+  if (r[0].contact.trim().toLowerCase() === r[1].contact.trim().toLowerCase()) return "Your two referees need different contact details.";
+  if (age > 0 && age < 18) {
+    const g = v.guardian || {};
+    if (!g.name.trim() || g.phone.trim().length < 7) return "Under 18: give your parent or guardian’s name and phone number.";
+    if (!g.consent) return "Under 18: your parent or guardian must agree to you volunteering.";
+  }
+  if (!v.declaration) return "Read and agree to the safeguarding declaration.";
+  return "";
+}
+function volSafePayload(v, age) {
+  return { referees: v.referees.map(x => ({ name: x.name.trim(), relation: x.relation.trim(), contact: x.contact.trim() })), declaration: !!v.declaration,
+           guardian: age > 0 && age < 18 ? { name: v.guardian.name.trim(), phone: v.guardian.phone.trim(), email: v.guardian.email.trim(), consent: !!v.guardian.consent } : undefined };
+}
+const VOL_SAFE_ERRORS = {
+  referees_required: "Give two referees who are not family, with a phone number or email for each.",
+  referees_same: "Your two referees need different contact details.",
+  declaration_required: "Read and agree to the safeguarding declaration.",
+  guardian_required: "Under 18: give your parent or guardian’s name and phone number.",
+  guardian_consent_required: "Under 18: your parent or guardian must agree to you volunteering.",
+  bad_guardian_email: "Your guardian’s email doesn’t look right.",
+  centre_not_offered: "That centre does not run the NGG Club. Pick another.",
+};
+function VolSafeguardFields({ value, onChange, age }) {
+  const v = value || VOL_SAFE_BLANK;
+  const setRef = (i, k, x) => onChange(Object.assign({}, v, { referees: v.referees.map((r, j) => j === i ? Object.assign({}, r, { [k]: x }) : r) }));
+  const setG = (k, x) => onChange(Object.assign({}, v, { guardian: Object.assign({}, v.guardian, { [k]: x }) }));
+  const minor = age > 0 && age < 18;
+  return (
+    <div className="vsg">
+      <fieldset className="vsg-set">
+        <legend>Two referees</legend>
+        <p className="vsg-help">People who know you well and are not family: a teacher, an employer, a faith or community leader. We contact them before you work with members.</p>
+        {[0, 1].map(i => (
+          <div className="vsg-ref" key={i}>
+            <div className="field"><label htmlFor={"vsg-rn" + i}>Referee {i + 1}: full name</label><input id={"vsg-rn" + i} value={v.referees[i].name} onChange={e => setRef(i, "name", e.target.value)} autoComplete="off"/></div>
+            <div className="field"><label htmlFor={"vsg-rr" + i}>How they know you</label><input id={"vsg-rr" + i} value={v.referees[i].relation} onChange={e => setRef(i, "relation", e.target.value)} placeholder="e.g. My class teacher"/></div>
+            <div className="field"><label htmlFor={"vsg-rc" + i}>Phone or email</label><input id={"vsg-rc" + i} value={v.referees[i].contact} onChange={e => setRef(i, "contact", e.target.value)} autoComplete="off"/></div>
+          </div>
+        ))}
+      </fieldset>
+      {minor && (
+        <fieldset className="vsg-set">
+          <legend>Your parent or guardian</legend>
+          <p className="vsg-help">You are under 18, so a parent or guardian must agree. A coordinator will call them before you are approved.</p>
+          <div className="vsg-ref">
+            <div className="field"><label htmlFor="vsg-gn">Their full name</label><input id="vsg-gn" value={v.guardian.name} onChange={e => setG("name", e.target.value)}/></div>
+            <div className="field"><label htmlFor="vsg-gp">Their phone</label><input id="vsg-gp" type="tel" value={v.guardian.phone} onChange={e => setG("phone", e.target.value)}/></div>
+            <div className="field"><label htmlFor="vsg-ge">Their email · optional</label><input id="vsg-ge" type="email" value={v.guardian.email} onChange={e => setG("email", e.target.value)}/></div>
+          </div>
+          <label className="vsg-check"><input type="checkbox" checked={!!v.guardian.consent} onChange={e => setG("consent", e.target.checked)}/>
+            <span>My parent or guardian knows I am registering and agrees to me volunteering with NGG.</span></label>
+        </fieldset>
+      )}
+      <fieldset className="vsg-set">
+        <legend>Safeguarding declaration</legend>
+        <label className="vsg-check"><input type="checkbox" checked={!!v.declaration} onChange={e => onChange(Object.assign({}, v, { declaration: e.target.checked }))}/>
+          <span>{VOL_DECLARATION}</span></label>
+      </fieldset>
+    </div>
+  );
+}
 
 function NggVolunteerPage({ setPage }) {
-  const steps = ["You", "Serve", "Story", "Review"];
+  const steps = ["You", "Serve", "Story", "Safeguarding", "Review"];
+  const last = steps.length - 1;
   const [step, setStep] = useState(0);
   const [ctx, setCtx] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -726,7 +805,7 @@ function NggVolunteerPage({ setPage }) {
     } catch (_) {}
     try {
       const saved = JSON.parse(localStorage.getItem(NGG_VOL_DRAFT_KEY) || "null");
-      if (saved && typeof saved === "object") return Object.assign({}, NGG_VOL_BLANK, seed, saved);
+      if (saved && typeof saved === "object") return Object.assign({}, NGG_VOL_BLANK, seed, saved, { safe: Object.assign({}, VOL_SAFE_BLANK, saved.safe || {}) });
     } catch (_) {}
     return Object.assign({}, NGG_VOL_BLANK, seed);
   });
@@ -737,7 +816,7 @@ function NggVolunteerPage({ setPage }) {
     } catch (_) {}
     NGGApi.public.volunteer.context().then(setCtx).catch(() => setCtx({ ok: false }));
   }, []);
-  // Save as you go — everything but the busy/done state.
+  // Save as you go, everything but the busy/done state.
   React.useEffect(() => { if (!done) { try { localStorage.setItem(NGG_VOL_DRAFT_KEY, JSON.stringify(d)); } catch (_) {} } }, [d, done]);
 
   const set = (k, v) => { setD(o => ({ ...o, [k]: v })); if (err) setErr(""); };
@@ -746,7 +825,8 @@ function NggVolunteerPage({ setPage }) {
   const activityOpts = d.area && catalogue[d.area] ? catalogue[d.area] : [];
   const chooseArea = (a) => setD(o => ({ ...o, area: a, activities: o.activities.filter(x => (catalogue[a] || []).includes(x)) }));
   const toggleActivity = (a) => setD(o => ({ ...o, activities: o.activities.includes(a) ? o.activities.filter(x => x !== a) : [...o.activities, a] }));
-  const centres = (ctx && ctx.centres) || [];
+  // Only the centres that run the Club: this door files an NGG volunteer.
+  const centres = ((ctx && ctx.centres) || []).filter(c => !(ctx && ctx.nggCentres) || ctx.nggCentres.includes(c.name));
   const age = d.dob ? dobToAge(d.dob) : 0;
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim());
   const closed = ctx && ctx.nggOpen === false;
@@ -757,19 +837,21 @@ function NggVolunteerPage({ setPage }) {
       if (!d.firstName.trim()) return "Enter your first name.";
       if (!d.lastName.trim()) return "Enter your last name.";
       if (!d.dob) return "Enter your date of birth.";
-      if (age < 16 || age > 100) return "NGG volunteers must be 16 or older.";
+      if (age < 16) return "NGG volunteers must be 16 or older.";
+      if (age > 100) return "Check the date of birth: that is over 100 years ago.";
       if (!d.sex) return "Select your sex.";
       if (!emailOk) return "Enter a valid email address.";
       if (d.phone.trim().length < 7) return "Add a phone number we can reach you on.";
-      if (!d.photoUrl) return "Add a headshot — it goes on your volunteer ID.";
+      if (!d.photoUrl) return "Add a headshot. It goes on your volunteer ID.";
     }
     if (s === 1) {
-      if (!d.role) return "Pick how you'd like to serve.";
+      if (!d.role) return "Pick how you’d like to serve.";
       if (!d.centre) return "Choose your home centre.";
       if (!d.area) return "Choose an area.";
       if (!d.activities.length) return "Pick at least one activity.";
     }
-    if (s === 2 && d.why.trim().length < 10) return "Tell us a little about why — a couple of sentences is plenty.";
+    if (s === 2 && d.why.trim().length < 10) return "Tell us a little about why. A couple of sentences is plenty.";
+    if (s === 3) return volSafeProblem(d.safe, age);
     return "";
   }
   function goToStep(i) { if (i < step) { setErr(""); setStep(i); } }
@@ -778,74 +860,55 @@ function NggVolunteerPage({ setPage }) {
     const p = problem(step);
     if (p) { setErr(p); return; }
     setErr("");
-    if (step < 3) { setStep(step + 1); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+    if (step < last) { setStep(step + 1); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
     setBusy(true);
     try {
       const why = d.why.trim() + (d.availability ? "\n\nAvailability: " + d.availability : "");
-      const r = await sendIntake("public.apply", {
+      const r = await sendIntake("public.apply", Object.assign({
         kind: "volunteer", program: "anchor", role: d.role,
         firstName: d.firstName.trim(), lastName: d.lastName.trim(), otherName: d.otherName.trim(),
         sex: d.sex, dob: d.dob, email: d.email.trim(), phone: d.phone.trim(),
         centre: d.centre, faculty: d.area, courses: d.activities,
         why, photoUrl: d.photoUrl || "", visibilityConsent: !!d.visibilityConsent,
-      }, "ngg_apply_ngg_volunteer");
+      }, volSafePayload(d.safe, age)), "ngg_apply_ngg_volunteer");
       try { localStorage.removeItem(NGG_VOL_DRAFT_KEY); } catch (_) {}
       setDone({ ref: (r && r.ref) || "", whatsapp: (r && r.whatsapp) || "" });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       const code = e.code || e.message;
-      const text = {
-        rate_limited: "Too many submissions from this connection — wait a few minutes and try again.",
+      const text = Object.assign({
+        rate_limited: "Too many submissions from this connection. Wait a few minutes and try again.",
         applications_closed: "NGG volunteer registration is paused right now. Check back soon.",
         centre_required: "Choose your home centre.",
-        invalid_centre: "That centre isn't active — pick one from the list.",
+        invalid_centre: "That centre isn’t active. Pick one from the list.",
         area_required: "Choose an area.",
-        invalid_area: "That area isn't offered any more — pick one from the list.",
+        invalid_area: "That area isn’t offered any more. Pick one from the list.",
         activity_required: "Pick at least one activity.",
         phone_required: "A phone number is required.",
-        photo_required: "A headshot is required — add a photo and try again.",
-        bad_email: "That email doesn't look right.",
+        photo_required: "A headshot is required. Add a photo and try again.",
+        bad_email: "That email doesn’t look right.",
         bad_dob: "Enter a valid date of birth.",
         dob_too_young: "NGG volunteers must be at least 16 years old.",
         bad_sex: "Select your sex.",
         bad_firstName: "Enter your first name.",
         bad_lastName: "Enter your last name.",
-        upstream_unreachable: "We couldn't reach the server. Your draft is saved — try again in a moment.",
-      }[code] || "Couldn't submit. Your draft is saved — try again.";
+        upstream_unreachable: "We couldn’t reach the server. Your draft is saved. Try again in a moment.",
+      }, VOL_SAFE_ERRORS)[code] || "Couldn’t submit. Your draft is saved. Try again.";
       setErr(text);
       if (typeof toast !== "undefined") toast.error(text, "NGG volunteer");
     } finally { setBusy(false); }
   }
 
-  const choice = (on) => ({
-    padding: 18, borderRadius: 14, textAlign: "left", cursor: "pointer", fontFamily: "inherit",
-    background: on ? "var(--navy-900)" : "white", color: on ? "white" : "var(--ink-900)",
-    border: on ? "2px solid var(--gold-500)" : "1px solid rgba(12,20,50,0.12)",
-  });
-  const pill = (on) => ({
-    padding: "9px 14px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 600,
-    background: on ? "var(--navy-900)" : "white", color: on ? "white" : "var(--ink-900)",
-    border: on ? "1.5px solid var(--gold-500)" : "1px solid rgba(12,20,50,0.14)",
-  });
-  const h2 = { fontFamily: "var(--font-display)", fontSize: 32, margin: 0, letterSpacing: "-0.02em" };
-
   return (
-    <div className="page ngv-join" data-screen-label="NGG volunteer · join">
-      <style>{".ngv-join .nv-card{padding:48px}.ngv-join .nv-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.ngv-join .nv-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.ngv-join .nv-sum{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}@media(max-width:700px){.ngv-join .nv-2,.ngv-join .nv-3,.ngv-join .nv-sum{grid-template-columns:1fr}.ngv-join .nv-card{padding:24px}.ngv-join .nv-step-label{display:none}}"}</style>
-      <section className="page-hero page-hero-light" style={{ background: "var(--paper)", padding: "56px 0 88px", minHeight: "calc(100vh - 71px)" }}>
-        <div className="container" style={{ maxWidth: 980 }}>
-          <div style={{ textAlign: "center", marginBottom: 40 }}>
-            <span className="eyebrow" style={{ color: "var(--gold-500)" }}>VOLUNTEER · NEXT GENERATION GENIUS · ALL YEAR</span>
-            <h1 className="display" style={{ fontSize: "clamp(44px, 6vw, 84px)", margin: "10px 0 0" }}>
-              Serve the <em style={{ fontStyle: "normal", color: "var(--coral)" }}>movement.</em>
-            </h1>
-            <p style={{ fontSize: 17, color: "var(--ink-500)", maxWidth: 560, margin: "16px auto 0", lineHeight: 1.5 }}>
-              NGG runs all year — clubs, mentoring, events, media. Four short steps; we save as you go.
-            </p>
-            <p style={{ fontSize: 14, color: "var(--ink-500)", margin: "10px auto 0" }}>
-              Here for the Summer School only? <a href="/volunteer" onClick={(e) => { e.preventDefault(); setPage("volunteer"); }} style={{ color: "var(--navy-900)", fontWeight: 600, display: "inline-flex", alignItems: "center", minHeight: 44 }}>Summer volunteering is seasonal — register there →</a>
-            </p>
-          </div>
+    <div className="page nvj" data-screen-label="NGG volunteer · join">
+      <section className="page-hero page-hero-light nvj-hero">
+        <div className="container nvj-wrap">
+          <header className="nvj-head">
+            <span className="eyebrow nvj-eyebrow">Volunteer · Next Generation Genius · all year</span>
+            <h1 className="display nvj-title">Serve the <em>movement.</em></h1>
+            <p className="nvj-lede">NGG runs all year: clubs, mentoring, events, media. Five short steps; we save as you go.</p>
+            <p className="nvj-aside">Here for the Summer School only? <a href="/volunteer" onClick={(e) => { e.preventDefault(); setPage("volunteer"); }}>Summer volunteering is seasonal. Register there →</a></p>
+          </header>
 
           {done ? (
             <ApplySuccessCard
@@ -853,94 +916,81 @@ function NggVolunteerPage({ setPage }) {
               refCode={done.ref}
               whatsapp={done.whatsapp}
               centreName={d.centre}
-              footNote={"We've emailed a copy to " + (d.email.trim() || "you") + "."}
-              actions={[{ label: "Back to home", onClick: () => setPage("home"), primary: true }]}
+              footNote={"We’ve emailed a copy to " + (d.email.trim() || "you") + ". You can check where it stands at any time with this reference on the contact page."}
+              actions={[{ label: "Check its status", onClick: () => setPage("contact") }, { label: "Back to home", onClick: () => setPage("home"), primary: true }]}
             />
           ) : closed ? (
-            <div className="card nv-card" style={{ textAlign: "center" }}>
-              <h2 style={h2}>Registration is paused.</h2>
-              <p style={{ color: "var(--ink-500)", margin: "10px 0 0" }}>We're placing the volunteers we have. Check back soon, or write to us from the contact page.</p>
+            <div className="card nvj-card nvj-closed">
+              <h2 className="nvj-h2">Registration is paused.</h2>
+              <p className="nvj-muted">We’re placing the volunteers we have. Check back soon, or write to us from the contact page.</p>
             </div>
           ) : (
           <React.Fragment>
           {restored && (
-            <div role="status" style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", marginBottom: 20, padding: "12px 16px", borderRadius: 12, background: "rgba(245,176,38,0.14)", border: "1px solid rgba(245,176,38,0.4)", fontSize: 14, color: "var(--ink-900)" }}>
-              <span>↩︎ We saved your progress — pick up where you left off.</span>
-              <button type="button" onClick={() => { try { localStorage.removeItem(NGG_VOL_DRAFT_KEY); } catch (_) {} setD({ ...NGG_VOL_BLANK }); setStep(0); setRestored(false); }} className="mono" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-500)", fontWeight: 600 }}>Start fresh</button>
+            <div role="status" className="nvj-restored">
+              <span>We saved your progress. Pick up where you left off.</span>
+              <button type="button" className="nvj-link" onClick={() => { try { localStorage.removeItem(NGG_VOL_DRAFT_KEY); } catch (_) {} setD({ ...NGG_VOL_BLANK }); setStep(0); setRestored(false); }}>Start fresh</button>
             </div>
           )}
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32, padding: "0 12px" }}>
+          <ol className="nvj-steps">
             {steps.map((s, i) => {
               const isDone = i < step;
               return (
-                <React.Fragment key={s}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flex: "0 0 auto" }}>
-                    <button type="button" onClick={() => goToStep(i)} disabled={!isDone}
-                      aria-label={isDone ? ("Go back to step " + (i + 1) + ": " + s) : ("Step " + (i + 1) + ": " + s + (i === step ? " (current)" : ""))}
-                      aria-current={i === step ? "step" : undefined}
-                      style={{
-                        width: 44, height: 44, borderRadius: "50%", padding: 0,
-                        background: isDone ? "var(--navy-900)" : i === step ? "var(--gold-500)" : "var(--cream-100)",
-                        color: i <= step ? (i === step ? "var(--navy-900)" : "white") : "var(--ink-400)",
-                        display: "grid", placeItems: "center", fontWeight: 700, fontFamily: "var(--font-display)", fontSize: 18,
-                        border: i === step ? "2px solid var(--navy-900)" : "none", cursor: isDone ? "pointer" : "default",
-                      }}>{isDone ? "✓" : i + 1}</button>
-                    <div className="mono nv-step-label" style={{ fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: i === step ? 700 : 400, color: i === step ? "var(--navy-900)" : "var(--ink-500)" }}>{s}</div>
-                  </div>
-                  {i < steps.length - 1 && <div style={{ flex: 1, height: 2, background: i < step ? "var(--navy-900)" : "var(--cream-200)", margin: "-22px 12px 0" }}/>}
-                </React.Fragment>
+                <li key={s} className={"nvj-step" + (isDone ? " is-done" : "") + (i === step ? " is-on" : "")}>
+                  <button type="button" onClick={() => goToStep(i)} disabled={!isDone} className="nvj-dot"
+                    aria-label={isDone ? ("Go back to step " + (i + 1) + ": " + s) : ("Step " + (i + 1) + ": " + s + (i === step ? " (current)" : ""))}
+                    aria-current={i === step ? "step" : undefined}>{isDone ? <i className="ph ph-check" aria-hidden="true"/> : i + 1}</button>
+                  <span className="nvj-step-l">{s}</span>
+                </li>
               );
             })}
-          </div>
+          </ol>
 
-          <div className="card nv-card" style={{ minHeight: 380 }}>
+          <div className="card nvj-card">
             {step === 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                <h2 style={h2}>Who's volunteering?</h2>
-                <p style={{ color: "var(--ink-500)", margin: 0 }}>Your legal names, as they'll appear on your NGG volunteer ID.</p>
-                <div className="nv-2" style={{ marginTop: 14 }}>
-                  <div className="field"><label>First name</label><input value={d.firstName} onChange={e => set("firstName", e.target.value)} autoComplete="given-name" placeholder="e.g. Tolu"/></div>
-                  <div className="field"><label>Last name</label><input value={d.lastName} onChange={e => set("lastName", e.target.value)} autoComplete="family-name" placeholder="e.g. Adebayo"/></div>
-                  <div className="field"><label>Other name · optional</label><input value={d.otherName} onChange={e => set("otherName", e.target.value)} autoComplete="additional-name" placeholder="Middle name(s)"/></div>
-                  <div className="field"><label>Date of birth</label><input type="date" value={d.dob} max={new Date().toISOString().slice(0, 10)} onChange={e => set("dob", e.target.value)} autoComplete="bday"/></div>
-                  <div className="field"><label>Sex</label>
-                    <select value={d.sex} onChange={e => set("sex", e.target.value)}>
+              <div className="nvj-stack">
+                <h2 className="nvj-h2">Who’s volunteering?</h2>
+                <p className="nvj-muted">Your legal names, as they’ll appear on your NGG volunteer ID.</p>
+                <div className="nvj-grid2">
+                  <div className="field"><label htmlFor="nvj-fn">First name</label><input id="nvj-fn" value={d.firstName} onChange={e => set("firstName", e.target.value)} autoComplete="given-name" placeholder="e.g. Tolu"/></div>
+                  <div className="field"><label htmlFor="nvj-ln">Last name</label><input id="nvj-ln" value={d.lastName} onChange={e => set("lastName", e.target.value)} autoComplete="family-name" placeholder="e.g. Adebayo"/></div>
+                  <div className="field"><label htmlFor="nvj-on">Other name · optional</label><input id="nvj-on" value={d.otherName} onChange={e => set("otherName", e.target.value)} autoComplete="additional-name" placeholder="Middle name(s)"/></div>
+                  <div className="field"><label htmlFor="nvj-dob">Date of birth</label><input id="nvj-dob" type="date" value={d.dob} max={new Date().toISOString().slice(0, 10)} onChange={e => set("dob", e.target.value)} autoComplete="bday"/></div>
+                  <div className="field"><label htmlFor="nvj-sex">Sex</label>
+                    <select id="nvj-sex" value={d.sex} onChange={e => set("sex", e.target.value)}>
                       <option value="" disabled>Select…</option><option value="Male">Male</option><option value="Female">Female</option>
                     </select>
                   </div>
-                  <div className="field"><label>Phone</label><input type="tel" value={d.phone} onChange={e => set("phone", e.target.value)} autoComplete="tel" placeholder="0803 000 0000"/></div>
-                  <div className="field" style={{ gridColumn: "1 / -1" }}><label>Email</label><input type="email" value={d.email} onChange={e => set("email", e.target.value)} autoComplete="email" placeholder="you@example.com"/></div>
+                  <div className="field"><label htmlFor="nvj-ph">Phone</label><input id="nvj-ph" type="tel" value={d.phone} onChange={e => set("phone", e.target.value)} autoComplete="tel" placeholder="0803 000 0000"/></div>
+                  <div className="field nvj-span"><label htmlFor="nvj-em">Email</label><input id="nvj-em" type="email" value={d.email} onChange={e => set("email", e.target.value)} autoComplete="email" placeholder="you@example.com"/></div>
                 </div>
-                <div style={{ marginTop: 6 }}>
-                  <PhotoCapture value={d.photoUrl} onChange={(url) => set("photoUrl", url)} size={64} label="A friendly headshot (required)"/>
-                </div>
+                {age > 0 && age < 18 && <p className="nvj-note" role="status">You are under 18: we will ask for a parent or guardian, who must agree, at the safeguarding step.</p>}
+                <PhotoCapture value={d.photoUrl} onChange={(url) => set("photoUrl", url)} size={64} label="A friendly headshot (required)"/>
               </div>
             )}
             {step === 1 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                <div>
-                  <h2 style={h2}>How will you serve?</h2>
-                  <p style={{ color: "var(--ink-500)", margin: "8px 0 0" }}>Pick a role, your home centre, and the activities you'd give your time to.</p>
-                </div>
-                <div className="nv-3">
+              <div className="nvj-stack">
+                <h2 className="nvj-h2">How will you serve?</h2>
+                <p className="nvj-muted">Pick a role, your home centre, and the activities you’d give your time to.</p>
+                <div className="nvj-grid3">
                   {NGG_VOL_LANES.map(l => (
-                    <button type="button" key={l.key} onClick={() => set("role", l.key)} style={choice(d.role === l.key)} aria-pressed={d.role === l.key}>
-                      <div style={{ fontSize: 28, marginBottom: 8 }}>{l.icon}</div>
-                      <div style={{ fontWeight: 700 }}>{l.name}</div>
-                      <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4, lineHeight: 1.35 }}>{l.line}</div>
+                    <button type="button" key={l.key} onClick={() => set("role", l.key)} className={"nvj-choice" + (d.role === l.key ? " is-on" : "")} aria-pressed={d.role === l.key}>
+                      <i className={"ph " + l.icon + " nvj-choice-i"} aria-hidden="true"/>
+                      <span className="nvj-choice-n">{l.name}</span>
+                      <span className="nvj-choice-l">{l.line}</span>
                     </button>
                   ))}
                 </div>
-                <div className="nv-2">
-                  <div className="field"><label>Home centre</label>
-                    <select value={d.centre} onChange={e => set("centre", e.target.value)}>
+                <div className="nvj-grid2">
+                  <div className="field"><label htmlFor="nvj-ce">Home centre</label>
+                    <select id="nvj-ce" value={d.centre} onChange={e => set("centre", e.target.value)}>
                       <option value="">{ctx ? "Select a centre…" : "Loading centres…"}</option>
                       {centres.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
                     </select>
                   </div>
-                  <div className="field"><label>Area</label>
-                    <select value={d.area} onChange={e => chooseArea(e.target.value)}>
+                  <div className="field"><label htmlFor="nvj-ar">Area</label>
+                    <select id="nvj-ar" value={d.area} onChange={e => chooseArea(e.target.value)}>
                       <option value="">{ctx ? "Select an area…" : "Loading…"}</option>
                       {areas.map(a => <option key={a} value={a}>{a}</option>)}
                     </select>
@@ -948,58 +998,63 @@ function NggVolunteerPage({ setPage }) {
                 </div>
                 {d.area && (
                   <div>
-                    <div className="mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-500)", marginBottom: 10 }}>Activities in {d.area} · pick any</div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {activityOpts.map(a => <button type="button" key={a} onClick={() => toggleActivity(a)} style={pill(d.activities.includes(a))} aria-pressed={d.activities.includes(a)}>{d.activities.includes(a) ? "✓ " : ""}{a}</button>)}
+                    <div className="nvj-sub">Activities in {d.area} · pick any</div>
+                    <div className="nvj-pills">
+                      {activityOpts.map(a => <button type="button" key={a} onClick={() => toggleActivity(a)} className={"nvj-pill" + (d.activities.includes(a) ? " is-on" : "")} aria-pressed={d.activities.includes(a)}>{a}</button>)}
                     </div>
                   </div>
                 )}
               </div>
             )}
             {step === 2 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                <h2 style={h2}>Tell us one thing.</h2>
-                <p style={{ color: "var(--ink-500)", margin: 0 }}>Why NGG, and what would you like a member to walk away with after a year alongside you?</p>
-                <div className="field"><label>Your answer</label>
-                  <textarea rows={6} value={d.why} onChange={e => set("why", e.target.value)} placeholder="A short answer is fine. Be honest, not impressive."/>
+              <div className="nvj-stack">
+                <h2 className="nvj-h2">Tell us one thing.</h2>
+                <p className="nvj-muted">Why NGG, and what would you like a member to walk away with after a year alongside you?</p>
+                <div className="field"><label htmlFor="nvj-why">Your answer</label>
+                  <textarea id="nvj-why" rows={6} value={d.why} onChange={e => set("why", e.target.value)} placeholder="A short answer is fine. Be honest, not impressive."/>
                 </div>
-                <div className="field"><label>When can you usually serve? · optional</label>
-                  <select value={d.availability} onChange={e => set("availability", e.target.value)}>
+                <div className="field"><label htmlFor="nvj-av">When can you usually serve? · optional</label>
+                  <select id="nvj-av" value={d.availability} onChange={e => set("availability", e.target.value)}>
                     <option value="">Select…</option>
                     <option>Saturdays</option><option>Weekday evenings</option><option>Weekends</option><option>Flexible / as needed</option><option>Remote only</option>
                   </select>
                 </div>
-                <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 14, color: "var(--ink-700)" }}>
-                  <input type="checkbox" checked={!!d.visibilityConsent} onChange={e => set("visibilityConsent", e.target.checked)} style={{ marginTop: 3 }}/>
-                  <span>You may feature my photo and first name on the NGG site. (Optional.)</span>
-                </label>
+                <label className="vsg-check"><input type="checkbox" checked={!!d.visibilityConsent} onChange={e => set("visibilityConsent", e.target.checked)}/>
+                  <span>You may feature my photo and first name on the NGG site. (Optional.)</span></label>
               </div>
             )}
             {step === 3 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                <h2 style={h2}>Check and send.</h2>
-                <p style={{ color: "var(--ink-500)", margin: 0 }}>A coordinator reads every registration and writes back within a week. Anyone working with young people is safeguarding-screened before their first session.</p>
-                <div className="card" style={{ padding: 18, background: "var(--cream-50)", border: "1px solid var(--cream-200)" }}>
-                  <div className="eyebrow" style={{ color: "var(--ink-500)" }}>NGG VOLUNTEER · SUMMARY</div>
-                  <div className="nv-sum" style={{ marginTop: 12, fontSize: 14 }}>
-                    <div><b>Name</b><br/>{[d.firstName, d.otherName, d.lastName].filter(Boolean).join(" ") || "—"}</div>
-                    <div><b>Contact</b><br/>{d.email || "—"}{d.phone ? " · " + d.phone : ""}</div>
-                    <div><b>Role</b><br/>{lane ? lane.name : "—"}</div>
-                    <div><b>Centre</b><br/>{d.centre || "—"}</div>
-                    <div style={{ gridColumn: "1 / -1" }}><b>{d.area || "Activities"}</b><br/>{d.activities.join(", ") || "—"}</div>
-                    {d.availability && <div><b>Availability</b><br/>{d.availability}</div>}
-                  </div>
+              <div className="nvj-stack">
+                <h2 className="nvj-h2">Keeping members safe.</h2>
+                <p className="nvj-muted">Everyone who works with young people is screened before their first session. These come first.</p>
+                <VolSafeguardFields value={d.safe} onChange={v => set("safe", v)} age={age}/>
+              </div>
+            )}
+            {step === 4 && (
+              <div className="nvj-stack">
+                <h2 className="nvj-h2">Check and send.</h2>
+                <p className="nvj-muted">A coordinator reads every registration and writes back within a week. You work with members only once your referees and screening have cleared.</p>
+                <div className="nvj-summary">
+                  <div className="nvj-sub">NGG volunteer · summary</div>
+                  <dl className="nvj-sum">
+                    <div><dt>Name</dt><dd>{[d.firstName, d.otherName, d.lastName].filter(Boolean).join(" ") || "—"}</dd></div>
+                    <div><dt>Contact</dt><dd>{d.email || "—"}{d.phone ? " · " + d.phone : ""}</dd></div>
+                    <div><dt>Role</dt><dd>{lane ? lane.name : "—"}</dd></div>
+                    <div><dt>Centre</dt><dd>{d.centre || "—"}</dd></div>
+                    <div className="nvj-span"><dt>{d.area || "Activities"}</dt><dd>{d.activities.join(", ") || "—"}</dd></div>
+                    {d.availability && <div><dt>Availability</dt><dd>{d.availability}</dd></div>}
+                    <div className="nvj-span"><dt>Referees</dt><dd>{d.safe.referees.map(r => r.name).filter(Boolean).join(", ") || "—"}</dd></div>
+                    {age > 0 && age < 18 && <div className="nvj-span"><dt>Guardian</dt><dd>{d.safe.guardian.name || "—"}</dd></div>}
+                  </dl>
                 </div>
               </div>
             )}
           </div>
 
-          {err && (
-            <div role="alert" style={{ marginTop: 18, padding: "12px 16px", borderRadius: 12, background: "rgba(255,90,60,0.1)", border: "1px solid rgba(255,90,60,0.3)", color: "#a3331c", fontSize: 14, fontWeight: 500 }}>{err}</div>
-          )}
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24, gap: 12 }}>
-            <button className="btn btn-ghost" onClick={back} disabled={step === 0 || busy} style={{ visibility: step === 0 ? "hidden" : "visible" }}>← Back</button>
-            <button className="btn btn-primary btn-lg" onClick={next} disabled={busy}>{busy ? "Submitting…" : step === 3 ? "Register as an NGG volunteer →" : step === 2 ? "Check my answers →" : "Next: " + steps[step + 1] + " →"}</button>
+          {err && <div role="alert" className="nvj-err">{err}</div>}
+          <div className="nvj-nav">
+            <button type="button" className={"btn btn-ghost" + (step === 0 ? " nvj-hidden" : "")} onClick={back} disabled={step === 0 || busy}>← Back</button>
+            <button type="button" className="btn btn-primary btn-lg" onClick={next} disabled={busy}>{busy ? "Submitting…" : step === last ? "Register as an NGG volunteer →" : "Continue →"}</button>
           </div>
           </React.Fragment>
           )}
@@ -1279,7 +1334,7 @@ function MentorsPage({ setPage }) {
                     <div key={m.mentorId} className="card reveal" data-reveal style={{ padding: 22, display: "flex", flexDirection: "column", gap: 12, "--reveal-delay": (i * 40) + "ms" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         {m.photoUrl
-                          ? <img src={m.photoUrl} alt="" style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/>
+                          ? <img src={nggImg(m.photoUrl, "face")} alt="" style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/>
                           : <Avatar name={m.fullName} seed={m.mentorId} size={56}/>}
                         <div>
                           <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18 }}>{m.fullName}</div>
@@ -1376,7 +1431,7 @@ function MemberCardView({ m, token, auth }) {
               <span className={"mcv-state" + (m.active ? " is-ok" : " is-bad")} role="status">{m.active ? "✓ Active member" : "Not an active member"}</span>
             </div>
             <div className="mcv-body">
-              <div className="mcv-photo">{m.photoUrl ? <img src={m.photoUrl} alt="" onError={e => { e.target.style.display = "none"; }}/> : <span aria-hidden="true">{ini}</span>}</div>
+              <div className="mcv-photo">{m.photoUrl ? <img src={nggImg(m.photoUrl, "headshot")} alt="" onError={e => { e.target.style.display = "none"; }}/> : <span aria-hidden="true">{ini}</span>}</div>
               <div className="mcv-who">
                 <h1>{name}</h1>
                 {m.displayId && <div className="mcv-id">{m.displayId}</div>}
@@ -1440,7 +1495,10 @@ function MembershipPayPage({ setPage }) {
     try { const r = await NGGApi.public.membershipPay(token); if (!nggPaystackUrlOk(r.authorizationUrl)) throw new Error("bad_checkout"); window.location.assign(r.authorizationUrl); }
     catch (e) {
       setBusy(false);
-      setErr({ already_paid: "This invoice is already paid.", offline_pending: "A payment you made by transfer or cash is being checked by the centre. Please don’t pay again.", payments_unavailable: "Online payment isn’t available right now — pay by transfer to the account below.", init_failed: "Paystack didn’t respond. Try again in a moment." }[e.code] || "Couldn’t start the payment. Try again.");
+      /* The amount owed changed since this link was made (paid at the desk, a
+         waiver): the old invoice is withdrawn and the server names the new one. */
+      if (e.code === "balance_changed" && /^\/pay\/[A-Za-z0-9_-]+$/.test(e.detail || "")) { setErr("The amount owed has changed since this link was made. Taking you to today’s amount…"); setTimeout(() => window.location.assign(e.detail), 1600); return; }
+      setErr({ nothing_to_pay: "Nothing is owed on this account any more, so there is nothing to pay. Thank you.", balance_changed: "The amount owed has changed since this link was made. Ask the centre for a new link.", already_paid: "This invoice is already paid.", offline_pending: "A payment you made by transfer or cash is being checked by the centre. Please don’t pay again.", payments_unavailable: "Online payment isn’t available right now — pay by transfer to the account below.", init_failed: "Paystack didn’t respond. Try again in a moment." }[e.code] || "Couldn’t start the payment. Try again.");
       if (e.code === "already_paid" || e.code === "offline_pending") load();
     }
   };
@@ -1468,13 +1526,21 @@ function MembershipPayPage({ setPage }) {
               <tbody>
                 {inv.items.map((it, i) => <tr key={i}><td><b>{it.label}</b>{it.detail ? <span>{it.detail}</span> : null}</td><td>{money(it.amount)}</td></tr>)}
               </tbody>
-              <tfoot><tr><td>{inv.status === "paid" ? "Total paid" : "Total to pay"}</td><td>{money(inv.total)}</td></tr></tfoot>
+              <tfoot>
+                {inv.status === "paid" && inv.onlineFee > 0 && <tr className="mpay-charge"><td><b>Payment processing fee</b><span>Charged by our payment provider</span></td><td>{money(inv.onlineFee)}</td></tr>}
+                <tr><td>{inv.status === "paid" ? "Total paid" : "Total to pay"}</td><td>{money(inv.total + (inv.status === "paid" ? (inv.onlineFee || 0) : 0))}</td></tr>
+              </tfoot>
             </table>
+            {inv.invoiceUrl && inv.status !== "paid" && <p className="mpay-print"><a href={inv.invoiceUrl} target="_blank" rel="noopener noreferrer">Print or save this invoice</a></p>}
             {err && <div className="mpay-err" role="alert">{err}</div>}
             {inv.status === "paid" ? (
               <div className="mpay-done">
                 <p>Paid {inv.paidAt ? new Date(inv.paidAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : ""}. Receipt <b>{inv.receiptNo}</b> has been emailed to you.</p>
                 <a className="btn btn-primary" href={inv.receiptUrl} target="_blank" rel="noopener noreferrer">View and print the receipt</a>
+                {/* Drawn on the server (domain/receipt-draw.php): files a phone keeps or shares, with nothing to render. */}
+                <a className="btn btn-ghost" href={inv.receiptUrl + (inv.receiptUrl.indexOf("?") >= 0 ? "&" : "?") + "as=pdf"} download>Download PDF</a>
+                <a className="btn btn-ghost" href={inv.receiptUrl + (inv.receiptUrl.indexOf("?") >= 0 ? "&" : "?") + "as=png"} download>Download image</a>
+                {inv.invoiceUrl && <a className="btn btn-ghost" href={inv.invoiceUrl} target="_blank" rel="noopener noreferrer">View the invoice</a>}
               </div>
             ) : inv.status === "void" ? (
               <div className="mpay-msg"><p>{inv.purpose === "balance" || inv.purpose === "advance" ? "This amount is out of date because the account changed. Open the account again and press Pay online for the current figure." : "This invoice was cancelled. Contact your centre if you think that is a mistake."}</p></div>
@@ -1482,11 +1548,14 @@ function MembershipPayPage({ setPage }) {
               <div className="mpay-note" role="status"><b>Your {String(inv.pendingOffline.method || "offline").toLowerCase()} payment is being checked.</b> The centre records it and a second member of staff confirms it against the bank statement; your receipt is emailed as soon as that is done. Please don’t pay again.</div>
             ) : (
               <div className="mpay-actions">
-                {inv.paystack && <button className="btn btn-primary btn-lg mpay-pay" onClick={pay} disabled={busy}>{busy ? "Opening Paystack…" : "Pay " + money(inv.total) + " securely"}</button>}
-                {inv.paystack && <p className="mpay-fine">Card, bank transfer or USSD through Paystack. We never see card details.</p>}
+                {inv.paystack && <button className="btn btn-primary btn-lg mpay-pay" onClick={pay} disabled={busy}>{busy ? "Opening Paystack…" : "Pay " + money(inv.total + (inv.onlineFee || 0)) + " online"}</button>}
+                {/* The charge is said before the press, with the free way beside it — never found on a card statement. */}
+                {inv.paystack && (inv.onlineFee > 0
+                  ? <p className="mpay-fine">{money(inv.total)} plus Paystack’s {money(inv.onlineFee)} charge for paying online by card, bank transfer or USSD.{inv.bank ? " Paying by bank transfer to the account below has no charge." : ""} We never see card details.</p>
+                  : <p className="mpay-fine">Card, bank transfer or USSD through Paystack. We never see card details.</p>)}
                 {inv.bank && (
                   <div className="mpay-bank">
-                    <b>{inv.paystack ? "Or pay by bank transfer" : "Pay by bank transfer"}</b>
+                    <b>{inv.paystack ? "Or pay by bank transfer" + (inv.onlineFee > 0 ? " — " + money(inv.total) + ", no charge" : "") : "Pay by bank transfer"}</b>
                     <dl><div><dt>Bank</dt><dd>{inv.bank.bankName}</dd></div><div><dt>Account number</dt><dd className="mpay-mono">{inv.bank.accountNumber}</dd></div><div><dt>Account name</dt><dd>{inv.bank.accountName}</dd></div><div><dt>Narration</dt><dd className="mpay-mono">{inv.invoiceId}</dd></div></dl>
                     <p>Keep your slip or alert and show it at the centre. Once a member of staff has checked it, your receipt is emailed to you.</p>
                   </div>
@@ -1495,6 +1564,7 @@ function MembershipPayPage({ setPage }) {
               </div>
             )}
             {inv.purpose === "advance" && <p className="mpay-fine">Nothing is charged early. The payment waits on the account and meets each month’s commitment fee, and any renewal, on the day it falls due.</p>}
+            {inv.purpose === "advance" && inv.notice && <p className="mpay-fine mpay-notice" role="note">{inv.notice}</p>}
             {inv.purpose === "joining" && <p className="mpay-fine">The first month’s commitment fee covers only the meeting days left from the start date, {inv.startDate ? new Date(inv.startDate + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "the day your child starts"}. From next month it is charged in full.</p>}
           </>
         )}
@@ -1589,7 +1659,7 @@ function SummerProfilePage({ setPage }) {
             <div style={{ display: "flex", alignItems: "flex-end", gap: 18 }}>
               <div style={{ width: 104, height: 104, borderRadius: "50%", overflow: "hidden", border: "4px solid #fff", boxShadow: "0 6px 16px -8px rgba(12,20,50,0.35)", flexShrink: 0, background: "var(--navy-700)", display: "grid", placeItems: "center" }}>
                 {m.photoUrl
-                  ? <img src={m.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/>
+                  ? <img src={nggImg(m.photoUrl, "headshot")} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/>
                   : <span aria-hidden="true" className="display" style={{ fontWeight: 800, fontSize: 34, color: "var(--gold-500)" }}>{initials}</span>}
               </div>
               <div style={{ paddingBottom: 8 }}>
@@ -1987,6 +2057,7 @@ function VolunteerRegisterPage({ setPage }) {
   const [faculty, setFaculty] = React.useState("");
   const [visibilityConsent, setVisibilityConsent] = React.useState(false);
   const [d, setD] = React.useState({ firstName: "", lastName: "", otherName: "", sex: "", email: "", phone: "", dob: "", why: "", photoUrl: "" });
+  const [safe, setSafe] = React.useState(VOL_SAFE_BLANK);
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
   const [doneWa, setDoneWa] = React.useState("");
@@ -2031,7 +2102,8 @@ function VolunteerRegisterPage({ setPage }) {
     && d.sex !== "" && emailOk
     && phoneOk && dobOk && d.photoUrl !== "" && d.why.trim() !== ""
     && (!needsFaculty || faculty !== "")
-    && (role !== "instructor" || courses.length > 0);
+    && (role !== "instructor" || courses.length > 0)
+    && volSafeProblem(safe, dobAge) === "";
   // Tell the applicant WHY the button is disabled instead of greying silently.
   const missing = [];
   if (programme === "") missing.push("which programme");
@@ -2048,6 +2120,7 @@ function VolunteerRegisterPage({ setPage }) {
   if (d.photoUrl === "") missing.push("a headshot");
   if (d.why.trim() === "") missing.push("why you");
   if (role === "instructor" && courses.length === 0) missing.push("at least one course");
+  if (volSafeProblem(safe, dobAge)) missing.push("referees and the safeguarding declaration" + (dobAge > 0 && dobAge < 18 ? ", and your guardian’s agreement" : ""));
 
   const submit = async (e) => {
     e.preventDefault();
@@ -2061,6 +2134,7 @@ function VolunteerRegisterPage({ setPage }) {
         email: d.email.trim(), phone: d.phone.trim(), dob: d.dob,
         why: d.why.trim(), photoUrl: d.photoUrl || "", courses: role === "instructor" ? courses : [],
         centre, faculty: needsFaculty ? faculty : "", visibilityConsent, programme,
+        ...volSafePayload(safe, dobAge),
       }, "ngg_apply_volunteer");
       setDone(r && r.ref ? r.ref : true);
       setDoneWa((r && r.whatsapp) || "");
@@ -2083,6 +2157,7 @@ function VolunteerRegisterPage({ setPage }) {
         bad_firstName: "Please enter your first name.",
         bad_lastName: "Please enter your last name.",
         bad_programme: "Choose the programme you'd like to serve.",
+        ...VOL_SAFE_ERRORS,
       }[code] || "Couldn't submit. Please try again.");
     } finally { setBusy(false); }
   };
@@ -2277,6 +2352,7 @@ function VolunteerRegisterPage({ setPage }) {
                     <input type="checkbox" checked={visibilityConsent} onChange={e => { setVisibilityConsent(e.target.checked); if (err) setErr(""); }}/>
                     <span><b>Feature me on the website</b> — I agree that Next Generation Genius may show my photo and first name publicly on its website and status boards to celebrate the team. Optional, and you can withdraw it any time by contacting us.</span>
                   </label>
+                  <div className="volf-span"><VolSafeguardFields value={safe} onChange={v => { setSafe(v); if (err) setErr(""); }} age={dobAge}/></div>
                 </div>
               </section>
 
@@ -2442,7 +2518,7 @@ function ParentVerifyPage() {
     </div>
     <div style={{ ...card, display: "flex", gap: 14, alignItems: "center", marginBottom: 14 }}>
       {ctx.student.photoUrl
-        ? <img src={ctx.student.photoUrl} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover" }}/>
+        ? <img src={nggImg(ctx.student.photoUrl, "face")} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover" }}/>
         : <div style={{ width: 56, height: 56, borderRadius: 14, background: "#eef0e6", display: "grid", placeItems: "center", fontSize: 24, fontWeight: 800 }}>{(ctx.student.name || "?").charAt(0)}</div>}
       <div><div style={{ fontWeight: 800, fontSize: 17 }}>{ctx.student.name}</div><div style={{ fontSize: 13, color: "#777" }}>{ctx.student.course || "Summer program"}</div></div>
     </div>
@@ -2651,6 +2727,31 @@ function SelfRegisterPage() {
   return shell(<SelfRegisterForm g={g} ctx={ctx} draftKey={draftKey} gold={gold} goldInk={goldInk}/>);
 }
 
+/* The centre and course a family chose before they reached the form (?centre=, ?track= from
+   "Apply here" / "Apply for this" on the Summer School page, carried through /join?program=summer).
+   Each is taken only where this form asks for it AND offers it, and never over the family's own
+   draft. A course hangs off its faculty (optionsFrom), so the faculty that offers it is chosen too. */
+function selfRegSeed(fields, saved) {
+  const out = Object.assign({}, saved);
+  let q = null;
+  try { q = new URLSearchParams(window.location.search); } catch (_) { return out; }
+  const want = { centre: q.get("centre") || "", course: q.get("track") || q.get("course") || "" };
+  const same = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+  fields.forEach(d => {
+    const v = want[d.key];
+    if (!v || out[d.key]) return;
+    if (d.optionsFrom && !out[d.optionsFrom]) {
+      const parent = fields.find(x => x.key === d.optionsFrom);
+      const by = d.optionsBy || {};
+      const home = parent && (parent.options || []).find(o => (by[o] || []).some(c => same(c, v)));
+      if (home) out[d.optionsFrom] = home;
+    }
+    const hit = formFieldOptions(d, out).find(o => same(o, v));
+    if (hit) out[d.key] = hit;
+  });
+  return out;
+}
+
 function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
   const fields = (ctx.form && ctx.form.fields) || [];
   /* Grouped consent, with the document link, from selfreg_context. The
@@ -2663,7 +2764,7 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
   const bundled = cself ? cself.bundled : flat.filter(c => PUBLICATION_KEYS.indexOf(c.key) === -1);
   const consentUrl = (cself && cself.url) || "/legal?doc=consent";
   const [step, setStep] = React.useState(0);   // 0 details · 1 photo · 2 consent · 3 done
-  const [form, setForm] = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey)) || {}; } catch (_) { return {}; } });
+  const [form, setForm] = React.useState(() => selfRegSeed(fields, (() => { try { return JSON.parse(localStorage.getItem(draftKey)) || {}; } catch (_) { return {}; } })()));
   const [errors, setErrors] = React.useState({});
   const [photo, setPhoto] = React.useState("");        // inline image (no cloud)
   const [photoHosted, setPhotoHosted] = React.useState("");  // uploaded URL (cloud)
@@ -4254,7 +4355,7 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
     {step === 2 && (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ ...card, padding: 16, display: "flex", gap: 13, alignItems: "center" }}>
-          {photoUrl ? <img src={photoUrl} alt="" style={{ width: 54, height: 54, borderRadius: 12, objectFit: "cover" }}/> : <div style={{ width: 54, height: 54, borderRadius: 12, background: "rgba(255,255,255,.1)", display: "grid", placeItems: "center", fontSize: "var(--rs-fsize-1, 22px)", fontWeight: 800 }}>{(regDisplayName(form) || "?").charAt(0)}</div>}
+          {photoUrl ? <img src={nggImg(photoUrl, "face")} alt="" style={{ width: 54, height: 54, borderRadius: 12, objectFit: "cover" }}/> : <div style={{ width: 54, height: 54, borderRadius: 12, background: "rgba(255,255,255,.1)", display: "grid", placeItems: "center", fontSize: "var(--rs-fsize-1, 22px)", fontWeight: 800 }}>{(regDisplayName(form) || "?").charAt(0)}</div>}
           <div><div style={{ fontWeight: 800, fontSize: 16 }}>{regDisplayName(form)}</div><div style={{ ...mut, fontSize: 13 }}>{form.course || ""}{form.age ? " · " + form.age : ""}</div></div>
         </div>
         <div style={{ ...card, padding: 14, fontSize: 13.5, lineHeight: 1.6 }}>
@@ -4745,7 +4846,7 @@ function ScanResult({ result, onDone, onFace }) {
   return (
     <div role="status" aria-live="assertive" className={"gate-result is-" + result.kind + (result.stop ? " is-stop" : "")}>
       {result.photo
-        ? <img className="gate-result-photo" src={result.photo} alt=""/>
+        ? <img className="gate-result-photo" src={nggImg(result.photo, "headshot")} alt=""/>
         : <span className="gate-result-photo is-glyph" aria-hidden="true">{k.glyph}</span>}
       <p className="gate-result-word"><span aria-hidden="true">{k.glyph}</span> {result.word || k.word}</p>
       <p className="gate-result-name">{result.name}</p>
@@ -4771,8 +4872,15 @@ function QRScanner({ onToken }) {
   const [facing, setFacing] = React.useState("environment");
   const [multiCam, setMultiCam] = React.useState(false);
 
+  const [qrReady, setQrReady] = React.useState(0);   // bumped when jsQR arrives, to start the reader
   React.useEffect(() => {
-    if (typeof window === "undefined" || typeof window.jsQR !== "function") { setState("nolib"); return; }
+    /* jsQR (128 KB) is fetched when a camera reader opens, not by every page. */
+    if (typeof window === "undefined") { setState("nolib"); return; }
+    if (typeof window.jsQR !== "function") {
+      let gone = false;
+      loadVendorAsset("/vendor/jsQR.min.js", "js").then(() => { if (!gone) setQrReady(r => r + 1); }, () => { if (!gone) setState("nolib"); });
+      return () => { gone = true; };
+    }
     let cancelled = false;
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -4816,7 +4924,7 @@ function QRScanner({ onToken }) {
     // Re-runs on `facing`; the cleanup stops the old stream first, because a
     // phone will not hand out both lenses at once.
     return () => { cancelled = true; if (rafRef.current) cancelAnimationFrame(rafRef.current); if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } };
-  }, [facing]);
+  }, [facing, qrReady]);
 
   const flashing = hit && (Date.now() - hit < 700);
   if (state === "nolib" || state === "denied") {
@@ -7232,7 +7340,7 @@ function MentorPortal({ programme, embedded, centre: centreIn } = {}) {
         because a list of who has been missed is worth more than a list of
         everybody, and below the tabs because it belongs to this class. */}
     {/* NGG's Saturday, the instructor's or mentor's part of each block. Not for Summer School: its day is its own. */}
-    {programme === "ngg" && !embedded && typeof FormationDay === "function" && <FormationDay audience={role === "instructor" ? "instructor" : "mentor"} compact={true}/>}
+    {programme === "ngg" && !embedded && typeof FormationDay === "function" && <FormationDay audience={role === "instructor" ? "instructor" : "mentor"} centre={data.centre || m.centre || ""} compact={true}/>}
     <MentorReviewsDue centre={data.centre || m.centre || ""} scope={scope} programme={programme} onOpenChild={setChildOn}/>
     {!students.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No {roleMeta.they} here yet.</p>}
 
@@ -7262,7 +7370,7 @@ function MentorPortal({ programme, embedded, centre: centreIn } = {}) {
           <input type="checkbox" checked={isPicked(s.studentId)} onChange={() => toggle(s.studentId)}
             aria-label={"Select " + s.fullName}
             style={{ width: 20, height: 20, flex: "none", accentColor: gold, cursor: "pointer" }}/>
-          <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb,#8fbb3f)", flex: "none" }}>{s.photoUrl ? <img src={s.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}</div>
+          <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb,#8fbb3f)", flex: "none" }}>{s.photoUrl ? <img src={nggImg(s.photoUrl, "avatar")} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}</div>
           {/* The NAME opens the record. It is already the thing a mentor looks
               at, and this row overflowed at 390px with three buttons on it —
               a fourth would have made it worse. */}
@@ -7289,7 +7397,7 @@ function MentorPortal({ programme, embedded, centre: centreIn } = {}) {
     </div>
     {picked.length > 0 && (
       <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 90, padding: "12px 16px calc(12px + env(safe-area-inset-bottom,0px))",
-                    background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "blur(8px)" }}>
+                    background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "var(--lite-blur, blur(8px))" }}>
         <div style={{ maxWidth: 760, margin: "0 auto", display: "flex", gap: 10, alignItems: "center" }}>
           <span style={{ fontWeight: 800, fontSize: 15 }}>{picked.length} selected</span>
           <button type="button" onClick={() => setPicked([])}
@@ -7439,7 +7547,7 @@ function SessionPanel({ courses, centre, onRemarks }) {
     </div>
 
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 90, padding: "12px 16px calc(12px + env(safe-area-inset-bottom,0px))",
-                  background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "blur(8px)" }}>
+                  background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "var(--lite-blur, blur(8px))" }}>
       <div style={{ maxWidth: 760, margin: "0 auto", display: "flex", gap: 10, alignItems: "center" }}>
         <span style={{ fontSize: 13, color: err ? "#ff9a9a" : "rgba(230,238,255,.7)", flex: 1, minWidth: 0 }}>{err || saved || (d && d.log ? "Filed — saving again updates it" : "Not filed yet")}</span>
         <button onClick={submit} disabled={busy}
@@ -7930,6 +8038,8 @@ function LegalPage({ setPage }) {
       <P>Program staff see what their role requires. Sensitive answers (e.g. medical notes) are visible only to program staff and are never exported. We publish first names and attendance on a child's QR profile — never contact details, never a home address. We do not sell data, ever.</P>
       <H>Sharing &amp; transfers</H>
       <P>We use a small set of processors — email/SMS delivery (Termii, Twilio), image hosting (Cloudinary), and an optional Google Sheet mirror for admins. Each receives only what it needs. Where data leaves Nigeria, we rely on the processor's adequacy/contractual safeguards.</P>
+      <P><b>AI in the learning tools.</b> Some study features (hints, explanations of a wrong answer, revision cards, marking suggestions) send the question and what the learner typed to an AI provider an administrator has switched on — Google Gemini, Anthropic, OpenAI, Groq or OpenRouter. Before anything is sent, email addresses, phone numbers, programme ID numbers and the learner's surname are removed; we never send a learner's ID or record. AI never decides a mastery check, a placement or an exam result.</P>
+      <P><b>Speaking practice.</b> When a learner presses <i>Speak</i> in the English Lab, that recording is sent to Spitch, a speech-to-text service, to check which words came through. We do not keep the recording. A learner who would rather not can choose <i>Record and compare on this device</i>, which sends nothing anywhere.</P>
       <H>Retention</H>
       <P>Child records are kept for the programme cycle plus the period we are required to retain safeguarding records, then archived or deleted. Volunteer records persist while active and for a reasonable period after, to honour service certificates. You can request earlier deletion (see Your Data Rights).</P>
       <H>Contact</H>

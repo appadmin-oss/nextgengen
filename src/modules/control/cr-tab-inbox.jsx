@@ -20,7 +20,7 @@
    there is no Undo, and the irreversible ones ask first.
    ========================================================================== */
 
-const CR_PURPOSE = { general: "General", apply: "Admissions", mentor: "Mentoring", partner: "Partnership", media: "Media", support: "Support" };
+const CR_PURPOSE = { general: "General", apply: "Admissions", mentor: "Mentoring", partner: "Partnership", media: "Media", support: "Support", whatsapp: "WhatsApp" };
 const CR_REASON_NOTE = (l, help, req) => ({ l: l || "Reason", req: req !== false, help: help || "They read this.", ph: "" });
 
 /* Saved replies, by topic. {first} {ref} {me} are filled in for the person. */
@@ -126,6 +126,16 @@ function crAppDraft(a, what, me) {
   if (!a.phone) need.push("a phone number we can reach you on");
   return "Hello,\n\nThank you for " + first + "’s application to " + prog + ". Before we can go on, we need " + (need.length ? (need.length === 1 ? need[0] : need.slice(0, -1).join(", ") + " and " + need[need.length - 1]) : "one more detail: [what you need]") + ". Please reply to this email with " + (need.length > 1 ? "them" : "it") + "." + sign;
 }
+/* Who wrote it, as a person: a family account's name can be its email
+   address (nobody typed a name), and "olisko2003@gmail.com" heading a parent's
+   message reads as spam. The relationship leads; the address follows. */
+function crReqWho(x) {
+  if (!x.byFamily) return { who: x.fullName || "Member" };
+  const n = String(x.raisedByName || "").trim(), first = String(x.fullName || "").trim().split(/\s+/)[0];
+  const role = first ? first + "’s family" : "Their family";
+  if (!n) return { who: role };
+  return /@/.test(n) ? { who: role, sub: n } : { who: n, sub: role };
+}
 function crMask(phone) { const s = String(phone || "").replace(/\s+/g, ""); return s.length > 6 ? s.slice(0, 4) + " ••• " + s.slice(-3) : s; }
 
 /* ── Sources: one per view; each knows its permission and its server calls ── */
@@ -137,7 +147,9 @@ const CR_INBOX_SOURCES = {
       return (r.messages || []).filter(m => m.status === "new" || m.status === "read").map(m => {
         const first = String(m.name || "").trim().split(/\s+/)[0] || "there";
         const thread = [{ who: m.name || m.email, at: m.createdAt, body: m.message || "", mine: false }]
-          .concat((m.replies || []).map(x => ({ who: x.sentByName || "Staff", at: x.sentAt, body: x.body, mine: true })));
+          // A WhatsApp follow-up from them (domain/kapso.php) is theirs, not a staff reply.
+          .concat((m.replies || []).map(x => x.channel === "whatsapp-in" ? { who: m.name || x.sentByName || "Them", at: x.sentAt, body: x.body, mine: false }
+            : { who: (x.sentByName || "Staff") + (x.channel === "whatsapp" ? " · on WhatsApp" : ""), at: x.sentAt, body: x.body, mine: true }));
         const set = (to, text) => async () => { await NGGApi.admin.contact.status(m.id, to); return { text, undo: () => NGGApi.admin.contact.status(m.id, m.status) }; };
         const sig = crSignals((m.subject || "") + " " + (m.message || ""));
         const topic = crMsgTopic(m);
@@ -147,13 +159,14 @@ const CR_INBOX_SOURCES = {
           unread: m.status === "new", urgent: m.purpose === "support" || sig.urgent,
           title: m.subject || (m.message || "").slice(0, 90), body: m.message || "",
           search: [m.email, m.ref, CR_PURPOSE[m.purpose], m.known && m.known.name].join(" "),
-          facts: [["Email", m.email || "—"], ["Phone", crMask(m.phone) || "—"], ["About", TOPIC_L[topic] + (CR_PURPOSE[m.purpose] && CR_PURPOSE[m.purpose] !== TOPIC_L[topic] && m.purpose !== "general" ? " · they chose " + CR_PURPOSE[m.purpose] : "")],
+          facts: [m.purpose === "whatsapp" ? ["WhatsApp", m.phone || "—"] : ["Email", m.email || "—"], ["Phone", crMask(m.phone) || "—"], ["About", TOPIC_L[topic] + (CR_PURPOSE[m.purpose] && CR_PURPOSE[m.purpose] !== TOPIC_L[topic] && m.purpose !== "general" ? " · they chose " + CR_PURPOSE[m.purpose] : "")],
             ["Already with us", m.known ? crKnownLine(m.known) : "Not that we can see"], ["Reference", m.ref || "—"]],
           note: [sig.urgent ? CR_URGENT_NOTE(sig.word) : "", m.earlier > 0 ? "This address has written " + crPlural(m.earlier, "other time", "other times") + "." : ""].filter(Boolean).join(" "),
           thread,
           markRead: m.status === "new" ? () => NGGApi.admin.contact.status(m.id, "read") : null,
-          reply: m.email ? {
-            to: m.email, purpose: m.purpose, draft: crMsgDraft(m, ctx.me),
+          // A WhatsApp message is answered on WhatsApp (the server signs it and picks text or the template).
+          reply: m.email || m.purpose === "whatsapp" ? {
+            to: m.purpose === "whatsapp" ? "WhatsApp · " + (m.phone || "") : m.email, purpose: m.purpose, draft: crMsgDraft(m, ctx.me),
             vars: { first, name: m.name || "", ref: m.ref || "", me: ctx.me && ctx.me.name ? ctx.me.name + "\nNext Generation Genius" : "Next Generation Genius" },
             send: async (body, close) => {
               const x = await NGGApi.admin.contact.reply(m.id, body, close);
@@ -169,27 +182,30 @@ const CR_INBOX_SOURCES = {
   applications: {
     cap: "people",
     async load(ctx) {
-      const [r, rv] = await Promise.all([
-        NGGApi.admin.applications.list({ status: "new" }),
-        NGGApi.admin.applications.list({ status: "reviewing" }).catch(() => ({ applications: [] })),
-      ]);
-      return (r.applications || []).concat(rv.applications || []).filter(a => a.kind !== "volunteer").map(a => {
+      /* New, under review and waitlisted: a waitlisted child stays on the desk
+         someone can accept them from, instead of vanishing when "Waitlist" is pressed. */
+      const r = await NGGApi.admin.applications.list({ status: "new,reviewing,waitlist", unfinished: 1 });
+      return (r.applications || []).filter(a => a.kind !== "volunteer").map(a => {
         const prog = a.program === "summer" ? "Summer School" : "NGG membership";
-        const status = (to, label) => async () => { await NGGApi.admin.applications.status(a.id, to); return { text: label + " · " + a.name, undo: () => NGGApi.admin.applications.status(a.id, a.status || "new") }; };
-        /* Waitlisting or refusing SAYS so: the family is emailed the drafted
-           message (edit it first; empty it to change only the status). */
-        const tell = (to, l, label) => ({ l, note: { l: "Message to the family (emailed)", req: false, dflt: crAppDraft(a, to, ctx.me),
-            help: a.email ? "Sent to " + a.email + " and kept on the application. Empty it to change the status without writing." : "There is no email on this application — the status changes, and nobody is told. Call them." },
-          run: async (it, v) => { const r = await NGGApi.admin.applications.status(a.id, to, a.email ? (v.why || "") : "");
-            return { text: label + " · " + a.name + (r && r.told ? " · the family was emailed" : v.why && a.email ? " · the email didn’t go" : ""), undo: () => NGGApi.admin.applications.status(a.id, a.status || "new") }; } });
+        const wait = a.status === "waitlist";
+        const toldBy = (x) => ((x && x.told) || []).length ? " · family told by " + x.told.join(" and ") : "";
+        const status = (to, label) => async () => { const x = await NGGApi.admin.applications.status(a.id, to, "", { notify: false }); return { text: label + " · " + a.name }; };
+        /* Waitlisting or refusing SAYS so: the family is emailed (and the main
+           parent texted) the drafted message. Edit it first; empty it to change
+           only the status. A told family is not undone quietly. */
+        const tell = (to, l, label) => ({ l, note: { l: "Message to the family", req: false, dflt: crAppDraft(a, to, ctx.me),
+            help: a.email ? "Emailed to " + a.email + ", texted to the parent, and kept on the application. Empty it to change the status without writing." : "There is no email on this application. The parent is texted if a phone is on it. Empty it to change only the status." },
+          run: async (it, v) => { const why = (v && v.why) || ""; const x = await NGGApi.admin.applications.status(a.id, to, why, { notify: !!why });
+            return { text: label + " · " + a.name + toldBy(x) }; } });
         const ask = a.email ? { l: "Ask for something", keep: true, note: { l: "What you need (emailed)", req: true, dflt: crAppDraft(a, "ask", ctx.me),
             help: "Sent to " + a.email + ". The application stays here, marked as in hand." },
           run: async (it, v) => { await NGGApi.admin.applications.message(a.id, v.why);
             return { text: "Asked · " + a.email, patch: { thread: (it.thread || []).concat([{ who: (ctx.me && ctx.me.name) || "You", at: new Date().toISOString(), body: v.why, mine: true }]) } }; } } : null;
+        const centreField = a.centre ? [] : [{ id: "centre", l: "Centre", req: true, help: "The application names no centre. Type the centre they will attend, as it is spelt in Centres." }];
         const actions = a.kind === "teen" ? [
           a.program === "summer" ? { l: "Accept & create member", tone: "primary",
-            confirm: () => ({ title: "Create a member for " + a.name + "?", body: "They get a Summer School record. This can’t be undone from here.", cta: "Accept & create member" }),
-            run: async () => { const x = await NGGApi.admin.applications.convert(a.id); return { text: x.existed ? a.name + " already had a record · " + x.memberId : "Member created · " + x.memberId }; } }
+            form: () => ({ title: "Create a member for " + a.name + "?", submit: "Accept & create member", intro: "They get a Summer School record. This can’t be undone from here.", values: {}, fields: centreField }),
+            run: async (it, v) => { const x = await NGGApi.admin.applications.convert(a.id, "", (v && v.centre) || ""); return { text: x.existed ? a.name + " already had a record · " + x.memberId : "Member created · " + x.memberId }; } }
           : { l: "Accept & create member", tone: "primary",
             /* An NGG place is paid for only once it is offered: accepting sends
                the family one invoice — the membership fee and the first
@@ -198,29 +214,38 @@ const CR_INBOX_SOURCES = {
             form: () => ({ title: "Accept " + a.name + " into NGG", submit: "Accept and send the invoice",
               intro: "They get an NGG record, a member ID and a card number. Their family is emailed one invoice to pay: the membership fee and the commitment fee for the meeting days left in their first month.",
               values: { start: new Date().toISOString().slice(0, 10) },
-              fields: [{ id: "start", l: "Start date", type: "date", req: true, help: "The first day they attend. Only the meeting days from this date are charged for the first month." }] }),
+              fields: [{ id: "start", l: "Start date", type: "date", req: true, help: "The first day they attend. Only the meeting days from this date are charged for the first month." }].concat(centreField) }),
             run: async (it, v) => {
-              const x = await NGGApi.admin.applications.convert(a.id, v.start);
+              const x = await NGGApi.admin.applications.convert(a.id, v.start, v.centre || "");
               if (x.existed) return { text: a.name + " already had a record · " + x.memberId };
               const inv = x.invoice || {};
               const tail = inv.invoiceId ? (inv.sent ? " · invoice " + fmtMoney(inv.total) + " sent to " + inv.to : " · invoice made, but the email didn’t go — resend it from Money → Membership payments")
                 : inv.error === "fees_off" ? " · no invoice: membership fees are off" : inv.error ? " · no invoice (" + inv.error.replace(/_/g, " ") + ")" : "";
               return { text: "Member created · " + x.memberId + tail };
             } },
-          tell("waitlist", "Waitlist", "Waitlisted"),
+          wait ? null : tell("waitlist", "Waitlist", "Waitlisted"),
           tell("rejected", "Reject", "Rejected"),
           ask,
-        ] : [
+        ].filter(Boolean) : a.kind === "mentor" ? [
+          /* A mentor is accepted by MAKING the mentor: the record (pending safeguarding checks) and the
+             welcome email. A bare "accepted" status left the applicant with no next step. */
+          { l: a.status === "accepted" ? "Finish: create the mentor" : "Accept & create mentor", tone: "primary",
+            run: async () => { const x = await NGGApi.admin.mentorship.convertApp(a.id);
+              return { text: x.existed ? a.name + " is already a mentor · " + x.mentorId : "Mentor created · " + x.mentorId + (a.email ? " · welcome emailed to " + a.email : "") }; } },
+          a.status === "accepted" || wait ? null : tell("waitlist", "Waitlist", "Waitlisted"),
+          tell("rejected", "Reject", "Rejected"),
+          ask,
+        ].filter(Boolean) : [
           { l: "Accept", tone: "primary", run: status("accepted", "Accepted") },
-          tell("waitlist", "Waitlist", "Waitlisted"),
+          wait ? null : tell("waitlist", "Waitlist", "Waitlisted"),
           tell("rejected", "Reject", "Rejected"),
           ask,
-        ];
+        ].filter(Boolean);
         const rec = crOpenRecord(ctx, a.known && a.known.memberId, a.known && a.known.kind === "parent" ? "Open " + String(a.known.name || "").split(" ")[0] + "’s record" : "Open their record");
         if (rec) actions.push(rec);
         return crItem({
           id: "app:" + a.id, cat: "applications", kind: "Application", icon: "user-plus", who: a.name || a.email || "Applicant", at: a.createdAt,
-          unread: a.status === "new", urgent: crSignals(a.why).urgent, title: [prog, a.track || a.role].filter(Boolean).join(" · "), body: a.why || "", photoUrl: a.photoUrl || "",
+          unread: a.status === "new", urgent: crSignals(a.why).urgent, title: [prog, a.track || a.role, wait ? "Waitlisted" : ""].filter(Boolean).join(" · "), body: a.why || "", photoUrl: a.photoUrl || "",
           search: [a.email, a.centre, a.track, a.ref].join(" "),
           facts: [["Already with us", a.known ? crKnownLine(a.known) : ""], ["Age", a.age || a.dobAge || "—"], ["Centre", a.centre || "—"], ["Division", a.program === "summer" ? "" : (a.faculty || "—")], ["Course", a.track || (a.details && a.details.courseOther ? "Something else: " + a.details.courseOther : "—")], ["Role", a.role || ""], ["Email", a.email || "—"], ["Phone", crMask(a.phone) || "—"], ["Photo", a.photoUrl ? "Uploaded" : "Missing"], ["Reference", a.ref || ""]]
             .concat(crAppDetailFacts(a)).filter(f => f[1] !== ""),
@@ -275,6 +300,10 @@ const CR_INBOX_SOURCES = {
     async load(ctx) {
       const r = await NGGApi.admin.requests.list({ status: "open" });
       const canMoney = ctx.can("fees");
+      /* A family appealing a fine usually points at a leave request still
+         waiting: the member's other open requests travel with each item. */
+      const byMember = {};
+      (r.requests || []).forEach(y => { if (y.memberId) (byMember[y.memberId] = byMember[y.memberId] || []).push(y); });
       return (r.requests || []).map(x => {
         /* Feedback is thanked or passed on, never approved: an "approved idea" means nothing to a child. */
         if (x.kind === "feedback") {
@@ -304,13 +333,17 @@ const CR_INBOX_SOURCES = {
         }
         const payNote = pay && !(x.parts && x.parts.length) && crPayIsNote(x.reference) ? x.reference : "";
         if (x.kind === "leave") f.push(["From", x.fromDate ? crDate(x.fromDate) : "—"], ["To", x.toDate ? crDate(x.toDate) : "Open-ended"]);
-        if (x.byFamily) f.push(["Raised by", (x.raisedByName || "Their family") + " · the parent is emailed your reply"]);
+        // Sent less than 24 hours before the day it excuses (recorded when sent: member_leave_notice).
+        if (x.kind === "leave" && x.shortNotice) f.push(["Notice", "Less than 24 hours — approve only for an emergency you can check"]);
+        if (x.byFamily) { const w = crReqWho(x); f.push(["Raised by", w.who + (w.sub ? " · " + w.sub : "")]); }
         const det = x.kind === "details" || x.kind === "familydetails";
         const rd = det ? (x.reading || { changes: [], asked: [] }) : null;
         if (det) {
           rd.changes.forEach(c => f.push([c.label, (c.current || "nothing") + " → " + c.proposed + (c.warn ? " · " + c.warn : "")]));
           rd.asked.forEach(a => f.push([a.label, "Named, but no new value given — ask for it"]));
         }
+        const acts = typeof crReqActs === "function" ? crReqActs(x) : ["Approve", "Decline", false];
+        const fine = x.kind === "appeal" && /^fine\b/i.test(x.subject || "");
         const approve = det ? {
           l: rd.changes.length ? "Change it" : "Change details", tone: "primary", form: () => crReqDetailsForm(x),
           run: async (it, v) => { const r = await crReqDetailsSend(x, v); if (r.fieldErrors) throw Object.assign(new Error("bad_value"), { data: { message: Object.values(r.fieldErrors)[0] } }); return { text: "Changed and approved · " + x.fullName }; },
@@ -324,19 +357,24 @@ const CR_INBOX_SOURCES = {
         } : null) : x.kind === "appeal" && x.refSanctionId ? {
           /* An appeal against a decision: upheld, the decision is overturned (its fine comes off the account).
              The person who made the decision can't decide its appeal; the server says so. */
-          l: "Overturn it", tone: "primary", note: CR_REASON_NOTE("Why it is overturned", "The family reads this.", true),
-          run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: "Overturned · " + x.fullName }; },
+          l: acts[0], tone: "primary", note: Object.assign(CR_REASON_NOTE("Why it is upheld", (fine ? "The fine comes off the account. " : "The decision is lifted, with anything it carried. ") + "The family reads this.", true), { dflt: crReqDraftApprove(x) }),
+          run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: (fine ? "Fine lifted · " : "Appeal upheld · ") + x.fullName }; },
         } : {
-          l: "Approve", tone: "primary", note: Object.assign(CR_REASON_NOTE("Your reply", "The member reads this — a drafted reply; edit it or send it.", false), { dflt: crReqDraftApprove(x) }),
-          run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: "Approved · " + x.fullName }; },
+          l: acts[0], tone: "primary", note: Object.assign(CR_REASON_NOTE(acts[2] ? "Your answer" : "Your reply", "They read this — a drafted reply; edit it or send it.", acts[2]), { dflt: crReqDraftApprove(x) }),
+          run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: "Done · " + x.fullName }; },
         };
+        const others = (byMember[x.memberId] || []).filter(y => y.requestId !== x.requestId);
         return crItem({
           id: "req:" + x.requestId, cat: "requests", kind: (x.kindLabel || "Member request") + (x.byFamily ? " · From their family account" : ""), icon: pay ? "currency-ngn" : "hand", who: x.fullName || x.displayId, at: x.createdAt, unread: true,
           title: x.subject || x.kindLabel, body: x.body || payNote, search: [x.requestId, x.displayId, x.memberId, x.centre, x.reference].join(" "),
-          facts: f, thread: (x.body || payNote) ? [{ who: x.byFamily ? (x.raisedByName || "Their family") : (x.fullName || "Member"), at: x.createdAt, body: x.body || payNote, mine: false }] : null,
-          note: pay && !canMoney ? "Approving a payment needs the Fees permission." : "",
-          actions: [approve, { l: x.kind === "appeal" && x.refSanctionId ? "Keep it" : "Decline", note: Object.assign(CR_REASON_NOTE("Why it is declined", "A drafted reason for this kind of request — edit it to fit."),
-            { dflt: ((CR_REQ_DECLINE[x.kind] || CR_REQ_DECLINE_ANY)[0] || [0, 0, () => ""])[2](x) }), run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, false, v.why); return { text: "Declined, with your reason" }; } }].filter(Boolean),
+          facts: f, thread: (x.body || payNote) ? [Object.assign(crReqWho(x), { at: x.createdAt, body: x.body || payNote, mine: false })] : null,
+          note: pay && !canMoney ? "Approving a payment needs the Fees permission."
+            : x.kind === "leave" && x.shortNotice ? "Sent with less than 24 hours’ notice. Leave asked for this late is not approved unless it is an emergency you can check: ask for the proof (a hospital note, for example) before approving." : "",
+          related: others.map(y => ({ id: "req:" + y.requestId, icon: y.kind === "leave" || y.kind === "academic" ? "calendar-x" : "tray", t: y.subject || y.kindLabel || y.kind,
+            s: (y.kindLabel || y.kind) + " · waiting since " + crDate(y.createdAt), y })),
+          relatedTip: x.kind === "appeal" && others.some(y => y.kind === "leave") ? "Their leave request is still waiting. Excusing it does not lift " + (fine ? "this fine" : "this decision") + " on its own — decide both." : "",
+          actions: [approve, { l: pay || det ? "Decline" : acts[1], note: Object.assign(CR_REASON_NOTE(x.kind === "appeal" ? "Why it stands" : "Why it is declined", "A drafted reason for this kind of request — edit it to fit."),
+            { dflt: ((CR_REQ_DECLINE[x.kind] || CR_REQ_DECLINE_ANY)[0] || [0, 0, () => ""])[2](x) }), run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, false, v.why); return { text: x.kind === "appeal" ? "Kept, with your reason" : "Declined, with your reason" }; } }].filter(Boolean),
         });
       });
     },
@@ -654,7 +692,7 @@ function CrInbox({ ctx, phone, data }) {
       <div className="cr-ib-rail-foot">
         {handled > 0 && <span><CrIcon n="check-circle"/>{crPlural(handled, "item", "items")} handled</span>}
         {data.failed && data.failed.length > 0 && <span className="cr-ib-warn"><CrIcon n="warning"/>{data.failed.map(k => (views.find(v => v.id === k) || {}).label || k).join(", ")} didn’t load</span>}
-        <button type="button" className="cr-linkbtn" onClick={() => ctx.reload()}><CrIcon n="arrow-clockwise"/>Refresh</button>
+        <button type="button" className="cr-linkbtn" aria-label="Refresh" title="Refresh" onClick={() => ctx.reload()}><CrIcon n="arrow-clockwise"/>Refresh</button>
       </div>
     </nav>
   );
@@ -665,7 +703,7 @@ function CrInbox({ ctx, phone, data }) {
   const list = (
     <section className="cr-ib-list" aria-label={viewLabel}>
       {/* Asked where it makes sense: the inbox, which is what it would tell them about. */}
-      {typeof NggPushNudge === "function" ? <div className="cr-ib-push"><NggPushNudge surface="admin" text="Know when something new lands here — a request, a message, an application — on this device, with quiet hours at night. No email while you’re already in the Control Room."/></div> : null}
+      {typeof NggPushNudge === "function" ? <div className="cr-ib-push"><NggPushNudge surface="admin" text="New requests and messages, as they land. Quiet at night."/></div> : null}
       <div className="cr-ib-tools">
         <div className="cr-searchbox" role="search">
           <CrIcon n="magnifying-glass"/>
@@ -706,7 +744,8 @@ function CrInbox({ ctx, phone, data }) {
     </section>
   );
 
-  const pane = sel ? <CrInboxPane key={sel.id} it={sel} now={now} ctx={ctx} phone={phone} paneRef={paneRef} act={act} send={send} onBack={() => setOpen(false)}/> : (
+  const pane = sel ? <CrInboxPane key={sel.id} it={sel} now={now} ctx={ctx} phone={phone} paneRef={paneRef} act={act} send={send} onBack={() => setOpen(false)}
+    onJump={r => { if (items.some(z => z.id === r.id)) { setSelId(r.id); return; } if (r.y && typeof crReqOpen === "function") crReqOpen(ctx, r.y); }}/> : (
     <section className="cr-ib-pane is-empty"><CrIcon n="tray"/><span>{items.length ? "Choose an item to read it." : "Nothing is waiting."}</span></section>
   );
 
@@ -758,7 +797,7 @@ function CrInboxRow({ it, now, on, picked, showKind, onOpen, onPick }) {
 }
 
 /** The conversation pane: who and what, the thread, and the one place to act. */
-function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
+function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack, onJump }) {
   const sla = crInboxSla(it, now);
   const [mode, setMode] = React.useState(it.reply ? "reply" : null);     // "reply" | index of a note action
   /* The reply box starts from the reply this item suggests (it.reply.draft),
@@ -770,7 +809,11 @@ function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
   const [tpl, setTpl] = React.useState(false);
   const taRef = React.useRef(null);
   const endRef = React.useRef(null);
-  React.useEffect(() => { if (endRef.current && endRef.current.scrollIntoView) endRef.current.scrollIntoView({ block: "end" }); }, [it.thread && it.thread.length]);
+  /* Open at the TOP — the subject, the facts and the first message are what
+     a decision is read from; jumping to the end of a long message hid them.
+     Only a reply added while it is open scrolls down to show itself. */
+  const firstLen = React.useRef(it.thread ? it.thread.length : 0);
+  React.useEffect(() => { const n = it.thread ? it.thread.length : 0; if (n > firstLen.current && endRef.current && endRef.current.scrollIntoView) endRef.current.scrollIntoView({ block: "end" }); firstLen.current = n; }, [it.thread && it.thread.length]);
   React.useEffect(() => { if (mode === "reply") crDraftSet(it.id, text); }, [text]);
 
   const noteAction = typeof mode === "number" ? it.actions[mode] : null;
@@ -841,13 +884,26 @@ function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
           <ol className="cr-ib-thread" aria-label="Conversation">
             {it.thread.map((m, i) => (
               <li key={i} className={"cr-ib-msg" + (m.mine ? " is-mine" : "")}>
-                <span className="cr-ib-msgmeta"><b>{m.mine ? m.who : m.who}</b>{m.at ? " · " + crDate(m.at, true) : ""}{m.mine ? " · emailed" : ""}</span>
+                <span className="cr-ib-msgmeta"><b>{m.who}</b>{m.sub ? <span className="cr-ib-msgsub"> · {m.sub}</span> : null}{m.at ? " · " + crDate(m.at, true) : ""}{m.mine ? " · emailed" : ""}</span>
                 <p className="cr-ib-bubble">{m.body}</p>
               </li>
             ))}
             <li ref={endRef} aria-hidden="true"/>
           </ol>
         ) : it.body ? <blockquote className="cr-ib-quote">{it.body}</blockquote> : null}
+        {it.related && it.related.length > 0 && (
+          <section className="cr-ib-rel" aria-labelledby={"cr-ib-rel-" + it.id}>
+            <h4 id={"cr-ib-rel-" + it.id} className="cr-ib-rel-h">Also waiting from {it.who}<span>{it.related.length}</span></h4>
+            {it.relatedTip && <p className="cr-ib-callout"><CrIcon n="lightbulb"/>{it.relatedTip}</p>}
+            <ul className="cr-ib-rel-list">
+              {it.related.map(r => (
+                <li key={r.id}><button type="button" className="cr-ib-rel-row" onClick={() => onJump && onJump(r)}>
+                  <CrIcon n={r.icon}/><span className="cr-grow"><b>{r.t}</b><span>{r.s}</span></span><CrIcon n="caret-right"/>
+                </button></li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
 
       <footer className="cr-ib-act">

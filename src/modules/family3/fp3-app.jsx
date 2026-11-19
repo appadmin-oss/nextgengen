@@ -232,15 +232,34 @@ class Fp3Portal extends React.Component {
 
     if (!signedIn) {
       const step = S.siStep;
-      Object.assign(out, { siEmailStep: step === "email", siCodeStep: step === "code", siEmail: S.siEmail, siCode: S.siCode, siHasErr: !!(S.siErr || S.meErr), siErr: S.siErr || S.meErr,
-        siH: step === "email" ? "See how your child is doing at NGG." : "Check your email",
-        siP: step === "email" ? "Attendance, lessons, fees and what their mentor says, all in one place. We’ll email you a code, so there’s no password to remember." : "We sent a 6-digit code to " + (S.siMasked || S.siEmail) + ". It works for 15 minutes.",
+      Object.assign(out, { siEmailStep: step === "email", siCodeStep: step === "code", siDeskStep: step === "desk", siEmail: S.siEmail, siCode: S.siCode, siDesk: S.siDesk || "", siHasErr: !!(S.siErr || S.meErr), siErr: S.siErr || S.meErr,
+        siH: step === "email" ? "See how your child is doing at NGG." : step === "desk" ? "Code from staff" : "Check your email",
+        siP: step === "email" ? "Attendance, lessons, fees and what their mentor says, all in one place. We’ll email you a code, so there’s no password to remember."
+          : step === "desk" ? "Staff at your centre gave you a one-time code. Type your email and the code: no emailed code needed. It works once, for 10 minutes."
+          : "We sent a 6-digit code to " + (S.siMasked || S.siEmail) + ". It works for 15 minutes.",
+        siToDesk: () => this.setState({ siStep: "desk", siDesk: "", siErr: "" }),
+        onSiDesk: e => this.setState({ siDesk: e.target.value.toUpperCase().slice(0, 9), siErr: "" }),
+        /* Let in at the desk (Members › Sign-in security): email + the staff code, nothing else. */
+        siDeskGo: () => {
+          if (S.siBusy) return;
+          if (!/^\S+@\S+\.\S+$/.test(S.siEmail.trim())) return this.setState({ siErr: FP3_ERRORS.bad_email });
+          if ((S.siDesk || "").replace(/[^A-Za-z0-9]/g, "").length !== 8) return this.setState({ siErr: "The code from staff is 8 letters and numbers, like ABCD-2345." });
+          this.setState({ siBusy: true, siErr: "" });
+          NGGApi.family.desk(S.siEmail.trim(), S.siDesk.trim()).then(() => {
+            try { sessionStorage.setItem("ngg.mfa.replace", "1"); } catch (_) {}
+            this.setState({ siBusy: false, siStep: "email", siDesk: "" }); this.boot(); })
+            .catch(e => this.setState({ siBusy: false, siErr: (e && e.code) === "too_many_attempts" ? "Too many wrong tries. Ask staff for a new code in 15 minutes."
+              : "That email and code don’t match, or the code has expired (it lasts 10 minutes and works once). Ask staff for a new one." }));
+        },
         onSiEmail: e => this.setState({ siEmail: e.target.value, siErr: "" }), onSiCode: e => this.setState({ siCode: e.target.value.replace(/\D/g, "").slice(0, 6), siErr: "" }),
         siSend: () => {
           if (S.siBusy) return;
           if (!/^\S+@\S+\.\S+$/.test(S.siEmail.trim())) return this.setState({ siErr: FP3_ERRORS.bad_email });
           this.setState({ siBusy: true, siErr: "" });
-          NGGApi.family.request(S.siEmail.trim()).then(r => this.setState({ siStep: "code", siBusy: false, siMasked: (r && r.masked) || S.siEmail.trim(), siErr: r && r.delivery === false ? "We couldn’t send the email just now. Try again in a minute." : "" }))
+          NGGApi.family.request(S.siEmail.trim()).then(r => {
+            // Let in at the desk for 10 minutes: the email alone signed them in.
+            if (r && r.letIn) { try { sessionStorage.setItem("ngg.mfa.replace", "1"); } catch (_) {} this.setState({ siBusy: false, siStep: "email" }); this.boot(); return; }
+            this.setState({ siStep: "code", siBusy: false, siMasked: (r && r.masked) || S.siEmail.trim(), siErr: r && r.delivery === false ? "We couldn’t send the email just now. Try again in a minute." : "" }); })
             .catch(e => this.setState({ siBusy: false, siErr: fp3Err(e) }));
         },
         siVerify: () => {
@@ -255,7 +274,7 @@ class Fp3Portal extends React.Component {
             .catch(e => this.setState({ siBusy: false, siErr: fp3Err(e) }));
         },
         siBack: () => this.setState({ siStep: "email", siCode: "", siErr: "" }) });
-      out.onSiKey = e => { if (e.key === "Enter") (S.siStep === "email" ? out.siSend : out.siVerify)(); };
+      out.onSiKey = e => { if (e.key === "Enter") (S.siStep === "email" ? out.siSend : S.siStep === "desk" ? out.siDeskGo : out.siVerify)(); };
       return out;
     }
 
@@ -329,7 +348,7 @@ class Fp3Portal extends React.Component {
        payment made offline. */
     const wl = active && loaded;
     out.mainSlotEnd = sec === "today" && wl ? <Fp3TodayMore key={w.linkId} c={this} w={w}/>
-      : sec === "money" && wl && w.fees.enabled ? <div className="fp3x-more" key={w.linkId}><Fp3Ahead c={this} w={w}/><Fp3Paid c={this} w={w}/></div>
+      : sec === "money" && wl ? <div className="fp3x-more" key={w.linkId}>{w.fees.enabled ? <><Fp3Ahead c={this} w={w}/><Fp3Paid c={this} w={w}/></> : null}<Fp3Docs c={this} w={w}/></div>
       // Anchor Circle, in the family account: the child's week on Growth (domain/circle.php).
       : sec === "progress" && wl ? <div className="fp3x-more" key={w.linkId}><Fp3Anchor c={this} linkId={w.linkId} first={w.member.first} role="parent"/></div>
       : sec === "account" ? <React.Fragment>
@@ -385,7 +404,7 @@ class Fp3Portal extends React.Component {
         const actv = wards.filter(x => x.status === "active" && x.loaded), house = actv.reduce((tt, x) => tt + (x.fees.payable || 0), 0);
         out.ac = { h: first + "’s account", lab: !F.enabled ? "No fees" : F.joining ? "Joining invoice" : F.payable ? "To pay now" : "All paid", amount: N(F.payable),
           sub: !F.enabled ? "The centre hasn’t set up fees for " + first + "’s account." : F.payable ? (F.joining ? "Membership and the first month’s commitment fee, charged only for the Saturdays left." : fp3Owed(F.lines)) : "Thank you. Nothing is owed for " + first + ".",
-          canPay: F.payable > 0 && !pend, payL: F.payOnline ? "Pay " + N(F.payable) : "How to pay", pay: () => F.payOnline ? openSheet("pay") : this.go("money", { bank: true }), pending: pend && F.payable > 0, pendingL: "Bank transfer being checked",
+          canPay: F.payable > 0 && !pend, payL: F.payOnline ? "Pay " + N((F.joining ? F.joining.total : F.payable) + (F.payFee || 0)) : "How to pay", pay: () => F.payOnline ? openSheet("pay") : this.go("money", { bank: true }), pending: pend && F.payable > 0, pendingL: "Bank transfer being checked",
           facts: [["Next charge", F.next[0] ? N(F.next[0].amount) : "—", F.next[0] ? F.next[0].when : "Nothing scheduled"]]
             .concat(F.ahead && F.ahead.paidThrough ? [["Paid ahead", "to " + F.ahead.paidThroughL, N(F.ahead.credit) + " held on the account"]] : [])
             .concat([["Training place", chip, "Covered by NGG, not a bill"]]).concat(actv.length > 1 ? [["All your children", N(house), house ? "To pay across " + actv.length + " children" : "Nothing owed"]] : []).map(f => ({ l: f[0], v: f[1], s: f[2] })),
@@ -440,7 +459,7 @@ class Fp3Portal extends React.Component {
     if (active && loaded && sec === "money") {
       const F = w.fees, P = F.programme || {}, TM = F.terms || {}, J = F.joining, first = w.member.first;
       const pend = !!F.offlinePending, online = F.payOnline && !pend;
-      const KI = { dues: "ph ph-calendar-check", membership: "ph ph-identification-badge", fine: "ph ph-warning", adjustment: "ph ph-pencil-simple-line", payment: "ph ph-arrow-down-left", waiver: "ph ph-hand-heart", training: "ph ph-graduation-cap", writeoff: "ph ph-graduation-cap" };
+      const KI = { training_owed: "ph ph-graduation-cap", dues: "ph ph-calendar-check", membership: "ph ph-identification-badge", fine: "ph ph-warning", adjustment: "ph ph-pencil-simple-line", payment: "ph ph-arrow-down-left", waiver: "ph ph-hand-heart", training: "ph ph-graduation-cap", writeoff: "ph ph-graduation-cap" };
       const lines = J ? J.items : F.lines;
       const ref = J ? J.invoiceId : "NGG-BAL-" + String(w.member.displayId || "").replace(/-/g, "");
       const isPlace = r => r.kind === "training" || r.kind === "writeoff";
@@ -449,7 +468,7 @@ class Fp3Portal extends React.Component {
       const shown = list.slice(0, S.stN);
       const rows = []; let curM = "";
       shown.forEach(r => {
-        if (r.month !== curM) { curM = r.month; const inM = list.filter(x => x.month === curM && !isPlace(x) && !x.void); const ch = inM.filter(x => x.dir === "charge").reduce((tt, x) => tt + x.amount, 0), pd = inM.filter(x => x.dir === "credit").reduce((tt, x) => tt + x.amount, 0); rows.push({ head: true, item: false, month: curM, net: [ch ? "Charged " + N(ch) : "", pd ? "Paid " + N(pd) : ""].filter(Boolean).join(" · ") }); }
+        if (r.month !== curM) { curM = r.month; const inM = list.filter(x => x.month === curM && !isPlace(x) && !x.void); const ch = inM.filter(x => x.dir === "charge").reduce((tt, x) => tt + x.amount, 0), pd = inM.filter(x => x.dir === "credit").reduce((tt, x) => tt + x.amount, 0); const end = F.entries.find(x => x.month === curM); rows.push({ head: true, item: false, month: curM, net: [ch ? "Charged " + N(ch) : "", pd ? "Paid " + N(pd) : "", end && typeof end.balance === "number" ? (end.balance < 0 ? "In credit " + N(-end.balance) : "Owed at month end " + N(end.balance)) : ""].filter(Boolean).join(" · ") }); }
         const pl = isPlace(r), crd = r.dir === "credit";
         rows.push({ head: false, item: true, note: r.note, when: r.when, icon: KI[r.kind] || "ph ph-receipt", amount: (crd ? "− " : "") + N(r.amount), ac: pl ? "#6b6b72" : crd ? "#17663a" : "#0b0b0c", nc: pl ? "#4a4a50" : "#0b0b0c", td: r.void ? "line-through" : "none", ibg: pl ? "#efede8" : crd ? T.ok[0] : r.kind === "fine" ? T.warn[0] : "#efede8", ifg: pl ? "#6b6b72" : crd ? T.ok[1] : r.kind === "fine" ? T.warn[1] : "#3a3a40", hasTag: pl || !!r.void, tag: r.void ? "Cancelled" : "Covered by NGG, not a bill" });
       });
@@ -457,6 +476,8 @@ class Fp3Portal extends React.Component {
       const bk = F.bank;
       out.mo = {
         lab: !F.enabled ? "Fees aren’t switched on" : J ? "Joining invoice · " + J.invoiceId : F.payable ? "To pay now" : "Nothing to pay", amount: N(F.payable),
+        /* Online, the family pays Paystack's charge too: the button says the figure the checkout will show. */
+        payOnlineL: "Pay " + N((J ? J.total : F.payable) + (F.payFee || 0)) + " online",
         sub: !F.enabled ? "The centre hasn’t set up fees for " + first + "’s account. Nothing is owed." : J ? first + "’s place at " + w.member.centre + " is confirmed. Paying this completes membership. " + first + "’s first Saturday is " + J.start + "." : F.payable ? "What’s owed on " + first + "’s account today." : "Thank you. Nothing is owed for " + first + ".",
         hasLines: F.payable > 0 && lines.length > 0,
         lines: lines.map((l, i) => ({ icon: KI[l.kind] || "ph ph-receipt", label: l.label, detail: l.detail, amount: N(l.amount), bt: i ? "#2a2a2e" : "transparent" })),
@@ -465,10 +486,13 @@ class Fp3Portal extends React.Component {
         bank: bk ? [["Account name", bk.name, "inherit"], ["Bank", bk.bank, "inherit"], ["Account no.", bk.account, "'Geist Mono', monospace"], ["Amount", N(F.payable), "'Geist Mono', monospace"], ["Reference", ref, "'Geist Mono', monospace"]].map(b => ({ k: b[0], v: b[1], ff: b[2] })) : [],
         hasFines: w.conduct.fines.length > 0,
         fines: w.conduct.fines.map(x => ({ amount: N(x.amount), when: x.when, reason: x.reason, canAppeal: true, appealed: false, appeal: () => openSheet("appeal", { fRef: (w.charges.find(c => /fine/i.test(c.label)) || w.charges[0] || {}).id || "" }) })),
-        next: F.next.map(x => ({ label: x.label, when: x.when, amount: N(x.amount) })),
-        termsL: "Membership is " + N(TM.membershipFee) + " a year, renewed on the date " + first + " joined. The commitment fee is " + N(TM.monthly) + " a month, charged on the 1st; a first month is charged only for the Saturdays left." + (TM.remindEvery ? " While something is owed, a reminder is emailed every " + TM.remindEvery + " days." : ""),
+        /* Nothing coming is said, not left as an empty card: paid ahead, or simply nothing in the next two months. */
+        next: F.next.length ? F.next.map(x => ({ label: x.label, when: x.when, amount: N(x.amount) }))
+          : F.enabled ? [{ label: F.ahead && F.ahead.paidThrough ? "Paid ahead to " + F.ahead.paidThroughL : "Nothing falls due in the next two months", when: F.ahead && F.ahead.paidThrough ? N(F.ahead.credit) + " held on the account" : "", amount: "" }] : [],
+        termsL: "Membership is " + N(TM.membershipFee) + " a year, renewed on the date " + first + " joined. The commitment fee is " + N(TM.monthly) + " a month, charged on the 1st; a first month is charged only for the Saturdays left." + fp3TellTerms(TM),
         stTabs: TABS.map(tb => { const on = S.stF === tb[0]; return { l: tb[1], sel: on ? "true" : "false", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c", bd: on ? "#0b0b0c" : "#d9d6cd", onClick: () => this.setState({ stF: tb[0], stN: 14 }, () => this.pushUrl(true)) }; }),
-        rows, stCount: list.length + (list.length === 1 ? " entry" : " entries"), stEmpty: !list.length, stEmptyL: S.stF === "fines" ? "No fines. " + first + " has a clean record." : "Nothing here yet.",
+        /* The whole account as an A4 statement, printable or saved as a PDF (domain/dues-print.php). */
+        rows, stPdf: "/api/family/statement.php?linkId=" + encodeURIComponent(w.linkId), stCount: list.length + (list.length === 1 ? " entry" : " entries"), stEmpty: !list.length, stEmptyL: S.stF === "fines" ? "No fines. " + first + " has a clean record." : "Nothing here yet.",
         stMore: list.length > S.stN, stMoreL: "Show " + Math.min(20, list.length - S.stN) + " more of " + (list.length - S.stN), showMore: () => this.setState(s2 => ({ stN: s2.stN + 20 })),
       };
       const tm = P.trainingMonths || 0, sm = P.serviceMonths || 0, leave = " If " + first + " leaves before the MOU is complete, the part not yet earned off becomes due.";
@@ -487,7 +511,7 @@ class Fp3Portal extends React.Component {
     }
 
     if (active && loaded && sec === "requests") {
-      out.reqKinds = [["leave", "ph ph-calendar-blank", "Tell the centre about an absence", "Before or after. They’re marked excused."], ["appeal", "ph ph-scales", "Appeal", "A decision, fine or fee you think is wrong"], ["idcard", "ph ph-identification-card", "Replacement ID card", "Lost, damaged or wrong name"], ["academic", "ph ph-graduation-cap", "Academic leave", "Weeks away for exams or a school programme"], ["mentor", "ph ph-chat-teardrop-text", "Ask the mentor", "About growth, results or the plan"]]
+      out.reqKinds = [["leave", "ph ph-calendar-blank", "Tell the centre about an absence", "At least 24 hours before. Later only for an emergency."], ["appeal", "ph ph-scales", "Appeal", "A decision, fine or fee you think is wrong"], ["idcard", "ph ph-identification-card", "Replacement ID card", "Lost, damaged or wrong name"], ["academic", "ph ph-graduation-cap", "Academic leave", "Weeks away for exams or a school programme"], ["mentor", "ph ph-chat-teardrop-text", "Ask the mentor", "About growth, results or the plan"]]
         .filter(k => k[0] !== "mentor" || w.member.hasMentor)
         .map(k => ({ icon: k[1], l: k[2], s: k[3], onClick: () => openSheet(k[0], { fRef: (w.charges[0] || {}).id || "" }) }));
       const SM = { open: ["With the desk", T.warn], approved: ["Approved", T.ok], declined: ["Not approved", T.bad], withdrawn: ["Withdrawn", T.neutral] };
@@ -624,7 +648,7 @@ class Fp3Portal extends React.Component {
     if (out.hasSheet) {
       const first = w.member.first;
       const busyL = l => S.busy ? "Sending…" : l;
-      const req = (kind, fields, done) => this.write(() => NGGApi.family.act("request", Object.assign({ linkId: w.linkId, kind }, fields)), () => this.setState({ shDone: done }), () => this.loadWard(w.linkId));
+      const req = (kind, fields, done) => this.write(() => NGGApi.family.act("request", Object.assign({ linkId: w.linkId, kind }, fields)), rr => this.setState({ shDone: typeof done === "function" ? done(rr) : done }), () => this.loadWard(w.linkId));
       if (sh === "upload") {
         const r0 = (w.results || []).find(x => x.status === "missing") || this.curRes(w) || {};
         Object.assign(out, { shTitle: "Upload " + first + "’s results", shLead: "The " + r0.name + " report. " + first + " is told you uploaded it.", upL: S.upName || "Take a photo or choose a picture", upIcon: S.upName ? "ph ph-file-check" : "ph ph-camera", upBd: S.upName ? "#22a05a" : "#c9c7bf", shGoL: S.busy ? (S.upPct ? "Uploading… " + S.upPct + "%" : "Uploading…") : "Upload" });
@@ -656,9 +680,12 @@ class Fp3Portal extends React.Component {
         const notice = !!mm.href;
         out.msg = { meta: [mm.t, mm.from].filter(Boolean).join(" · "), b: notice ? mm.b + (mm.sign && !mm.signed ? "\n\nPlease read the whole notice and confirm you have understood it." : "") : mm.b,
           signed: !!mm.signed, signedL: notice ? "Acknowledged. The centre can see you have read and understood it." : "Signed. The mentor can see you’ve read it." };
-        Object.assign(out, { shTitle: mm.h || "", shLead: "", shGoL: notice ? (mm.sign && !mm.signed ? "Read and acknowledge" : "Open the notice") : mm.sign && !mm.signed ? busyL("Sign as read") : "Close" });
+        /* A dues notice is something to do, not only to read: its button opens Fees for that child. */
+        const money = mm.act === "money";
+        Object.assign(out, { shTitle: mm.h || "", shLead: "", shGoL: notice ? (mm.sign && !mm.signed ? "Read and acknowledge" : "Open the notice") : money ? "See fees and pay" : mm.sign && !mm.signed ? busyL("Sign as read") : "Close" });
         out.shGo = () => {
           if (notice) { location.assign(mm.href); return; }
+          if (money) { this.go("money", mm.ward && mm.ward !== "all" ? { childId: mm.ward } : {}); return; }
           if (!(mm.sign && !mm.signed)) return this.closeSheet();
           this.write(() => NGGApi.family.act("report.sign", { id: mm.id }), () => { this.closeSheet(); this.toast("Signed. The mentor can see you’ve read it."); }, () => this.loadInbox());
         };
@@ -673,8 +700,12 @@ class Fp3Portal extends React.Component {
         out.shGo = () => { if (S.fBody.trim().length < 8) return this.setState({ shErr: "Tell the centre a little more." }); req(pr ? "familydetails" : "collect", { subject: S.fBody.trim().slice(0, 60), body: S.fBody.trim() }, ["Sent", "The " + w.member.centre + " desk checks it and replies in Messages → Requests, usually within two days."]); };
       }
       if (sh === "pay") {
-        Object.assign(out, { shTitle: w.fees.joining ? "Pay " + first + "’s joining invoice" : "Pay for " + first, shLead: "You’ll go to Paystack to pay by card, bank or USSD, then come straight back here.", shGoL: S.busy ? "Opening Paystack…" : "Continue to Paystack", shGoBg: "#f5b026", shGoFg: "#2a1d00" });
-        out.payLines = (w.fees.joining ? w.fees.joining.items : w.fees.lines).map(rr => ({ k: rr.label, v: N(rr.amount) })).concat([{ k: "Total", v: N(w.fees.payable) }]);
+        const fee = w.fees.payFee || 0, net = w.fees.joining ? w.fees.joining.total : w.fees.payable;
+        Object.assign(out, { shTitle: w.fees.joining ? "Pay " + first + "’s joining invoice" : "Pay for " + first,
+          shLead: "You’ll go to our payment provider to pay by card, bank or USSD, then come straight back here." + (fee ? " Paying online adds a payment processing fee of " + N(fee) + "; paying by bank transfer to NGG has none." : ""),
+          shGoL: S.busy ? "Opening the payment page…" : "Continue to payment", shGoBg: "#f5b026", shGoFg: "#2a1d00" });
+        out.payLines = (w.fees.joining ? w.fees.joining.items : w.fees.lines).map(rr => ({ k: rr.label, v: N(rr.amount) }))
+          .concat(fee ? [{ k: "Payment processing fee", v: N(fee) }] : []).concat([{ k: "Total", v: N(net + fee) }]);
         out.shGo = () => this.write(() => NGGApi.family.pay(w.linkId), rr => { if (rr && rr.payUrl) window.location.assign(rr.payUrl); else this.setState({ shErr: "The payment page couldn’t be opened. Try again." }); });
       }
       if (sh === "leave") {
@@ -682,7 +713,11 @@ class Fp3Portal extends React.Component {
         Object.assign(out, { shTitle: first + " will be away", shLead: "The centre marks those days as excused, so they don’t count against " + first + "’s attendance." + (ex ? (ex.left ? " " + first + " has " + ex.left + " of " + ex.max + " absences left in the programme. Nothing is fined while the centre considers it." : " " + first + " has used all " + ex.max + " absences the programme allows, so the centre can’t take another. Speak to them if it’s an emergency.") : ""), shBodyL: "Why " + first + " will be away", shBodyPh: "e.g. family wedding, hospital appointment", shGoL: ex && !ex.left ? "Close" : busyL("Tell the centre") });
         // None left: no form to fill in and be refused — the sheet says why and closes.
         if (ex && !ex.left) { out.shIsLeave = false; out.shHasBody = false; }
-        out.shGo = () => { if (ex && !ex.left) return this.closeSheet(); if (!S.fFrom) return this.setState({ shErr: "Pick the first day " + first + " will be away." }); if (S.fTo && S.fTo < S.fFrom) return this.setState({ shErr: "The last day can’t be before the first." }); if (S.fBody.trim().length < 5) return this.setState({ shErr: "Say why " + first + " will be away, so the desk can answer without asking." }); req("leave", { subject: S.fBody.trim().slice(0, 60), body: S.fBody.trim(), fromDate: S.fFrom, toDate: S.fTo || S.fFrom }, ["The centre has been told", "The " + w.member.centre + " desk will reply in Messages → Requests. " + first + " won’t be marked absent for those days."]); };
+        // Under 24 hours before the day it excuses: warned, never blocked (nggLeaveNotice, components.jsx).
+        const nt = nggLeaveNotice(S.fFrom, w.leaveRedline); out.shNoticeOn = !!(nt.short && out.shIsLeave !== false); out.shNotice = nt.short ? nggLeaveNoticeText(nt, "you") : "";
+        out.shGo = () => { if (ex && !ex.left) return this.closeSheet(); if (!S.fFrom) return this.setState({ shErr: "Pick the first day " + first + " will be away." }); if (S.fTo && S.fTo < S.fFrom) return this.setState({ shErr: "The last day can’t be before the first." }); if (S.fBody.trim().length < 5) return this.setState({ shErr: "Say why " + first + " will be away, so the desk can answer without asking." }); req("leave", { subject: S.fBody.trim().slice(0, 60), body: S.fBody.trim(), fromDate: S.fFrom, toDate: S.fTo || S.fFrom }, rr => rr && rr.request && rr.request.shortNotice
+          ? ["Sent, with less than 24 hours’ notice", "Leave asked for this late is only approved for an emergency the centre can check. The " + w.member.centre + " desk will reply in Messages → Requests; keep any proof ready to show them."]
+          : ["The centre has been told", "The " + w.member.centre + " desk will reply in Messages → Requests. " + first + " won’t be marked absent for those days."]); };
       }
       if (sh === "academic") {
         Object.assign(out, { shTitle: "Academic leave for " + first, shLead: "For school exams or a school programme that clashes with Saturdays, up to ten weeks at a time. Once the centre approves it, those Saturdays aren’t absences: nothing is fined and nothing counts against " + first + "’s " + (w.excuses ? w.excuses.max : 2) + " absences.", shBodyL: "What it’s for, and the school", shBodyPh: "e.g. WAEC mock exams at Grace High School, 2–20 Nov", shGoL: busyL("Ask for academic leave") });
@@ -736,15 +771,21 @@ function fp3Asks(x) {
 
 /** Fees → Pay ahead: months of the commitment fee (and any renewal among them), priced by the server. */
 function Fp3Ahead({ c, w }) {
-  const A = w.fees.ahead, qs = (A && A.quotes) || [], first = w.member.first, N = n => c.naira(n);
-  const [pick, setPick] = React.useState(() => (qs.find(q => q.months === 3) || qs[0] || {}).months || 0);
+  const A = w.fees.ahead, first = w.member.first, N = n => c.naira(n);
+  const mq = (A && A.quotes) || [], tq = (A && A.termQuotes) || [];
+  /* By the month or by the term. Both are priced by the server and capped at a
+     year ahead (A.maxMonths); a term is counted to its last month. */
+  const [mode, setMode] = React.useState("months");
+  const byTerm = mode === "terms" && tq.length > 0;
+  const qs = byTerm ? tq : mq, keyOf = x => byTerm ? x.terms : x.months;
+  const [pick, setPick] = React.useState({ months: (mq.find(q => q.months === 3) || mq[0] || {}).months || 0, terms: (tq[0] || {}).terms || 0 });
   const [busy, setBusy] = React.useState(false), [err, setErr] = React.useState("");
   if (!A) return null;
-  const q = qs.find(x => x.months === pick) || qs[0];
+  const q = qs.find(x => keyOf(x) === pick[byTerm ? "terms" : "months"]) || qs[0];
   const go = () => {
     if (!q || busy || !c.can()) return;
     setBusy(true); setErr("");
-    NGGApi.family.act("fees.advance", { linkId: w.linkId, months: q.months })
+    NGGApi.family.act("fees.advance", byTerm ? { linkId: w.linkId, terms: q.terms } : { linkId: w.linkId, months: q.months })
       .then(r => { if (r && r.payUrl) window.location.assign(r.payUrl); else { setBusy(false); setErr("The payment page couldn’t be opened. Try again."); } })
       .catch(e => { setBusy(false); setErr(fp3Err(e)); });
   };
@@ -757,10 +798,15 @@ function Fp3Ahead({ c, w }) {
           <p>{A.paidThrough ? first + " is paid to the end of " + A.paidThroughL + ". " + N(A.credit) + " is held on the account." : "Pay several months of " + first + "’s commitment fee in one go, with any membership renewal that falls in them."}</p>
         </div>
       </div>
+      {tq.length > 0 && mq.length > 0 && (
+        <div className="fp3x-modes" role="group" aria-label="Pay ahead by">
+          {[["months", "By month"], ["terms", "By term"]].map(([k, l]) => <button key={k} type="button" aria-pressed={mode === k ? "true" : "false"} className={"fp3x-mode" + (mode === k ? " is-on" : "")} onClick={() => setMode(k)}>{l}</button>)}
+        </div>
+      )}
       {q ? <React.Fragment>
-        <div className="fp3x-opts" role="group" aria-label="How many months ahead">
-          {qs.map(x => <button key={x.months} type="button" aria-pressed={x.months === q.months ? "true" : "false"} className={"fp3x-opt" + (x.months === q.months ? " is-on" : "")} onClick={() => setPick(x.months)}>
-            <b>{x.months} month{x.months === 1 ? "" : "s"}</b><span>to {x.throughL}</span><em>{N(x.total)}</em>
+        <div className="fp3x-opts" role="group" aria-label={byTerm ? "How many terms ahead" : "How many months ahead"}>
+          {qs.map(x => <button key={keyOf(x)} type="button" aria-pressed={keyOf(x) === keyOf(q) ? "true" : "false"} className={"fp3x-opt" + (keyOf(x) === keyOf(q) ? " is-on" : "")} onClick={() => setPick(p => Object.assign({}, p, { [byTerm ? "terms" : "months"]: keyOf(x) }))}>
+            <b>{byTerm ? x.termsL : x.months + " month" + (x.months === 1 ? "" : "s")}</b><span>to {x.throughL}</span><em>{N(x.total)}</em>
           </button>)}
         </div>
         <ul className="fp3x-lines" aria-label="What this pays">
@@ -770,7 +816,8 @@ function Fp3Ahead({ c, w }) {
         {err && <p className="fp3x-err" role="alert">{err}</p>}
         <button type="button" className="fp3x-go" onClick={go} disabled={busy}>{busy ? "Opening the invoice…" : "Pay " + N(q.total) + " ahead"}</button>
         <p className="fp3x-fine">Nothing is charged early. The payment waits on {first}’s account and meets each month’s fee on the 1st, so no reminder comes while it lasts. Card, bank or USSD through Paystack, or by transfer.</p>
-      </React.Fragment> : <p className="fp3x-fine">Nothing to pay ahead right now.</p>}
+      </React.Fragment> : <p className="fp3x-fine">{A.paidThrough ? "Nothing more to pay ahead: " + first + " can be paid up to " + (A.maxMonths || 12) + " months ahead." : "Nothing to pay ahead right now."}</p>}
+      {A.notice && <p className="fp3x-notice" role="note"><i className="ph ph-info" aria-hidden="true"/> <span>{A.notice}</span></p>}
     </section>
   );
 }
@@ -869,10 +916,38 @@ function Fp3Paid({ c, w }) {
 }
 
 /** Today, below the design's page: quick actions, what is coming, and this week's lessons. */
+/** Money → Documents: every invoice, receipt, acknowledgement and Math Lab
+    certificate, each opened as its printable page (domain/documents.php). */
+const FP3_DOC = { invoice: ["ph ph-file-text", "Invoice"], receipt: ["ph ph-receipt", "Receipt"], ack: ["ph ph-hourglass-medium", "Acknowledgement"], certificate: ["ph ph-medal", "Certificate"] };
+const FP3_DOC_STATE = { due: "Payment due", overdue: "Overdue", paid: "Paid", void: "Cancelled", pending: "Being checked", issued: "", superseded: "Replaced" };
+function Fp3Docs({ c, w }) {
+  const docs = w.documents || [];
+  if (!docs.length) return null;
+  const when = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); };
+  return (
+    <section className="fp3x-card fp3x-docs" aria-labelledby="fp3xDocsH">
+      <div className="fp3x-card-h">
+        <span className="fp3x-ic" aria-hidden="true"><i className="ph ph-files"/></span>
+        <div><h2 id="fp3xDocsH">Documents</h2><p>Invoices, receipts and certificates. Open one to print it or save it as a PDF.</p></div>
+      </div>
+      <ul className="fp3x-doclist">
+        {docs.map(d => (
+          <li key={d.kind + d.no}>
+            <i className={(FP3_DOC[d.kind] || FP3_DOC.invoice)[0]} aria-hidden="true"/>
+            <span className="fp3x-doc-t"><b>{d.kind === "certificate" ? d.title : (FP3_DOC[d.kind] || FP3_DOC.invoice)[1]}</b>
+              <span><span className="fp3x-doc-no">{d.no}</span>{" · " + when(d.at)}{d.amount != null ? " · " + c.naira(d.amount) : ""}{FP3_DOC_STATE[d.state] ? " · " + FP3_DOC_STATE[d.state] : ""}</span></span>
+            <a className="fp3x-doc-go" href={d.url} target="_blank" rel="noopener noreferrer" aria-label={"Open " + (FP3_DOC[d.kind] || FP3_DOC.invoice)[1].toLowerCase() + " " + d.no}>Open</a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Fp3TodayMore({ c, w }) {
   const S = c.state, first = w.member.first, F = w.fees, L = w.learning || {};
   const acts = [
-    ["ph ph-calendar-blank", "Tell the centre about an absence", "Before or after; marked excused", () => c.openSheet("leave")],
+    ["ph ph-calendar-blank", "Tell the centre about an absence", "At least 24 hours before; later only for an emergency", () => c.openSheet("leave")],
     w.member.hasMentor ? ["ph ph-chat-teardrop-text", "Ask " + w.member.mentor, "About growth, results or the plan", () => c.openSheet("mentor")] : null,
     F.enabled && F.ahead && (F.ahead.quotes || []).length ? ["ph ph-calendar-plus", "Pay ahead", F.ahead.paidThrough ? "Paid to " + F.ahead.paidThroughL : "Months of fees in one go", () => c.go("money")] : null,
     ["ph ph-identification-card", "Replacement ID card", "Lost, damaged or wrong name", () => c.openSheet("idcard")],
@@ -883,6 +958,7 @@ function Fp3TodayMore({ c, w }) {
       {/* Asked here, where a parent can see the point: their child's day. */}
       {typeof NggPushNudge === "function" ? <NggPushNudge surface="family" text={"Know the moment " + first + " checks in or out, and when the centre answers you — on this phone, without signing in. Nights stay quiet."}/> : null}
       <Fp3Anchor c={c} linkId={w.linkId} first={first} role="parent" compact/>
+      {typeof RclProgress === "function" ? <RclProgress who="family" linkId={w.linkId} first={first}/> : null}
       <section className="fp3x-card" aria-labelledby="fp3x-qa">
         <h2 id="fp3x-qa" className="fp3x-h">For {first}</h2>
         <div className="fp3x-acts">

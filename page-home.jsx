@@ -113,7 +113,7 @@ function Hero({ setPage }) {
           </div>
 
           {/* Right: a glass card framing the cohort photo + Genius of the Week. */}
-          <div className="reveal" data-reveal style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: 24, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+          <div className="reveal" data-reveal style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: 24, backdropFilter: "var(--lite-blur, blur(8px))", WebkitBackdropFilter: "var(--lite-blur, blur(8px))" }}>
             <div style={{ aspectRatio: "4 / 3", borderRadius: 16, overflow: "hidden", position: "relative", background: "var(--navy-hero-end)" }}>
               <img src={scene("heroMain", 1400)} alt="Current cohort" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
             </div>
@@ -678,18 +678,6 @@ function EventsBand({ setPage }) {
   );
 }
 
-/* ============================================================================
-   PUBLIC STATUS PAGE (/s-status) — a live, PII-free transparency board.
-   Aggregate numbers only: no child name or photo ever appears here.
-   (Legacy /status transparently resolves here — see pageFromPath in app.jsx.)
-   ============================================================================ */
-function relAgo(iso) {
-  if (!iso) return "";
-  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (s < 60) return s + "s ago";
-  if (s < 3600) return Math.floor(s / 60) + "m ago";
-  return Math.floor(s / 3600) + "h ago";
-}
 function rateTone(r) { return r >= 85 ? "#2f9e44" : r >= 60 ? "#e8a92b" : "#e03131"; }
 
 function statusBg(r) { return r >= 85 ? "rgba(47,158,68,0.12)" : r >= 60 ? "rgba(232,169,43,0.16)" : "rgba(224,49,49,0.12)"; }
@@ -942,7 +930,7 @@ function StatusPage({ setPage, previewConfig }) {
 
   // Centre table (sorted)
   const sorted = [...centresRaw].sort((a, b) => sortKey === "name" ? a.name.localeCompare(b.name) : sortKey === "present" ? (b.present - a.present) : (b.rate - a.rate));
-  const segBase = { fontFamily: "'Inter',sans-serif", fontSize: 13, fontWeight: 600, padding: "7px 15px", border: "none", cursor: "pointer", borderRadius: 999, transition: "all .15s ease" };
+  const segBase = { fontFamily: "'Inter',sans-serif", fontSize: 13, fontWeight: 600, padding: "7px 15px", border: "none", cursor: "pointer", borderRadius: 999, transition: "all calc(.15s * var(--motion, 1)) ease" };
   const segStyle = (on) => ({ ...segBase, background: on ? "#0c1432" : "transparent", color: on ? "#fff" : "#2a335c" });
 
   // Trend
@@ -1031,7 +1019,7 @@ function StatusPage({ setPage, previewConfig }) {
     const allMem = members.filter(m => m.centre === dc.name);
     const facSet = [...new Set(allMem.map(m => m.faculty))];
     const avgStars = allMem.length ? Math.round(allMem.reduce((s, m) => s + m.stars, 0) / allMem.length) : 0;
-    const chipBase = { display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "'Inter',sans-serif", fontSize: 13.5, fontWeight: 600, padding: "8px 15px", borderRadius: 999, cursor: "pointer", border: "1.5px solid", transition: "all .15s ease" };
+    const chipBase = { display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "'Inter',sans-serif", fontSize: 13.5, fontWeight: 600, padding: "8px 15px", borderRadius: 999, cursor: "pointer", border: "1.5px solid", transition: "all calc(.15s * var(--motion, 1)) ease" };
     const mkChip = (label, count) => {
       const sel = facFilter === label;
       return { label, count, style: { ...chipBase, background: sel ? "rgba(28,42,94,0.10)" : "#fff", borderColor: sel ? "#0c1432" : "#e5e8ee", color: sel ? "#0c1432" : "#2a335c" },
@@ -1085,7 +1073,7 @@ function StatusPage({ setPage, previewConfig }) {
               </div>
             </div>
 
-            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "var(--rs-p-40, 26px 28px)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "var(--rs-p-40, 26px 28px)", backdropFilter: "var(--lite-blur, blur(8px))", WebkitBackdropFilter: "var(--lite-blur, blur(8px))" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>Attendance today</span>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: accent }}>{k.centres || 0} centres</span>
@@ -1477,7 +1465,7 @@ function StatusPage({ setPage, previewConfig }) {
                   <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                     <div style={{ height: 4, background: "#3b5bdb" }}/>
                     <div style={{ aspectRatio: "16/10", position: "relative", background: "#f3ecdb", display: "grid", placeItems: "center" }}>
-                      {a.photoUrl ? <img src={a.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : <i className="ph ph-image-square" style={{ fontSize: 30, color: "#c9bfa4" }}/>}
+                      {a.photoUrl ? <img src={nggImg(a.photoUrl, "card")} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : <i className="ph ph-image-square" style={{ fontSize: 30, color: "#c9bfa4" }}/>}
                     </div>
                     <div style={{ padding: "15px 16px 16px", display: "flex", flexDirection: "column", flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
@@ -1528,7 +1516,7 @@ function StatusPage({ setPage, previewConfig }) {
                 <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 160, maxWidth: "40vw" }}>
                   <span style={{ width: p.avatarSize, height: p.avatarSize, borderRadius: "50%", display: "grid", placeItems: "center", position: "relative", overflow: "hidden", fontFamily: "'Sora'", fontWeight: 800, fontSize: "var(--rs-fsize-1, 22px)", color: inkOn(p.color).ink, background: p.color, border: "3px solid " + p.medalColor, boxShadow: "0 0 0 4px rgba(255,255,255,0.06)" }}>
                     {p.initial}
-                    {p.photo ? <img src={p.photo} alt="" loading="lazy" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}
+                    {p.photo ? <img src={nggImg(p.photo, "headshot")} alt="" loading="lazy" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}
                   </span>
                   <span style={{ marginTop: 10, fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#fff", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.handle}</span>
                   <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "rgba(255,255,255,0.55)", marginTop: 2 }}>{p.faculty} · {p.centre}</span>
@@ -1623,7 +1611,7 @@ function LbRow({ m }) {
           {/* The initial stays underneath: if the photo 404s the avatar
               degrades to the same monogram everyone else has, rather than a
               broken-image icon on a child's row. */}
-          {m.photo ? <img src={m.photo} alt="" loading="lazy" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}
+          {m.photo ? <img src={nggImg(m.photo, "headshot")} alt="" loading="lazy" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}
         </span>
         <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
           <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.handle}</b>
@@ -1884,7 +1872,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
               </div>
             </div>
 
-            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "var(--rs-p-40, 26px 28px)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "var(--rs-p-40, 26px 28px)", backdropFilter: "var(--lite-blur, blur(8px))", WebkitBackdropFilter: "var(--lite-blur, blur(8px))" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>Needs filled</span>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: accent }}>{k.centres || 0} centres</span>

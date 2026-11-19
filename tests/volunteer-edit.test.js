@@ -94,7 +94,7 @@ function cleanup() {
     await pg.click('button.admin-tab:has-text("Roster")');
     await pg.waitForFunction(() => /Bola Ade/.test(document.body.innerText), null, { timeout: 30000 });
     const rowSel = 'tr:has-text("Bola Ade")';
-    chk('a volunteer row offers Edit details (the Control Room form) and More', (await pg.$$(rowSel + ' button:has-text("Edit details")')).length === 1 && (await pg.$$(rowSel + ' button:has-text("More")')).length === 1);
+    chk('a volunteer row offers Edit details (the Control Room form) and Photo & portal access', (await pg.$$(rowSel + ' button:has-text("Edit details")')).length === 1 && (await pg.$$(rowSel + ' button:has-text("Photo & portal access")')).length === 1);
 
     await pg.click(rowSel + ' button:has-text("Edit details")');
     const F = 'form[aria-label="Edit Bola Ade"]';
@@ -137,9 +137,9 @@ function cleanup() {
     await pg.waitForFunction(() => /Nothing changed/.test(document.body.innerText), null, { timeout: 10000 }).catch(() => {});
     chk('saving with nothing changed sends nothing and says so', /Nothing changed/.test(await pg.innerText('body')));
 
-    await pg.click(rowSel2 + ' button:has-text("More")');
+    await pg.click(rowSel2 + ' button:has-text("Photo & portal access")');
     await pg.waitForSelector('.vol-more', { timeout: 10000 });
-    chk('More holds the photo, the profile and delete', (await pg.$$('.vol-more .vol-more-photo')).length === 1 && (await pg.$$('.vol-more button:has-text("Delete volunteer")')).length === 1);
+    chk('Photo & portal access holds the photo, the profile and delete', (await pg.$$('.vol-more .vol-more-photo')).length === 1 && (await pg.$$('.vol-more button:has-text("Delete volunteer")')).length === 1);
     chk('the old inline editor is gone (one form, the Control Room’s)', (await pg.$$('button:has-text("Save volunteer")')).length === 0);
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));

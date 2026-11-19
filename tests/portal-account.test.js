@@ -171,6 +171,8 @@ async function as(memberId, admin, viewport) {
     // ── Voice notes and reading aloud ──
     await mb.goto(BASE + '/dashboard/mentor', { waitUntil: 'domcontentloaded' }); await waitForBoot(mb);
     await mb.waitForSelector('main button[aria-label="Record a voice note"]', { timeout: 40000 }).catch(() => {});
+    // The composer paints before the conversation arrives: wait for the mentor's messages, not the box.
+    await mb.waitForSelector('main button[aria-label="Read aloud"]', { timeout: 20000 }).catch(() => {});
     chk('Voice: the message box has a microphone, and the mentor’s messages can be read aloud',
       await mb.isVisible('main button[aria-label="Record a voice note"]') && (await mb.$$('main button[aria-label="Read aloud"]')).length >= 1);
     // The test server has no storage bucket: the upload is answered with a path the site would have stored.
@@ -207,6 +209,8 @@ async function as(memberId, admin, viewport) {
     await mb.goto(BASE + '/journal/?write=1', { waitUntil: 'domcontentloaded' });
     await mb.waitForSelector('textarea.aj-musing', { timeout: 60000 }).catch(async e => { console.error('DEBUG journal:', (await mb.innerText('body')).slice(0, 600), mb.errs); throw e; });
     await mb.fill('textarea.aj-musing', 'I led the warm-up and nobody laughed.');
+    // The mentor arrives with the dashboard read, after the writer opens: wait for it, not a fixed moment.
+    await mb.waitForSelector('button.aj-share', { timeout: 20000 }).catch(() => {});
     const shareBtn = await mb.$('button.aj-share');
     chk('Journal: the writer offers “Share with my mentor”, off until the member turns it on', !!shareBtn && (await shareBtn.getAttribute('aria-pressed')) === 'false');
     await mb.click('button.aj-share');

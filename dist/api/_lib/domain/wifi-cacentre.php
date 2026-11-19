@@ -40,6 +40,25 @@
 
 /** Must match WifiStore::ROSTER_MAX at CACENTRE: one push carries at most this many. */
 const WIFI_CAC_MAX = 5000;
+
+/**
+ * The most a single push may weigh, in bytes.
+ *
+ * Not CACENTRE's limit — the HOST'S. CACENTRE sits on cPanel, and
+ * ModSecurity's `SecRequestBodyNoFilesLimit` defaults to 131072 bytes and
+ * REJECTS a larger body in phase 2, before PHP runs. cPanel's rules deny with
+ * `status:406`, so what comes back is an error page, not JSON, and the gate
+ * could only report "CACENTRE answered 406". A roster of 1,200 people is
+ * ~218KB: every push failed, so nothing was applied at all.
+ *
+ * 96 KiB leaves room for the envelope and for a host that trims the limit
+ * further. Raise it with `$CONFIG['wifi']['cac_body_max']` if the host's
+ * limit has been raised to match — the number that matters is theirs.
+ */
+const WIFI_CAC_BODY_MAX = 98304;
+
+/** Room for {"typ":…,"full":…,"people":[]} and the replay nonce. */
+const WIFI_CAC_ENVELOPE = 160;
 const WIFI_CAC_EVERY = 900;        // seconds between pushes from the web-cron tick
 const WIFI_CAC_LAST = 'wifi_cac_last';
 const WIFI_CAC_ROUTER_FRESH = 86400; // an NGG gateway heard from within this still serves its centre
@@ -69,6 +88,8 @@ function wifi_cac_request(string $typ, array $claims, string $secret, int $ts): 
 function wifi_cac_post(string $typ, array $claims, int $timeout = 20): array {
     $secret = wifi_cac_secret();
     if ($secret === '') return ['ok' => false, 'error' => 'not_configured'];
+    // Test seam: $GLOBALS['__wifi_cac_post_mock'] = fn($typ, $claims) => the gate's answer.
+    if (isset($GLOBALS['__wifi_cac_post_mock']) && is_callable($GLOBALS['__wifi_cac_post_mock'])) return ($GLOBALS['__wifi_cac_post_mock'])($typ, $claims);
     $rq = wifi_cac_request($typ, $claims, $secret, time());
     $ch = curl_init($rq['url']);
     curl_setopt_array($ch, [
@@ -103,8 +124,7 @@ function wifi_cac_why(string $case, string $access): string {
  * from summer_students within their edition's dates.
  */
 function wifi_cac_people(): array {
-    $codes = [];
-    foreach (db_all('SELECT name, code FROM centres') as $c) $codes[(string)$c['name']] = strtolower(trim((string)$c['code']));
+    $codes = wifi_cac_places(db_all('SELECT name, code, cacLocationId FROM centres'));
     $members = db_all('SELECT memberId, displayId, fullName, email, role, status, type, centre FROM members');
     $members = array_values(array_filter($members, fn($m) => member_is_ngg($m) || wifi_is_staff($m)));
     $ids = array_map(fn($m) => (string)$m['memberId'], $members);
@@ -127,32 +147,104 @@ function wifi_cac_people(): array {
     foreach ($parts as $s) {
         $id = (string)$s['studentId']; $ed = $eds[(string)$s['cohortId']] ?? null;
         $d = wifi_access_for_participant($s, $ed, ['settings' => wifi_settings((string)$s['centre']), 'account' => $acc['summer|' . $id] ?? null, 'today' => $today, 'usage' => null]);
-        $out[] = ['id' => 'summer-' . $id, 'kind' => 'participant', 'name' => trim((string)$s['fullName']), 'email' => '',
-            'printedId' => wifi_username_for('summer', $s), 'homeSite' => $codes[(string)$s['centre']] ?? '',
-            'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => (string)($ed['endDate'] ?? '')];
+        $out[] = wifi_cac_trim(['id' => 'summer-' . $id, 'kind' => 'participant', 'name' => trim((string)$s['fullName']), 'email' => '',
+            'printedId' => wifi_username_for('summer', $s), ...wifi_cac_place($codes, (string)$s['centre']),
+            'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => (string)($ed['endDate'] ?? '')]);
     }
     return $out;
 }
 
+/**
+ * Where somebody lives, said so CACENTRE can find it without a hand-made match.
+ *
+ * NGG's centre code (EGB) is not CACENTRE's Wi-Fi site code (egbeda), so the
+ * code alone left a whole centre "with no site" until somebody typed the card
+ * code into CACENTRE. Both systems share ONE list of places — CACENTRE's
+ * locations, which NGG's centres follow — so each row also names the place:
+ * the location id when the centre is linked to one (short), else its name.
+ * CACENTRE matches the code, then the place, and makes the place's Wi-Fi site
+ * itself the first time.
+ */
+function wifi_cac_places(array $centres): array {
+    $out = [];
+    foreach ($centres as $c) $out[(string)$c['name']] = ['homeSite' => strtolower(trim((string)$c['code'])),
+        'homeLocation' => trim((string)($c['cacLocationId'] ?? '')), 'homeName' => trim((string)($c['cacLocationId'] ?? '')) === '' ? trim((string)$c['name']) : ''];
+    return $out;
+}
+function wifi_cac_place(array $places, string $centre): array {
+    return $places[$centre] ?? ['homeSite' => '', 'homeLocation' => '', 'homeName' => trim($centre)];
+}
+
 /** One member's roster row: the same row the push sends, built for one person. */
+/**
+ * Drop the fields that are empty anyway.
+ *
+ * CACENTRE reads every optional field as `$r['x'] ?? ''`, so an absent one
+ * and an empty one mean exactly the same thing there — but the empty one
+ * still costs its name and quotes in every row, and what the roster is paged
+ * against is counted in BYTES. `"why":"","validUntil":""` alone is 24 bytes
+ * a person; on a roster of 1,200 that is a page of its own.
+ *
+ * `id`, `kind` and `verdict` always travel, and that is not tidiness:
+ * CACENTRE refuses a row without the first two, and an ABSENT verdict reads
+ * there as `on` (`$r['verdict'] ?? 'on'`) — so dropping an empty one would
+ * quietly put somebody on the internet.
+ */
+function wifi_cac_trim(array $row): array {
+    foreach ($row as $k => $v) {
+        if ($v === '' && !in_array($k, ['id', 'kind', 'verdict'], true)) unset($row[$k]);
+    }
+    return $row;
+}
+
 function wifi_cac_member_row(array $m, array $codes, array $policy, array $owing, array $acc): array {
     $id = (string)$m['memberId']; $staff = wifi_is_staff($m);
     $d = wifi_access_for($m, ['settings' => wifi_settings((string)$m['centre']), 'policy' => $policy[$id] ?? null, 'feesOwing' => !empty($owing[$id]),
         'account' => $acc['member|' . $id] ?? null, 'usage' => null]);
-    return ['id' => $id, 'kind' => $staff ? 'staff' : 'member', 'name' => trim((string)$m['fullName']), 'email' => strtolower(trim((string)$m['email'])),
-        'printedId' => wifi_username_for('member', $m), 'homeSite' => $staff ? '' : ($codes[(string)$m['centre']] ?? ''),
-        'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => ''];
+    return wifi_cac_trim(['id' => $id, 'kind' => $staff ? 'staff' : 'member', 'name' => trim((string)$m['fullName']), 'email' => strtolower(trim((string)$m['email'])),
+        'printedId' => wifi_username_for('member', $m), ...($staff ? [] : wifi_cac_place($codes, (string)$m['centre'])),
+        'verdict' => $d['access'], 'why' => wifi_cac_why($d['case'], $d['access']), 'validUntil' => '']);
 }
 
 /** The row for one member, read fresh, for CACENTRE to add them at once if it has not been sent them yet. */
 function wifi_cac_me(array $m): ?array {
     if (!member_is_ngg($m) && !wifi_is_staff($m)) return null;
     $id = (string)$m['memberId'];
-    $c = db_row('SELECT code FROM centres WHERE name = ? LIMIT 1', [(string)($m['centre'] ?? '')]);
-    $codes = [(string)($m['centre'] ?? '') => strtolower(trim((string)($c['code'] ?? '')))];
+    $codes = wifi_cac_places(db_all('SELECT name, code, cacLocationId FROM centres WHERE name = ? LIMIT 1', [(string)($m['centre'] ?? '')]));
     $policy = function_exists('policy_states_for') ? policy_states_for([$id], 'member') : [];
     $acc = wifi_accounts_existing([['member', $id, '']]);
     return wifi_cac_member_row($m, $codes, $policy, wifi_fees_owing([$id]), $acc);
+}
+
+/**
+ * The roster, cut into pushes that fit through the host's door.
+ *
+ * By BYTES, not by a count of people: a count cannot know how long anybody's
+ * name or email is, and the limit that rejects us is counted in bytes. Each
+ * row is measured as it will actually be encoded.
+ *
+ * `WIFI_CAC_MAX` still bounds a page as well — CACENTRE refuses a longer list
+ * outright (`too_many`) — so whichever runs out first ends the page.
+ *
+ * A single row bigger than the budget cannot be split, so it goes alone and
+ * is refused honestly by the host rather than silently dropped here.
+ *
+ * @param  list<array<string,mixed>> $people
+ * @return list<list<array<string,mixed>>>  at least one page, possibly empty
+ */
+function wifi_cac_pages(array $people, ?int $budget = null): array {
+    $budget = $budget ?? (int)($GLOBALS['CONFIG']['wifi']['cac_body_max'] ?? WIFI_CAC_BODY_MAX);
+    $budget = max(4096, $budget) - WIFI_CAC_ENVELOPE;
+    $pages = []; $cur = []; $size = 0;
+    foreach ($people as $row) {
+        $n = strlen((string)json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) + 1;  // +1 for the comma
+        if ($cur !== [] && ($size + $n > $budget || count($cur) >= WIFI_CAC_MAX)) {
+            $pages[] = $cur; $cur = []; $size = 0;
+        }
+        $cur[] = $row; $size += $n;
+    }
+    if ($cur !== [] || $pages === []) $pages[] = $cur;
+    return $pages;
 }
 
 /**
@@ -160,21 +252,66 @@ function wifi_cac_me(array $m): ?array {
  * sends loses Wi-Fi there); several partial pushes when it does not, which
  * withdraw nobody — said so in the result rather than hidden.
  */
+/** At most this many requests in one push, however often a 406 splits a part. */
+const WIFI_CAC_MAX_CALLS = 120;
+
+/** A refusal from CACENTRE's host firewall (ModSecurity answers 406), not from CACENTRE. */
+function wifi_cac_firewalled(array $res): bool {
+    return (int)($res['http'] ?? 0) === 406 || str_contains((string)($res['error'] ?? ''), '406');
+}
+
 function wifi_cac_push(string $by = 'cron'): array {
     if (!wifi_cac_ready()) return ['ok' => false, 'error' => 'not_configured'];
     $people = wifi_cac_people();
-    $chunks = array_chunk($people, WIFI_CAC_MAX) ?: [[]];
-    $full = count($chunks) === 1;
-    $r = ['ok' => true, 'at' => now_iso(), 'by' => $by, 'sent' => count($people), 'full' => $full, 'applied' => 0, 'refused' => 0, 'gone' => 0,
-          'unknownSites' => [], 'refusals' => [], 'error' => ''];
-    foreach ($chunks as $chunk) {
-        $res = wifi_cac_post('wifi.roster', ['full' => $full, 'people' => $chunk]);
+    $queue = wifi_cac_pages($people);
+    /* `full` says "this is everybody", and CACENTRE withdraws anyone of ours
+       missing from it — so it is only said when the whole roster goes in ONE
+       request, first time. Otherwise every request carries one sync id, its
+       place (part n) and whether it is the last: a CACENTRE that reads `sync`
+       withdraws people once the last part of an unbroken set lands; one that
+       does not ignores the field, and nobody is withdrawn. */
+    $single = count($queue) === 1;
+    $syncId = bin2hex(random_bytes(8));
+    $r = ['ok' => true, 'at' => now_iso(), 'by' => $by, 'sent' => count($people), 'full' => false, 'applied' => 0, 'refused' => 0, 'gone' => 0,
+          'unknownSites' => [], 'refusals' => [], 'firewalled' => [], 'error' => '', 'synced' => false];
+    $part = 0; $calls = 0; $split = false;
+    while ($queue) {
+        if (++$calls > WIFI_CAC_MAX_CALLS) { $r['ok'] = false; $r['error'] = 'too_many_calls'; break; }
+        $chunk = array_shift($queue);
+        $full = $single && !$split;
+        /* A person the firewall refused is missing from the set, so the set may
+           not be called complete: nobody is withdrawn this time. */
+        $last = !$queue && !$r['firewalled'];
+        $claims = ['full' => $full, 'people' => $chunk, 'sync' => ['id' => $syncId, 'part' => $part + 1, 'last' => $last]];
+        $res = wifi_cac_post('wifi.roster', $claims);
+        if (empty($res['ok']) && wifi_cac_firewalled($res)) {
+            /* CACENTRE's host refused the request before CACENTRE saw it — too
+               big for the host's limit, or something in it trips a firewall
+               rule. Halve it and try each half; one person who is still
+               refused alone is set aside and named, and the rest go through. */
+            $split = true;
+            if (count($chunk) > 1) { $h = intdiv(count($chunk), 2); array_unshift($queue, array_slice($chunk, 0, $h), array_slice($chunk, $h)); }
+            else $r['firewalled'][] = (string)($chunk[0]['id'] ?? '');
+            continue;
+        }
         if (empty($res['ok'])) { $r['ok'] = false; $r['error'] = (string)($res['error'] ?? 'refused'); $r['http'] = (int)($res['http'] ?? 0); break; }
+        $part++;
+        if ($full) $r['full'] = true;
+        if (!empty($res['sync']['complete'])) $r['synced'] = true;
         $r['applied'] += (int)($res['applied'] ?? 0); $r['refused'] += (int)($res['refused'] ?? 0); $r['gone'] += (int)($res['gone'] ?? 0);
         foreach ((array)($res['unknownSites'] ?? []) as $code => $n) $r['unknownSites'][(string)$code] = ($r['unknownSites'][(string)$code] ?? 0) + (int)$n;
         foreach ((array)($res['results'] ?? []) as $x) if (empty($x['ok']) && count($r['refusals']) < 20) $r['refusals'][] = ['id' => (string)($x['id'] ?? ''), 'error' => (string)($x['error'] ?? '')];
     }
-    $r['partial'] = !$r['ok'] || $r['refused'] > 0;
+    $r['pages'] = $part;
+    $r['partial'] = !$r['ok'] || $r['refused'] > 0 || (bool)$r['firewalled'];
+    if ($r['firewalled']) {
+        $r['note'] = count($r['firewalled']) . ' ' . (count($r['firewalled']) === 1 ? 'person was' : 'people were') . ' refused by CACENTRE’s host firewall (406) even sent alone, so '
+            . 'something in their record trips a firewall rule there: ' . implode(', ', array_slice($r['firewalled'], 0, 10)) . (count($r['firewalled']) > 10 ? ', …' : '')
+            . '. Everybody else went through. Nobody was withdrawn this time, because the list was not complete. Check those records (name, email), or ask CACENTRE’s host which rule fired.';
+    } elseif ($r['ok'] && !$r['full'] && !$r['synced']) {
+        $r['note'] = 'Sent in ' . $part . ' parts, and CACENTRE did not confirm the set as complete, so nobody was withdrawn. '
+            . 'Anybody suspended is still sent as off. CACENTRE withdraws people from a roster sent in parts once it is updated to read `sync`.';
+    }
     setting_set(WIFI_CAC_LAST, $r, $by);
     return $r;
 }

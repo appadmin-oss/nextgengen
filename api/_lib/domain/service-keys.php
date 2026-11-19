@@ -123,6 +123,14 @@ const SERVICE_KEYS = [
     'telegram' => ['group' => 'sms', 'label' => 'Telegram (free messages)', 'link' => 'https://t.me/BotFather',
         'what' => 'Free messages on any phone, Android or iPhone. Once a parent, member or volunteer connects (they open the bot and share their number), every text this site would send them goes to Telegram instead of SMS — and if Telegram cannot reach them, the SMS goes as before. Make a bot: open @BotFather in Telegram, send /newbot, and paste the token it gives you. Then press Test: that connects the bot to this site.', 'test' => 'telegram',
         'fields' => [['telegram.bot_token', 'Bot token', 'secret', false, 'From @BotFather, e.g. 123456789:AAH…']]],
+    'kapso' => ['group' => 'sms', 'label' => 'WhatsApp (Kapso)', 'link' => 'https://app.kapso.ai',
+        'what' => 'Every text this site sends goes on WhatsApp first, as your approved template, and by SMS if WhatsApp cannot deliver it. Sign-in codes stay on SMS. Parents\' WhatsApp replies arrive in the Control Room inbox. In Kapso: connect the WhatsApp number, create a Utility template named as below whose body is “Next Generation Genius: {{1}}”, and add a webhook to https://<this site>/api/hooks/kapso.php for the message received, sent, delivered and failed events.', 'test' => 'kapso',
+        'fields' => [['whatsapp.kapso.api_key', 'API key', 'secret', false, 'Kapso → Project settings → API keys.'],
+                     ['whatsapp.kapso.phone_number_id', 'Phone number ID', 'text', false, 'The WhatsApp number’s ID in Kapso (digits).'],
+                     ['whatsapp.kapso.template', 'Template name', 'text', true, 'Blank: ngg_message. Must be approved by Meta.'],
+                     ['whatsapp.kapso.template_lang', 'Template language', 'text', true, 'Blank: en. The language code the template was approved in.'],
+                     ['whatsapp.kapso.reply_template', 'Reply-button template', 'text', true, 'Optional. A Utility template with body “Next Generation Genius: {{1}}” and three quick-reply buttons (This Saturday · Next week · I need help), so families can answer registration reminders with a tap at any time. Blank: they reply 1, 2 or 3.'],
+                     ['whatsapp.kapso.webhook_secret', 'Webhook secret', 'secret', true, 'The webhook’s secret key in Kapso. Without it, replies are refused.']]],
     'smsgate' => ['group' => 'sms', 'label' => 'SMS Gateway for Android (free)', 'link' => 'https://sms-gate.app',
         'what' => 'Free and open source: sends text messages from the programme\'s own Android phone and SIM, with no monthly fee and no message cap. Install the SMS Gateway app (Play Store or sms-gate.app), turn on Cloud Server, and copy the username and password it shows. Messages cost only what the SIM\'s carrier charges — put an SMS bundle on it. Used first for Nigerian numbers.', 'test' => '',
         'fields' => [['sms.smsgate.username', 'Username', 'text', false, 'From the app → Cloud Server.'], ['sms.smsgate.password', 'Password', 'secret', false, 'From the app → Cloud Server.'],
@@ -394,6 +402,8 @@ function admin_keys_test(array $p): array {
                 : 'Cloudinary refused the backup account (HTTP ' . $code . ').']);
         case 'telegram':
             return ['ok' => true] + $done(telegram_setup());
+        case 'kapso':
+            return ['ok' => true] + $done(kapso_test());
         case 'storage':
             return ['ok' => true] + $done(store_health());
         case 'paystack':

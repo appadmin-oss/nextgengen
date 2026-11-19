@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 217;
+const NGG_SCHEMA_TARGET = 241;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -113,7 +113,7 @@ const NGG_BACKFILL_VOLUNTEER_PROGRAMME = "
  * rather than doing it silently.
  */
 const NGG_MYSQL_ROW_FIXUPS = [
-    /* 217 — key the oldest auto-issued assignment per lesson, so the UNIQUE
+    /* 235 — key the oldest auto-issued assignment per lesson, so the UNIQUE
      * autoKey stops the lesson being issued again. Matches only rows still
      * unkeyed; IGNORE leaves a row alone if its lesson is already keyed. */
     'assignments.autoKey' => "
@@ -6197,12 +6197,329 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_llog_status ON learning_log(status, centre);
             ALTER TABLE awards ADD COLUMN category TEXT NOT NULL DEFAULT '';
         ",
-        /* 216 — who was told about an assignment, and of what: one row per
+        /* 216 — dues and payment notices (domain/dues-notices.php): one row per
+         * thing a family or the fees desk was told — an upcoming charge, an
+         * overdue balance, a payment note received or decided, a desk nudge —
+         * with the channels it actually went by. The unique key is what stops a
+         * 15-minute cron telling anybody the same thing twice. */
+        216 => "
+            CREATE TABLE IF NOT EXISTS dues_notices (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL DEFAULT '',
+              kind TEXT NOT NULL,
+              refKey TEXT NOT NULL,
+              title TEXT NOT NULL DEFAULT '',
+              amount INTEGER NOT NULL DEFAULT 0,
+              dueOn TEXT NOT NULL DEFAULT '',
+              channelsJson TEXT NOT NULL DEFAULT '{}',
+              reached INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'sending',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_dues_notices ON dues_notices(memberId, kind, refKey);
+            CREATE INDEX IF NOT EXISTS idx_dues_notices_at ON dues_notices(createdAt);
+        ",
+        /* 217 — the family bears Paystack's charge on an online payment. The invoice keeps the fee
+           (`total`, what the ledger posts); the charge taken with it is recorded beside it for the receipt. */
+        217 => "
+            ALTER TABLE membership_invoices ADD COLUMN processingFee INTEGER NOT NULL DEFAULT 0;
+        ",
+        /* 218 — staff broadcasts shown in Community: the post remembers the message it came from
+           (one post per source; withdrawn with it), and a notice remembers whether it goes there. */
+        218 => "
+            ALTER TABLE community_posts ADD COLUMN sourceRef TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_community_posts_source ON community_posts(sourceRef);
+            ALTER TABLE notices ADD COLUMN communityOn INTEGER NOT NULL DEFAULT 0;
+        ",
+        /* 219 — Maths Lab (docs/MATH-LAB-PLAN.md): each member's place on the map, their
+           profile (XP, streak, climb), sessions (questions as competency/form/seed, never keys)
+           and course enrolments. */
+        219 => "
+            CREATE TABLE IF NOT EXISTS mlab_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT, memberId TEXT NOT NULL, comp TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'none',
+              p REAL NOT NULL DEFAULT 0.15, attempts INTEGER NOT NULL DEFAULT 0, correct INTEGER NOT NULL DEFAULT 0, fast INTEGER NOT NULL DEFAULT 0,
+              nextReview TEXT NOT NULL DEFAULT '', masteredAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mlab_state ON mlab_state(memberId, comp);
+            CREATE TABLE IF NOT EXISTS mlab_profile (
+              memberId TEXT PRIMARY KEY, xp INTEGER NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0, lastDay TEXT NOT NULL DEFAULT '',
+              freezes INTEGER NOT NULL DEFAULT 0, climbStage INTEGER NOT NULL DEFAULT 1, climbDone INTEGER NOT NULL DEFAULT 0, momentum INTEGER NOT NULL DEFAULT 0,
+              xpDay TEXT NOT NULL DEFAULT '', xpToday INTEGER NOT NULL DEFAULT 0, bosses TEXT NOT NULL DEFAULT '{}', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS mlab_sessions (
+              sessionId TEXT PRIMARY KEY, memberId TEXT NOT NULL, mode TEXT NOT NULL, ref TEXT NOT NULL DEFAULT '', items TEXT NOT NULL DEFAULT '[]',
+              resp TEXT NOT NULL DEFAULT '{}', startedAt TEXT NOT NULL DEFAULT '', finishedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mlab_sessions_member ON mlab_sessions(memberId, startedAt);
+            CREATE TABLE IF NOT EXISTS mlab_enrol (memberId TEXT NOT NULL, courseId TEXT NOT NULL, enrolledAt TEXT NOT NULL DEFAULT '');
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mlab_enrol ON mlab_enrol(memberId, courseId);
+        ",
+        220 => "
+            /* The ledger read by date: the Transactions journal filters on
+               createdAt, and nothing indexed it. On MySQL the same step widens
+               periodKey (VARCHAR(32) there, TEXT here) to 96 characters: keys of
+               38-52 characters were written and refused or truncated there. */
+            CREATE INDEX IF NOT EXISTS idx_mledg_created ON member_ledger (createdAt);
+        ",
+        221 => "
+            /* Money that arrived and could not be applied — a Paystack payment
+               for an invoice voided or paid another way meanwhile, or an amount
+               that does not match its invoice. It lived only as audit-log rows,
+               with no way to say it had been dealt with. One row per payment
+               reference, resolved by a person: applied to the account,
+               refunded, or dismissed with a reason. */
+            CREATE TABLE IF NOT EXISTS unapplied_payments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              reference TEXT NOT NULL,
+              source TEXT NOT NULL DEFAULT 'paystack',
+              cause TEXT NOT NULL DEFAULT 'unapplied',
+              invoiceId TEXT DEFAULT '',
+              memberId TEXT DEFAULT '',
+              amount INTEGER NOT NULL DEFAULT 0,
+              currency TEXT DEFAULT 'NGN',
+              status TEXT NOT NULL DEFAULT 'open',
+              note TEXT DEFAULT '',
+              ledgerEntryId TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              resolvedAt TEXT DEFAULT '',
+              resolvedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_unapplied_ref ON unapplied_payments (reference);
+            CREATE INDEX IF NOT EXISTS idx_unapplied_status ON unapplied_payments (status, createdAt);
+        ",
+        /* 222 — the Saturday formation, versioned (domain/saturday-formation.php).
+         * One row per block per VERSION of the day: the main day (scope ''), a
+         * centre's own day ('centre:<centreId>'), one Saturday everywhere
+         * ('date:YYYY-MM-DD') or at one centre ('date:YYYY-MM-DD@<centreId>').
+         * saturday_formation had blockKey UNIQUE, which cannot hold versions;
+         * its rows are copied in as the main day and it is left unread. `kind`
+         * names what a block is for (check-in, mentor breakout, classes, break,
+         * close), so reminders follow the block rather than a fixed key or time.
+         * saturday_formation_dates: a Saturday that is off (no NGG), with a note. */
+        222 => "
+            CREATE TABLE IF NOT EXISTS saturday_formation_blocks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              scope TEXT NOT NULL DEFAULT '', blockKey TEXT NOT NULL, sort INTEGER DEFAULT 0,
+              startTime TEXT NOT NULL, endTime TEXT NOT NULL, title TEXT NOT NULL, flow TEXT DEFAULT '',
+              purpose TEXT DEFAULT '', quote TEXT DEFAULT '', forJson TEXT DEFAULT '', kind TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT '', updatedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_sfb ON saturday_formation_blocks(scope, blockKey);
+            INSERT INTO saturday_formation_blocks (scope, blockKey, sort, startTime, endTime, title, flow, purpose, quote, forJson, kind, updatedAt, updatedBy)
+              SELECT '', blockKey, sort, startTime, endTime, title, flow, purpose, quote, forJson,
+                     CASE blockKey WHEN 'checkin' THEN 'checkin' WHEN 'musing' THEN 'mentor' WHEN 'division' THEN 'classes' WHEN 'break' THEN 'break' WHEN 'close' THEN 'close' ELSE '' END,
+                     updatedAt, updatedBy
+                FROM saturday_formation WHERE status = 'active';
+            CREATE TABLE IF NOT EXISTS saturday_formation_dates (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              onDate TEXT NOT NULL, centreId TEXT NOT NULL DEFAULT '', off INTEGER NOT NULL DEFAULT 0, note TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT '', updatedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_sfd ON saturday_formation_dates(onDate, centreId);
+        ",
+        /* 223 — the registration checklist (domain/registration-checklist.php).
+         * reg_checklist_items: the items staff define for the NGG programme
+         * (retired, never deleted, so history keeps its titles). The automatic
+         * items are not stored: the record answers them every time it is read.
+         * reg_checklists: one per member, with the supervisor helping them and
+         * the last progress counted (for the list's filters and sort).
+         * reg_checklist_state: an admin item verified or rejected for a member.
+         * reg_checklist_submissions: every piece of evidence offered, with the
+         * verdict and the reason in words, accepted or refused.
+         * reg_checklist_sends: the reminder ledger, so nothing is sent twice. */
+        223 => "
+            CREATE TABLE IF NOT EXISTS reg_checklist_items (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              itemId TEXT NOT NULL UNIQUE, title TEXT NOT NULL, help TEXT NOT NULL DEFAULT '',
+              evidence TEXT NOT NULL DEFAULT 'none', presence INTEGER NOT NULL DEFAULT 0, maxAgeDays INTEGER NOT NULL DEFAULT 0,
+              sort INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active',
+              createdAt TEXT NOT NULL DEFAULT '', createdBy TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '', updatedBy TEXT NOT NULL DEFAULT '',
+              retiredAt TEXT NOT NULL DEFAULT '', retiredBy TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS reg_checklists (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'open', done INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
+              supervisorId TEXT NOT NULL DEFAULT '', supervisorKind TEXT NOT NULL DEFAULT '', supervisorName TEXT NOT NULL DEFAULT '',
+              assignedAt TEXT NOT NULL DEFAULT '', assignedBy TEXT NOT NULL DEFAULT '', startedAt TEXT NOT NULL DEFAULT '', startedBy TEXT NOT NULL DEFAULT '',
+              completedAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_rcl_sup ON reg_checklists(supervisorId, status);
+            CREATE INDEX IF NOT EXISTS idx_rcl_status ON reg_checklists(status);
+            CREATE TABLE IF NOT EXISTS reg_checklist_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL, itemId TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'verified',
+              submissionId TEXT NOT NULL DEFAULT '', at TEXT NOT NULL DEFAULT '', byId TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_rcl_state ON reg_checklist_state(memberId, itemId);
+            CREATE TABLE IF NOT EXISTS reg_checklist_submissions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              submissionId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL, itemKey TEXT NOT NULL, supervisorId TEXT NOT NULL,
+              url TEXT NOT NULL DEFAULT '', ext TEXT NOT NULL DEFAULT '', mime TEXT NOT NULL DEFAULT '', bytes INTEGER NOT NULL DEFAULT 0,
+              capturedOn TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', verdict TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_rcl_sub ON reg_checklist_submissions(memberId, itemKey);
+            CREATE TABLE IF NOT EXISTS reg_checklist_sends (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sendKey TEXT NOT NULL UNIQUE, channel TEXT NOT NULL DEFAULT '', recipient TEXT NOT NULL DEFAULT '',
+              memberId TEXT NOT NULL DEFAULT '', sentAt TEXT NOT NULL DEFAULT ''
+            );
+        
+",
+        /* 224 — NGG's printed documents (domain/documents.php). doc_serials: one
+         * counter per series (INV-2026, RCP-2026, ML-2026), bumped inside the
+         * transaction that writes the record, so a number exists only if its
+         * record does. documents: every invoice, receipt, acknowledgement and
+         * Math Lab certificate issued: its number, whose it is, what it settles
+         * (sourceKey, unique, so issuing is idempotent), a private view token,
+         * and for a receipt or certificate the frozen copy it is printed from.
+         * A superseded certificate keeps its row and names its successor. */
+        224 => "
+            CREATE TABLE IF NOT EXISTS doc_serials (series TEXT PRIMARY KEY, last INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS documents (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              docNo TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, memberId TEXT NOT NULL DEFAULT '', sourceKey TEXT NOT NULL UNIQUE,
+              status TEXT NOT NULL DEFAULT 'issued', supersededBy TEXT NOT NULL DEFAULT '', data TEXT NOT NULL DEFAULT '',
+              token TEXT NOT NULL UNIQUE, irn TEXT NOT NULL DEFAULT '', issuedAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_documents_member ON documents(memberId, kind);",
+
+        /* 225 — one Rules page (domain/policy.php policy_apply_rules). A written
+           rule could only cost money and could only be recorded as a fine, so
+           "no uniform: ₦500 and 5 frog jumps, the third time a suspension" had
+           nowhere to go. A rule now carries what the rulebook's own rules carry:
+           corrective exercise per breach, and what its Nth breach in a session
+           escalates to (a suspension with an optional re-entry fee, or a
+           management review). A breach is an infraction of kind 'rule:<ruleId>';
+           its sanctions are derived from it like a late's, so voiding the breach
+           lifts them. */
+        225 => "
+            ALTER TABLE conduct_rules ADD COLUMN jumps INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE conduct_rules ADD COLUMN escalateAfter INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE conduct_rules ADD COLUMN escalateTo TEXT NOT NULL DEFAULT '';
+            ALTER TABLE conduct_rules ADD COLUMN suspendDays INTEGER NOT NULL DEFAULT 7;
+            ALTER TABLE conduct_rules ADD COLUMN reentryFee INTEGER NOT NULL DEFAULT 0;
+        ",
+        /* When a member last answered a lesson's questions FROM MEMORY — on a
+           later day than they opened it (domain/curriculum.php,
+           curriculum_opening_review). Passing on the lesson day measures the
+           lesson; this is the week-later recall the review exists for. */
+        226 => "
+            ALTER TABLE curriculum_progress ADD COLUMN reviewedAt TEXT NOT NULL DEFAULT '';
+        ",
+        /* 227 — Maths Lab: everyone studies, nobody guesses their way through (owner, 4 Nov
+           2026). studiedAt: the topic's lesson was worked through, step by step — practice and
+           the mastery check are refused before it. owed: correct practice answers still owed
+           after a failed mastery check or boss, before either may be taken again. */
+        227 => "
+            ALTER TABLE mlab_state ADD COLUMN studiedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mlab_state ADD COLUMN owed INTEGER NOT NULL DEFAULT 0;
+        ",
+        /* 228 — Registration audit (5 Nov 2026): the member an application became. Convert
+           claims the row by writing it (a new, unique value, so the claim changes the row on
+           MySQL and SQLite alike): two presses at once made two members, two printed IDs and
+           two invoices. It also lets the desk refuse to "decline" a child who is already a
+           member, which used to send the family a refusal after a welcome. */
+        228 => "
+            ALTER TABLE applications ADD COLUMN convertedMemberId TEXT NOT NULL DEFAULT '';
+        ",
+        /* 229: the Labs (domain/labs.php). The climb, its momentum and the bosses beaten are per Lab —
+           Stage 3 of Physics is not Stage 3 of Maths — so they move to one row per member per Lab;
+           the Maths rows are copied across and mlab_profile keeps the shared XP and streak (its
+           old climb columns are left in place and no longer read). Every session records its Lab. */
+        229 => "
+            CREATE TABLE IF NOT EXISTS mlab_track (
+              memberId TEXT NOT NULL, lab TEXT NOT NULL, climbStage INTEGER NOT NULL DEFAULT 1, climbDone INTEGER NOT NULL DEFAULT 0,
+              momentum INTEGER NOT NULL DEFAULT 0, bosses TEXT NOT NULL DEFAULT '{}', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mlab_track ON mlab_track(memberId, lab);
+            INSERT OR IGNORE INTO mlab_track (memberId, lab, climbStage, climbDone, momentum, bosses, createdAt, updatedAt)
+              SELECT memberId, 'maths', climbStage, climbDone, momentum, COALESCE(bosses, '{}'), createdAt, updatedAt FROM mlab_profile;
+            ALTER TABLE mlab_sessions ADD COLUMN lab TEXT NOT NULL DEFAULT 'maths';
+        ",
+        /* The Learn exam (owner, 7 Nov 2026: "turn on the per session exam by default. Upgrade the exam and
+           make it standard"). `whys`: a JSON list parallel to a multiple-choice question's options — why
+           each wrong option is tempting, shown to a learner who picked it (the Labs' named slips). And
+           one row per SITTING of an exam (domain/learn-exam.php): what was asked in what order, the
+           answers as they were autosaved, how sure the learner was, the marks, the follow-up questions
+           about their own written answers, and the process signals an instructor reads beside them. */
+        230 => "
+            ALTER TABLE curriculum_checks ADD COLUMN whys TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS curriculum_sittings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sittingId TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL,
+              kind TEXT NOT NULL DEFAULT 'session',
+              unitId TEXT NOT NULL DEFAULT '',
+              course TEXT NOT NULL DEFAULT '',
+              items TEXT NOT NULL DEFAULT '[]',
+              answers TEXT NOT NULL DEFAULT '{}',
+              confidence TEXT NOT NULL DEFAULT '{}',
+              marks TEXT NOT NULL DEFAULT '{}',
+              integrity TEXT NOT NULL DEFAULT '{}',
+              viva TEXT NOT NULL DEFAULT '[]',
+              score REAL NOT NULL DEFAULT 0,
+              maxScore REAL NOT NULL DEFAULT 0,
+              pct INTEGER NOT NULL DEFAULT 0,
+              band TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'open',
+              timeLimitSec INTEGER NOT NULL DEFAULT 0,
+              startedAt TEXT NOT NULL DEFAULT '',
+              deadline TEXT NOT NULL DEFAULT '',
+              submittedAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_csit_member ON curriculum_sittings(memberId, kind, unitId);
+            CREATE INDEX IF NOT EXISTS idx_csit_course ON curriculum_sittings(course, kind, status);
+        ",
+        /* 231 — formal family reports and the daily attendance mail (domain/parent-reports.php).
+           parent_reports: one sealed report per subject per kind (month | session | edition) per period — what
+           was ISSUED, so the copy a parent reopens in March is the one they were sent in February.
+           report_sends: one row per (kind, refKey, recipient) claimed BEFORE a mail goes, so two cron ticks
+           cannot both send it. */
+        231 => "
+            CREATE TABLE IF NOT EXISTS parent_reports (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              reportId TEXT NOT NULL UNIQUE,
+              subjectId TEXT NOT NULL, subjectType TEXT NOT NULL DEFAULT 'member',
+              kind TEXT NOT NULL, period TEXT NOT NULL,
+              periodFrom TEXT NOT NULL DEFAULT '', periodTo TEXT NOT NULL DEFAULT '',
+              data TEXT NOT NULL DEFAULT '{}', issuedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_preport_key ON parent_reports(subjectId, kind, period);
+            CREATE TABLE IF NOT EXISTS report_sends (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              kind TEXT NOT NULL, refKey TEXT NOT NULL, recipient TEXT NOT NULL, sentAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_rsend_key ON report_sends(kind, refKey, recipient);
+        ",
+        /* A leave request sent less than 24 hours before the day it excuses (owner, 14 Nov 2026). It is
+           still sent — it may be a verifiable emergency — but the desk sees how much notice was given,
+           fixed at the moment it was sent (member_leave_notice in domain/member-self.php). */
+        232 => "ALTER TABLE member_requests ADD COLUMN shortNotice INTEGER NOT NULL DEFAULT 0;",
+        /* WhatsApp through Kapso (owner, 14 Nov 2026; domain/kapso.php). One row per message either way: an outgoing
+           one keeps its number and words so a "failed" webhook can send them by SMS; an incoming one is the
+           de-duplication key (a webhook may be delivered twice) and starts the 24-hour reply window. */
+        233 => "
+            CREATE TABLE IF NOT EXISTS whatsapp_messages (
+              wamid TEXT PRIMARY KEY,
+              direction TEXT NOT NULL DEFAULT 'out',
+              phone TEXT NOT NULL DEFAULT '',
+              body TEXT NOT NULL DEFAULT '',
+              kind TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT '',
+              error TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wa_phone ON whatsapp_messages(phone, direction, createdAt);
+        ",
+        /* 234 — who was told about an assignment, and of what: one row per
            assignment, member and kind ('published', 'due_soon', 'overdue').
            The UNIQUE key is the claim: a notice is sent only by the writer
            whose insert landed, so a re-publish tells only the members not
            yet told, and the daily due/overdue reminder goes once. */
-        216 => "
+        234 => "
             CREATE TABLE IF NOT EXISTS assignment_notices (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               assignmentId TEXT NOT NULL,
@@ -6212,7 +6529,7 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS uq_asg_notice ON assignment_notices(assignmentId, memberId, kind);
         ",
-        /* 217 — a lesson's homework is issued ONCE. assignment_auto_issue read
+        /* 235 — a lesson's homework is issued ONCE. assignment_auto_issue read
            what existed and then inserted, with nothing unique behind it, so
            the hourly page-view tick and the web-cron job running together set
            the same lesson twice and told everyone twice. autoKey is the
@@ -6221,12 +6538,174 @@ function db_migrate(PDO $db): void {
            UNIQUE index binds only what the curriculum issues. The backfill
            keys the oldest auto row per lesson; a duplicate already issued
            stays as it is, unkeyed, for staff to close or delete. */
-        217 => "
+        235 => "
             ALTER TABLE assignments ADD COLUMN autoKey TEXT DEFAULT NULL;
             UPDATE OR IGNORE assignments SET autoKey = unitId
              WHERE autoKey IS NULL AND createdBy = 'curriculum' AND COALESCE(unitId, '') <> ''
                AND id = (SELECT MIN(b.id) FROM assignments b WHERE b.createdBy = 'curriculum' AND b.unitId = assignments.unitId);
             CREATE UNIQUE INDEX IF NOT EXISTS uq_assign_autokey ON assignments(autoKey);
+        ",
+        /* 236 — online membership (owner, 16–17 Nov 2026; docs/ONLINE-MEMBERS-PLAN.md). A member who never
+           attends a centre has a real home: "NGG Online", a centres row marked `online`, NGG only, with no
+           CACENTRE link (the sync never touches an unlinked row) and no public page. Seeded here because once
+           CACENTRE runs the list, a centre cannot be added by hand. Its name is never "Online": that word
+           already means "every member" on events. */
+        236 => "
+            ALTER TABLE centres ADD COLUMN online INTEGER NOT NULL DEFAULT 0;
+            INSERT OR IGNORE INTO centres (centreId, name, code, color, status, programmes, online, pageStatus, meetDays, notes, createdAt, updatedAt)
+              VALUES ('CTR-ONLINE', 'NGG Online', 'ONL', '#2E6BE6', 'active', 'ngg', 1, 'draft', '', 'Online members: no building, no gate, no meeting days.', datetime('now'), datetime('now'));
+        ",
+        /* 237 — the NGG shop (domain/shop.php): souvenirs and merchandise. A product keeps its options (sizes)
+           and, when limited, its stock per option ('' = no limit). An order keeps the lines AS CHARGED (name,
+           option, price), so a later price change never rewrites what somebody paid; its private token is the
+           buyer's link, and its Paystack reference settles it once. */
+        237 => "
+            CREATE TABLE IF NOT EXISTS shop_products (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              productId TEXT NOT NULL UNIQUE, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+              category TEXT NOT NULL DEFAULT 'Other', description TEXT NOT NULL DEFAULT '', price INTEGER NOT NULL DEFAULT 0,
+              imageUrl TEXT NOT NULL DEFAULT '', options TEXT NOT NULL DEFAULT '[]', stock TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'draft', sort INTEGER NOT NULL DEFAULT 100,
+              createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '', updatedBy TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_shop_products_status ON shop_products(status, sort);
+            CREATE TABLE IF NOT EXISTS shop_orders (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              orderId TEXT NOT NULL UNIQUE, token TEXT NOT NULL UNIQUE,
+              buyerName TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
+              items TEXT NOT NULL DEFAULT '[]', subtotal INTEGER NOT NULL DEFAULT 0, delivery INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
+              processingFee INTEGER NOT NULL DEFAULT 0, currency TEXT NOT NULL DEFAULT 'NGN',
+              fulfil TEXT NOT NULL DEFAULT 'collect', centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'pending', paystackRef TEXT NOT NULL DEFAULT '',
+              paidAt TEXT NOT NULL DEFAULT '', readyAt TEXT NOT NULL DEFAULT '', completedAt TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_status ON shop_orders(status, id);
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_ref ON shop_orders(paystackRef);
+        ",
+        /* 238 — managing the shop (domain/shop-manage.php; docs/SHOP-MANAGEMENT-PLAN.md §2). Every stock change is a
+           reason-coded row with who and when (shop_stock_moves), and a product's stock is the running sum of them. An
+           order keeps its own timeline (shop_order_events) instead of a growing note. Refunds are records with a
+           status that only Paystack's own answer moves to processed (shop_refunds). Sales at a table are orders of
+           channel 'pos' inside a cash session (shop_cash_sessions). Discount codes are shop_codes. The column names
+           avoid MySQL's reserved words (option, by, float). */
+        238 => "
+            ALTER TABLE shop_products ADD COLUMN lowStock INTEGER NOT NULL DEFAULT -1;
+            ALTER TABLE shop_products ADD COLUMN preorderUntil TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN channel TEXT NOT NULL DEFAULT 'online';
+            ALTER TABLE shop_orders ADD COLUMN payMethod TEXT NOT NULL DEFAULT 'paystack';
+            ALTER TABLE shop_orders ADD COLUMN sessionId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN pickupCode TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN gatewayFee INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE shop_orders ADD COLUMN refunded INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE shop_orders ADD COLUMN refundState TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN cancelKind TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN cancelledAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN remindedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN tracking TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN discountCode TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN discount INTEGER NOT NULL DEFAULT 0;
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_paid ON shop_orders(paidAt);
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_created ON shop_orders(createdAt);
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_session ON shop_orders(sessionId);
+            CREATE TABLE IF NOT EXISTS shop_stock_moves (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              productId TEXT NOT NULL, variant TEXT NOT NULL DEFAULT '', delta INTEGER NOT NULL DEFAULT 0, balance INTEGER NOT NULL DEFAULT 0,
+              reason TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', orderId TEXT NOT NULL DEFAULT '', byId TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_shop_moves_product ON shop_stock_moves(productId, id);
+            CREATE TABLE IF NOT EXISTS shop_order_events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              orderId TEXT NOT NULL, kind TEXT NOT NULL DEFAULT '', text TEXT NOT NULL DEFAULT '', byId TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_shop_events_order ON shop_order_events(orderId, id);
+            CREATE TABLE IF NOT EXISTS shop_refunds (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              refundId TEXT NOT NULL UNIQUE, orderId TEXT NOT NULL, amount INTEGER NOT NULL DEFAULT 0, method TEXT NOT NULL DEFAULT 'paystack',
+              status TEXT NOT NULL DEFAULT 'pending', gatewayId TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', restock TEXT NOT NULL DEFAULT '[]',
+              byId TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '', processedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_shop_refunds_order ON shop_refunds(orderId);
+            CREATE INDEX IF NOT EXISTS idx_shop_refunds_status ON shop_refunds(status);
+            CREATE TABLE IF NOT EXISTS shop_cash_sessions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sessionId TEXT NOT NULL UNIQUE, label TEXT NOT NULL DEFAULT '', centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '', openingFloat INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'open', openedBy TEXT NOT NULL DEFAULT '', openedAt TEXT NOT NULL DEFAULT '',
+              closedBy TEXT NOT NULL DEFAULT '', closedAt TEXT NOT NULL DEFAULT '', expected INTEGER NOT NULL DEFAULT 0, counted INTEGER NOT NULL DEFAULT 0,
+              difference INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS shop_codes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              code TEXT NOT NULL UNIQUE, kind TEXT NOT NULL DEFAULT 'percent', amount INTEGER NOT NULL DEFAULT 0, maxUses INTEGER NOT NULL DEFAULT 0,
+              perBuyer INTEGER NOT NULL DEFAULT 1, minSpend INTEGER NOT NULL DEFAULT 0, startsAt TEXT NOT NULL DEFAULT '', endsAt TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'active', used INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '',
+              byId TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+        ",
+        /* 239 — the Membership Agreement (domain/mou.php): the MoU, signed online by the family, a witness and
+           NGG's representative. One row per agreement; a voided one is kept and a new one starts. The figures the
+           family agreed to (termsJson) and a digest of the text they signed (docHash) are frozen on it. Links are
+           stored as hashes only. Signatures are small PNG data URLs. */
+        239 => "
+            CREATE TABLE IF NOT EXISTS mou_agreements (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              mouId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL, version TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'awaiting_family',
+              tokenHash TEXT NOT NULL DEFAULT '', tokenExp TEXT NOT NULL DEFAULT '', docTokenHash TEXT NOT NULL DEFAULT '',
+              termsJson TEXT NOT NULL DEFAULT '', prefillJson TEXT NOT NULL DEFAULT '', familyJson TEXT NOT NULL DEFAULT '', memberJson TEXT NOT NULL DEFAULT '',
+              tripsChoice TEXT NOT NULL DEFAULT '', quizPassedAt TEXT NOT NULL DEFAULT '', quizAttempts INTEGER NOT NULL DEFAULT 0,
+              sentAt TEXT NOT NULL DEFAULT '', sentTo TEXT NOT NULL DEFAULT '', viewedAt TEXT NOT NULL DEFAULT '',
+              clientName TEXT NOT NULL DEFAULT '', clientRel TEXT NOT NULL DEFAULT '', clientSignature TEXT NOT NULL DEFAULT '', clientSignedAt TEXT NOT NULL DEFAULT '', clientIp TEXT NOT NULL DEFAULT '',
+              witnessName TEXT NOT NULL DEFAULT '', witnessPhone TEXT NOT NULL DEFAULT '', witnessSignature TEXT NOT NULL DEFAULT '', witnessSignedAt TEXT NOT NULL DEFAULT '', witnessBy TEXT NOT NULL DEFAULT '',
+              nggName TEXT NOT NULL DEFAULT '', nggRole TEXT NOT NULL DEFAULT '', nggById TEXT NOT NULL DEFAULT '', nggSignature TEXT NOT NULL DEFAULT '', nggSignedAt TEXT NOT NULL DEFAULT '',
+              docHash TEXT NOT NULL DEFAULT '', familyMailedAt TEXT NOT NULL DEFAULT '', finalMailedAt TEXT NOT NULL DEFAULT '',
+              voidReason TEXT NOT NULL DEFAULT '', voidedAt TEXT NOT NULL DEFAULT '', voidedBy TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mou_member ON mou_agreements(memberId, status);
+            CREATE INDEX IF NOT EXISTS idx_mou_status ON mou_agreements(status);
+            CREATE INDEX IF NOT EXISTS idx_mou_token ON mou_agreements(tokenHash);
+            CREATE INDEX IF NOT EXISTS idx_mou_doc ON mou_agreements(docTokenHash);
+        ",
+        /* 240 — NGG ENTRY STEPS (owner, 18 Nov 2026: the paper card "Enquiry · Orientation · Payment ·
+           Submit documents · Online registration · ID card · Attend lectures"). The registration checklist
+           groups its items by those steps (`step` on an admin item; the automatic ones carry theirs in code),
+           and three of the card's items become default admin items, kept retirable like any other.
+           The day the checklist is complete is the day the member RESUMES (`resumedOn`, written once) — not
+           the day they were accepted. Follow-ups are logged (reg_checklist_followups) with the next date, so a
+           stalled registration is somebody's call to make, on a day. The Membership Agreement is printed,
+           signed in ink and brought to the centre: staff check it and photograph the signed page (paper*). */
+        240 => "
+            ALTER TABLE reg_checklist_items ADD COLUMN step TEXT NOT NULL DEFAULT 'documents';
+            ALTER TABLE reg_checklists ADD COLUMN resumedOn TEXT NOT NULL DEFAULT '';
+            ALTER TABLE reg_checklists ADD COLUMN lastProgressAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE reg_checklists ADD COLUMN nextFollowUpOn TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS reg_checklist_followups (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL, channel TEXT NOT NULL DEFAULT 'call', outcome TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+              nextOn TEXT NOT NULL DEFAULT '', byId TEXT NOT NULL DEFAULT '', byName TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_rcl_fu ON reg_checklist_followups(memberId, id);
+            CREATE INDEX IF NOT EXISTS idx_rcl_next ON reg_checklists(status, nextFollowUpOn);
+            ALTER TABLE mou_agreements ADD COLUMN signedVia TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperUrl TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperChecks TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperReceivedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperReceivedBy TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperByName TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperCentre TEXT NOT NULL DEFAULT '';
+            INSERT OR IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+              VALUES ('RCI-ORIENTATION', 'Orientation attended', 'The child and a parent or guardian came to orientation at the centre, and it covered the policies, the membership fee, the monthly commitment fee and the NGG T-shirt. Note who came and any question they asked.', 'none', 1, 0, 10, 'active', 'orientation', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+            INSERT OR IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+              VALUES ('RCI-FILE', 'File handed in', 'The member’s file (folder) has been handed in at the centre, with their name on it.', 'none', 1, 0, 20, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+            INSERT OR IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+              VALUES ('RCI-REPORTCARD', 'Latest school report card', 'Photograph or scan the member’s most recent school report card: every page, readable. Give the date on it.', 'document', 0, 400, 30, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+        ",
+        /* 241 — WhatsApp replies (owner, 19 Nov 2026: "people could also respond"). A family that answers STOP
+           gets no more registration reminders on WhatsApp until it answers START: one row per number. */
+        241 => "
+            CREATE TABLE IF NOT EXISTS whatsapp_optout (phone TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT '', via TEXT NOT NULL DEFAULT '');
         ",
     ];
 

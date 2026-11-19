@@ -12,5 +12,6 @@ if ($method === 'GET') {
 } else {
     json_error('method_not_allowed', 405);
 }
-if (empty($res['ok'])) json_error((string)($res['error'] ?? 'failed'), ($res['error'] ?? '') === 'not_found' ? 404 : 400);
+// `detail` carries a refusal's one useful fact — for balance_changed, the link to today's amount.
+if (empty($res['ok'])) json_error((string)($res['error'] ?? 'failed'), ($res['error'] ?? '') === 'not_found' ? 404 : 400, isset($res['detail']) ? (string)$res['detail'] : null);
 unset($res['ok']); json_ok($res);

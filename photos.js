@@ -254,3 +254,63 @@ Object.assign(window, {
   persona, portrait, scene, blogCover,
   BLOG_POSTS,
 });
+
+/* ================================================================
+   Display addresses for stored photos — nggImg(url, size).
+
+   The plan (owner): photos are STORED in the bucket (R2) and Cloudinary
+   OPTIMISES them — ONCE. Cloudinary bills every byte it serves, on every view,
+   while R2 serves for nothing; so Cloudinary is asked for each size a single
+   time, when the photo arrives (photo_variants_make, domain/photos.php), and the
+   small WebP versions are stored back in the bucket beside it as
+   `<photo>__<size>.webp`. Only then is `?nv=1` added to the photo's address on
+   the records — the sign that its sizes exist (the bucket ignores it). Views
+   never touch Cloudinary.
+
+   · a photo marked `?nv=1` → its `__<size>.webp`, from the bucket;
+   · a photo stored IN Cloudinary (from before the bucket) → its size from
+     Cloudinary, after any edit — far fewer bytes than the original;
+   · anything else (not yet optimised, data:, blob:, another site) → as is.
+
+   The sizes are NAMES, the same names and steps as PHOTO_VARIANTS on the server
+   (a PHP test holds the two together): how a face is framed is decided once,
+   here, not at forty <img> tags.
+   ================================================================ */
+const NGG_IMG_SIZES = {
+  avatar:   'c_fill,g_face,w_96,h_96',      // a circle up to 48px
+  face:     'c_fill,g_face,w_240,h_240',    // up to 120px
+  headshot: 'c_fill,g_face,w_480,h_600',    // the 4:5 portrait
+  small:    'c_limit,w_320',                // a thumbnail or small tile
+  card:     'c_limit,w_800',                // a picture in a card or feed
+  wide:     'c_limit,w_1600',               // a full-width picture
+};
+function nggImg(url, size) {
+  const u = String(url || '');
+  if (!u || /^(data|blob):/i.test(u)) return u;
+  const name = NGG_IMG_SIZES[size] ? size : 'card';
+  const nv = u.match(/^(https:\/\/[^?#]+)\.(?:jpe?g|png|webp)\?nv=1$/i);
+  if (nv) return nv[1] + '__' + name + '.webp';
+  const cld = u.match(/^(https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.*)$/);
+  if (!cld) return u;
+  // After any chain the URL already carries (an edit), before the version and id.
+  const segs = cld[2].split('/'); let i = 0;
+  while (i < segs.length - 1 && /^[a-z]{1,3}_[^/]*$/.test(segs[i]) && !/^v\d+$/.test(segs[i])) i++;
+  if (segs.slice(0, i).some(x => x.indexOf('f_auto') >= 0 && /(^|,)w_\d/.test(x))) return u;   // already sized for display
+  return cld[1] + segs.slice(0, i).concat(['f_auto,q_auto,' + NGG_IMG_SIZES[name]], segs.slice(i)).join('/');
+}
+/* A bucket (or own-store) photo as a Cloudinary FETCH base with no steps yet:
+   {prefix, rest}, the shape card-photo.jsx splits a Cloudinary address into, so
+   the card's face framing works on it. For PRINTING only — a print is made
+   once; a page view never comes through here. null when no cloud is named
+   (site-config `img`, kept by api-client.js) or the host is not ours. */
+function nggImgFetchParts(url) {
+  let cfg = window.__nggImgCfg || null;
+  if (!cfg) { try { cfg = JSON.parse(localStorage.getItem('ngg_img') || 'null'); } catch (_) { cfg = null; } }
+  const u = String(url || '').replace(/\?nv=1$/, '');
+  if (!u || !cfg || !cfg.cloud || /^(data|blob):/i.test(u) || /res\.cloudinary\.com/.test(u)) return null;
+  let abs;
+  try { abs = new URL(u, location.origin); } catch (_) { return null; }
+  if (abs.protocol !== 'https:' || (cfg.hosts || []).indexOf(abs.hostname.toLowerCase()) < 0) return null;
+  return { prefix: 'https://res.cloudinary.com/' + encodeURIComponent(cfg.cloud) + '/image/fetch/', rest: encodeURIComponent(abs.href) };
+}
+Object.assign(window, { NGG_IMG_SIZES, nggImg, nggImgFetchParts });

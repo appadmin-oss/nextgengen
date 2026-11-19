@@ -1,0 +1,308 @@
+[
+ {
+  "id": "home",
+  "title": "Next Generation Genius · Afrovanguard",
+  "desc": "A twelve-week growth journey for African teenagers, 10–17. From summer student to vanguard leader.",
+  "index": true
+ },
+ {
+  "id": "about",
+  "title": "About NGGC · The 2040 formation brief",
+  "desc": "The Next Generation Genius Club is a formation system: four divisions, six goals, a courage index and a mentor for every member — raising 1,000,000 incorruptible African leaders by 2040.",
+  "index": true
+ },
+ {
+  "id": "summer",
+  "title": "Summer School · NGG",
+  "desc": "Six weeks, eight academies, one bold move. Search every NGG Summer School centre, course and edition — and apply.",
+  "index": true
+ },
+ {
+  "id": "timetable",
+  "title": "Timetable maker · NGG",
+  "desc": "Design your own weekly timetable on a professional template and download it as a PDF, a picture or a calendar file. Free, no account.",
+  "index": true
+ },
+ {
+  "id": "centres",
+  "title": "NGG member centres · NGG",
+  "desc": "Every Next Generation Genius member centre — find yours, meet the crew, see what's next.",
+  "index": true
+ },
+ {
+  "id": "club",
+  "title": "NGGC · The Genius Club",
+  "desc": "A teen society with Genius IDs, weekly missions, public skill badges and a leaderboard.",
+  "index": true
+ },
+ {
+  "id": "community",
+  "title": "Community · NGG",
+  "desc": "Every centre, every track, one movement — the Next Generation Genius community.",
+  "index": true
+ },
+ {
+  "id": "anchor",
+  "title": "Anchor 12 · The Flagship · NGG",
+  "desc": "Twelve weeks. Fifty missions. One identity, rebuilt in public.",
+  "index": true
+ },
+ {
+  "id": "book",
+  "title": "The Anchor · The book · NGG",
+  "desc": "The field manual every NGG teenager works through during Anchor 12.",
+  "index": true
+ },
+ {
+  "id": "media",
+  "title": "Media room · NGG",
+  "desc": "Reels, documentaries, performances, podcasts. The movement on camera.",
+  "index": true
+ },
+ {
+  "id": "parents",
+  "title": "For parents · Safe room with high ceilings",
+  "desc": "Safeguarding, philosophy, FAQ. A program built to protect while it builds.",
+  "index": true
+ },
+ {
+  "id": "volunteers",
+  "title": "Become a mentor · NGG",
+  "desc": "Three ways to be useful. Pick the shape of your time.",
+  "index": true
+ },
+ {
+  "id": "mentors",
+  "title": "The mentors · NGG",
+  "desc": "The Afrovanguard Street-To-Stardom volunteers who show up every Saturday.",
+  "index": true
+ },
+ {
+  "id": "blog",
+  "title": "The Journal · NGG",
+  "desc": "Long-form writing from mentors, members and the editorial team.",
+  "index": true
+ },
+ {
+  "id": "support",
+  "title": "Help & support · NGG",
+  "desc": "Answers to common questions, the live status, and how to reach the NGG team: open a case from My NGG or the Family account.",
+  "index": true
+ },
+ {
+  "id": "contact",
+  "title": "Contact · NGG",
+  "desc": "Questions about a session, mentoring, partnerships or press — a human replies within two working days.",
+  "index": true
+ },
+ {
+  "id": "study",
+  "title": "Study tools · NGG",
+  "desc": "The NGG Labs — Maths, Physics and English, climbed to your level one topic at a time — with flashcards, a focus timer, a calculator, graphs, a dictionary and typing practice.",
+  "index": true
+ },
+ {
+  "id": "telegram",
+  "title": "Free messages on Telegram · NGG",
+  "desc": "Get NGG's messages — sign-in codes, check-ins and notices — on Telegram, free, instead of by SMS. Android and iPhone.",
+  "index": true
+ },
+ {
+  "id": "policies",
+  "title": "Member and family policies · NGG",
+  "desc": "What a family agrees to when a child joins the NGG Club: taking part, safeguarding, medical care, privacy, updates, photos, trips and fees.",
+  "index": true
+ },
+ {
+  "id": "legal",
+  "title": "Legal & data protection · NGG",
+  "desc": "Privacy, terms, safeguarding, parental consent, cookies and your data rights under the NDPA/NDPR.",
+  "index": true
+ },
+ {
+  "id": "s-status",
+  "title": "Live status · Summer School · NGG",
+  "desc": "A live, public view of attendance and participation across every NGG Summer School centre — aggregate numbers only.",
+  "index": true
+ },
+ {
+  "id": "v-status",
+  "title": "Volunteer status · Next Generation Genius",
+  "desc": "A live, public view of volunteer needs and fulfilment across every NGG centre — aggregate counts only, never a volunteer's name.",
+  "index": true
+ },
+ {
+  "id": "join",
+  "title": "Apply · NGG",
+  "desc": "Apply to the NGG Club or Summer School. We save as you go.",
+  "index": true
+ },
+ {
+  "id": "volunteer",
+  "title": "Volunteer registration · NGG",
+  "desc": "Register to volunteer — as an admin, a mentor, or an instructor teaching a course.",
+  "index": true
+ },
+ {
+  "id": "ngg-volunteer",
+  "title": "Volunteer with NGG · All year",
+  "desc": "Serve Next Generation Genius all year — mentoring, club sessions, events, media and operations. Four short steps.",
+  "index": true
+ },
+ {
+  "id": "apply",
+  "title": "Direct Apply · Summer School · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "profile",
+  "title": "Member profile · NGG",
+  "desc": "An NGG member's public profile — work, badges, mentor notes.",
+  "index": false
+ },
+ {
+  "id": "dashboard",
+  "title": "My NGG · Member portal",
+  "desc": "Your missions, mentor, streak and journal — the member dashboard.",
+  "index": false
+ },
+ {
+  "id": "learn",
+  "title": "Learn · NGG",
+  "desc": "The NGG Club curriculum: this week's lessons, your courses, the review and the study helper.",
+  "index": false
+ },
+ {
+  "id": "summerprofile",
+  "title": "ID card · NGG",
+  "desc": "The page an NGG or Summer School card opens when it is scanned.",
+  "index": false
+ },
+ {
+  "id": "pay",
+  "title": "Complete membership · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "mou",
+  "title": "Membership Agreement · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "shop",
+  "title": "Shop · Souvenirs and merchandise · NGG",
+  "desc": "NGG T-shirts, caps, mugs and souvenirs. Pay online with Paystack and collect at your centre, or have it delivered.",
+  "index": true
+ },
+ {
+  "id": "shop-order",
+  "title": "Your order · NGG shop",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "admin",
+  "title": "Control Room · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "summer-admin",
+  "title": "Summer School · Staff Portal · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "club-admin",
+  "title": "NGG Club · Staff Portal · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "mentor",
+  "title": "Mentor Portal · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "instructor",
+  "title": "Instructor Portal · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "family",
+  "title": "Family account · NGG",
+  "desc": "For parents and guardians: attendance, conduct, fees and lesson progress for each child, and a way to tell the centre.",
+  "index": false
+ },
+ {
+  "id": "circle",
+  "title": "Anchor Circle has moved · NGG",
+  "desc": "Parents and teachers now follow a child's Anchor week in the NGG family account; mentors in the mentor portal.",
+  "index": false
+ },
+ {
+  "id": "gate",
+  "title": "Check-in desk · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "enrol",
+  "title": "Registration desk · Summer School · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "review",
+  "title": "Review desk · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "verify",
+  "title": "Confirm your child's registration · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "reshoot",
+  "title": "A new photo · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "id-cards",
+  "title": "ID Card Studio · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "designer",
+  "title": "Design Studio · NGG",
+  "desc": "",
+  "index": false
+ },
+ {
+  "id": "notice",
+  "title": "Notice · NGG",
+  "desc": "An official notice from the NGG management to members and their families.",
+  "index": false
+ },
+ {
+  "id": "certificate",
+  "title": "Service certificate · NGG",
+  "desc": "A verifiable Next Generation Genius volunteer service certificate.",
+  "index": false
+ },
+ {
+  "id": "journal-entry",
+  "title": "From the programme journal · NGG",
+  "desc": "",
+  "index": false
+ }
+]

@@ -172,9 +172,8 @@ function apfErr(f, v) {
   if (f.type === "photo") {
     const m = v.photoMeta || {};
     if (!v.photoData && !v.photoUrl) return "Add a passport photo.";
-    if (m.small) return "This photo is too small to print. Take one with the camera instead.";
-    if (m.dark) return "Too dark to see the face. Stand facing a window or light and retake.";
-    if (m.bright) return "Too bright. Move out of direct sunlight and retake.";
+    if (m.serverIssues && m.serverIssues.length) return m.serverIssues.slice(0, 2).map(i => PHOTO_QA_WORDS[i] || "").join(" ").trim();
+    if (m.issues && m.issues.length) return PHOTO_QA_WORDS[m.issues[0]] || PHOTO_QA_WORDS.blurry;
     if (m.faces === 0) return "We couldn’t find a face. Fit the face in the oval and retake.";
     if (m.faces > 1) return "Only one person can be in the photo.";
     return "";
@@ -199,24 +198,28 @@ function apfErr(f, v) {
   return "";
 }
 
-/** Crop to 3:4, export 600 × 800 JPEG, and measure what the ID card rules need. */
+/** Crop to 3:4, keep it at 600 × 800 (never enlarged), and judge it by the photo quality gate
+ *  (photoQa* in components.jsx — the server's rules, run here first). */
 async function apfAnalysePhoto(el, w, h, bias) {
   const r = 3 / 4; let cw = w, ch = h;
   if (w / h > r) cw = Math.round(h * r); else ch = Math.round(w / r);
   const sx = Math.round((w - cw) / 2), sy = Math.round((h - ch) * bias);
-  const c = document.createElement("canvas"); c.width = 600; c.height = 800;
-  c.getContext("2d").drawImage(el, sx, sy, cw, ch, 0, 0, 600, 800);
-  const s = document.createElement("canvas"); s.width = 90; s.height = 120;
-  const sc = s.getContext("2d", { willReadFrequently: true }); sc.drawImage(c, 0, 0, 90, 120);
-  const d = sc.getImageData(0, 0, 90, 120).data, g = new Float32Array(10800); let sum = 0;
-  for (let i = 0; i < g.length; i++) { const L = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]; g[i] = L; sum += L; }
-  const lum = sum / g.length; let ls = 0, lq = 0, n = 0;
-  // Laplacian variance: low means soft. A warning only — phones vary too much to refuse on it.
-  for (let y = 1; y < 119; y++) for (let x = 1; x < 89; x++) { const i = y * 90 + x, l = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - 90] - g[i + 90]; ls += l; lq += l * l; n++; }
-  const sharp = lq / n - (ls / n) ** 2;
+  /* 600 × 800 when the original has the pixels; a smaller original keeps its own size and is
+     refused as too small — enlarging it would only hide that it cannot print sharply. */
+  const ow = Math.min(600, cw), oh = Math.round(ow * 4 / 3);
+  const c = document.createElement("canvas"); c.width = ow; c.height = oh;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+  g.drawImage(el, sx, sy, cw, ch, 0, 0, ow, oh);
+  /* Measured on the JPEG as it will be sent, so the browser and the server judge the same pixels. */
+  const data = c.toDataURL("image/jpeg", 0.86);
+  const back = new Image(); back.src = data; await back.decode();
+  const k = document.createElement("canvas"); k.width = ow; k.height = oh;
+  k.getContext("2d", { willReadFrequently: true }).drawImage(back, 0, 0);
+  const qa = photoQaMeasure(k), issues = photoQaJudge(qa, cw, ch);
   let faces = null;
   if ("FaceDetector" in window) { try { faces = (await new window.FaceDetector({ maxDetectedFaces: 3 }).detect(c)).length; } catch (_) {} }
-  return { data: c.toDataURL("image/jpeg", 0.86), meta: { w: cw, h: ch, lum: Math.round(lum), faces, small: cw < 320, dark: lum < 60, bright: lum > 225, blurry: sharp < 35 } };
+  return { data, meta: Object.assign({ w: cw, h: ch, faces, issues }, qa) };
 }
 function apfDataUrlFile(dataUrl) {
   const [head, b64] = String(dataUrl).split(",");
@@ -245,10 +248,21 @@ function apfServerWhy(e) {
     vision_too_short: "Write at least 40 characters for the vision.",
     bad_phone: "One of the phone numbers isn’t an 11-digit Nigerian number.",
     photo_required: "Add a passport photo.",
+    photo_low_quality: photoQaServerWords(e),
     centre_not_offered: d.detail || "That centre doesn’t run the Club. Choose another on the first step.",
     upstream_unreachable: "We couldn’t reach the server. Your answers are saved here; try again in a moment.",
+    bad_dob: "Check the date of birth: it must be a real date.",
+    bad_sex: "Choose Female or Male.",
+    bad_email: "Enter a full email address, like name@gmail.com.",
+    phone_required: "Add a mobile number.",
+    bad_division: "Choose the course again: the list has changed since this page opened.",
+    division_required: "Choose a course.",
+    course_not_in_division: d.detail ? d.detail + " Choose the course again." : "Choose the course again.",
+    details_required: d.message || "Some answers did not reach us. Reload the page and send again; your answers are kept.",
   };
-  const step = code === "age_ngv" || code === "bad_age" ? 1 : code === "consent_required" || code === "photo_required" ? 6 : code === "centre_not_offered" ? 0
+  const step = ["age_ngv", "bad_age", "bad_dob", "bad_sex", "bad_email", "phone_required"].includes(code) ? 1
+    : ["bad_division", "division_required", "course_not_in_division"].includes(code) ? 5
+    : code === "consent_required" || code === "photo_required" || code === "photo_low_quality" ? 6 : code === "centre_not_offered" ? 0
     : d.field && APF_FIELD_STEP[d.field] != null ? APF_FIELD_STEP[d.field] : -1;
   return { text: map[code] || (d.field ? "Something in this section needs another look." : "We couldn’t send the application. Your answers are saved here; try again."), step };
 }
@@ -271,6 +285,10 @@ function ClubApplyPage({ setPage }) {
   const [done, setDone] = React.useState(null);           // { ref, updated, first, email, centre }
   const [busy, setBusy] = React.useState(false);
   const [sendErr, setSendErr] = React.useState("");
+  /* Changing an application already sent needs the code emailed to that
+     address (the server sends it when the same child applies again). */
+  const [codeAsk, setCodeAsk] = React.useState(null);   // { text } once a code has been emailed
+  const [editCode, setEditCode] = React.useState("");
   const [toast, setToast] = React.useState("");
   const [pol, setPol] = React.useState("");
   const [offer, setOffer] = React.useState(null);
@@ -384,11 +402,24 @@ function ClubApplyPage({ setPage }) {
           heardOther: v.heardOther || "", promoCode: (v.promoCode || "").trim().toUpperCase(),
         },
         consents,
+        ...(codeAsk && editCode.trim() ? { editCode: editCode.trim() } : {}),
       });
+      setCodeAsk(null); setEditCode("");
       try { localStorage.removeItem(APF_DRAFT_KEY); } catch (_) {}
       setDone({ ref: (r && r.ref) || "", updated: !!(r && r.updated), queued: !!(r && r.queued), first: v.firstName, email: v.email, centre: v.centre, phone: v.parent1Phone || v.mobile });
       scrollTop();
     } catch (e) {
+      const code = (e && (e.code || e.message)) || "";
+      if (code === "edit_code_sent" || code === "edit_code_wrong") {
+        const m = (e.data && e.data.message) || (code === "edit_code_wrong" ? "That code is not right. Check the latest email from NGG." : "This child has already applied. We emailed a 6-digit code: enter it to update the application.");
+        setCodeAsk({ text: m }); setSendErr(""); if (code === "edit_code_sent") setEditCode("");
+        return;
+      }
+      if (code === "photo_low_quality") {
+        // The server measured the photo again and refused it: say why on the photo itself.
+        const iss = (e.data && Array.isArray(e.data.issues)) ? e.data.issues : ["blurry"];
+        set(cur => ({ photoMeta: Object.assign({}, cur.photoMeta || {}, { serverIssues: iss }) }));
+      }
       const w = apfServerWhy(e);
       setSendErr(w.text);
       if (w.step >= 0 && steps[w.step]) { setTried(t => Object.assign({}, t, { [steps[w.step].id]: true })); go(w.step); setSendErr(w.text); }
@@ -472,6 +503,18 @@ function ClubApplyPage({ setPage }) {
                 </div>
               )}
               {sendErr && <div className="apf-errsum" role="alert"><b><i className="ph ph-warning-circle" aria-hidden="true"/>{sendErr}</b></div>}
+              {codeAsk && (
+                <div className="apf-note apf-code" role="alert">
+                  <i className="ph ph-envelope-simple" aria-hidden="true"/>
+                  <div className="apf-code-in">
+                    <span>{codeAsk.text}</span>
+                    <label className="apf-code-l" htmlFor="apf-editcode">6-digit code</label>
+                    <input id="apf-editcode" className="apf-input apf-code-f" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={editCode}
+                      onChange={e => setEditCode(e.target.value.replace(/\D/g, "").slice(0, 6))}/>
+                    <span className="apf-hint">Then press Send again. Didn’t get it? Press Send with the box empty and we send a new one.</span>
+                  </div>
+                </div>
+              )}
               {st.id === "about" && seen && (
                 <div className="apf-note" role="note"><i className="ph ph-info" aria-hidden="true"/>
                   <span>{seen.open ? "Looks like this child has applied before. Sending this will update that application instead of creating a second one."
@@ -485,6 +528,7 @@ function ClubApplyPage({ setPage }) {
                   <span>NGG is for ages 10 to 17. At 18 and over, members join NGV, our leadership class: mentor younger members, lead projects and grow as a young leader.</span>
                   <div className="apf-ngv-row">
                     <a href={apfNgvHref(ngvUrl, v)} className="apf-ngv-btn" rel="noopener">Register for NGV<i className="ph ph-arrow-right" aria-hidden="true"/></a>
+                    <a href="/join/volunteer" className="apf-ngv-alt" onClick={e => { e.preventDefault(); setPage("ngg-volunteer"); }}>Or volunteer with NGG at a centre</a>
                     <span>Wrong date of birth? Fix it below.</span>
                   </div>
                 </div>
@@ -505,7 +549,7 @@ function ClubApplyPage({ setPage }) {
               </div>
             )}
           </>}
-          {done && <ApfDone done={done} sibling={sibling} restart={restart}/>}
+          {done && <ApfDone done={done} sibling={sibling} restart={restart} setPage={setPage}/>}
         </div>
 
         {rightOn && (
@@ -561,6 +605,10 @@ function ApfField({ f, v, set, touch, shown, err, W, offer, offerErr, reloadOffe
      goes; a new one waits for them to leave the field. */
   const [foc, setFoc] = React.useState(false);
   const [hold, setHold] = React.useState(false);
+  /* Typing in the INPUT, not focus anywhere in the field: the email's "Use it"
+     button lives inside the field, so hiding the suggestion on any focus
+     unmounted it the moment it was pressed, and the fix never landed. */
+  const [typing, setTyping] = React.useState(false);
   React.useEffect(() => { if (foc && hold && !err) setHold(false); }, [foc, hold, err]);
   const onFoc = () => { if (!foc) { setFoc(true); setHold(!!shown); } };
   const onOut = e => { if (!e.currentTarget.contains(e.relatedTarget)) setFoc(false); };
@@ -571,7 +619,7 @@ function ApfField({ f, v, set, touch, shown, err, W, offer, offerErr, reloadOffe
   if (f.type === "heading") return <div className={"apf-fld apf-heading" + span}><h2>{f.label}</h2>{f.hint && <span>{f.hint}</span>}</div>;
   const hasLabel = !!f.label && !["toggle", "info", "agree"].includes(f.type);
   let help = null;
-  if (f.id === "email" && !foc) { const fx = apfEmailFix(val); if (fx && fx !== String(val || "").trim().toLowerCase()) help = { tone: "warn", icon: "lightbulb", text: "Did you mean " + fx + "?", fixL: "Use it", fix: () => upd(fx) }; }
+  if (f.id === "email" && !typing) { const fx = apfEmailFix(val); if (fx && fx !== String(val || "").trim().toLowerCase()) help = { tone: "warn", icon: "lightbulb", text: "Did you mean " + fx + "?", fixL: "Use it", fix: () => upd(fx) }; }
   if (f.id === "dob" && age != null && !err) help = { tone: "ok", icon: "check-circle", text: "Age " + age + " today" };
   if (f.id === "surname" && v.firstName && v.surname && !err && !foc) help = { tone: "muted", icon: "identification-card", text: "ID card: " + String(v.surname).toUpperCase() + ", " + v.firstName + (v.middleName ? " " + v.middleName : "") };
   if (f.id === "parent2Phone" && val && apfPhone(val) === apfPhone(v.parent1Phone)) help = { tone: "muted", icon: "info", text: "Same number as the main contact. That’s fine if they share a phone." };
@@ -600,7 +648,7 @@ function ApfField({ f, v, set, touch, shown, err, W, offer, offerErr, reloadOffe
           {f.prefix && <span className="apf-prefix">{f.prefix}</span>}
           <input id={inputId} type={f.inType || "text"} inputMode={f.inputMode} autoComplete={f.ac || "on"} value={val || ""} placeholder={f.ph || ""}
             max={f.inType === "date" ? new Date().toISOString().slice(0, 10) : undefined}
-            onChange={e => upd(e.target.value)} onBlur={blurText} aria-invalid={shown || undefined} aria-describedby={shown ? errId : f.hint ? "apf-hint-" + f.id : undefined}/>
+            onChange={e => upd(e.target.value)} onFocus={() => setTyping(true)} onBlur={() => { setTyping(false); blurText(); }} aria-invalid={shown || undefined} aria-describedby={shown ? errId : f.hint ? "apf-hint-" + f.id : undefined}/>
         </div>
       )}
       {f.type === "textarea" && <ApfTextarea f={f} val={val} upd={upd} touch={touch} shown={shown} inputId={inputId} errId={errId}/>}
@@ -700,6 +748,15 @@ function apfHit(text, q) {
   return words.every(w => t.includes(w));
 }
 
+function apfStarts(text, q) { const t = String(text || "").toLowerCase(), w = String(q || "").trim().toLowerCase(); return w !== "" && t.startsWith(w); }
+/** Matches that begin with the query first, then those with a word beginning with it; otherwise the list's order. */
+function apfRank(items, q) {
+  const w = String(q || "").trim().toLowerCase();
+  if (!w) return items;
+  const score = o => { const t = String(o).toLowerCase(); return t.startsWith(w) ? 0 : (" " + t).includes(" " + w) ? 1 : 2; };
+  return items.map((o, i) => [o, score(o), i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(x => x[0]);
+}
+
 /** A searchable picker: a dropdown on a wide form, a full-screen sheet on a phone. */
 function ApfCombo({ f, val, pick, touch, shown, inputId, errId, phone }) {
   const [q, setQ] = React.useState(null);     // null = not typing; shows the value
@@ -721,8 +778,18 @@ function ApfCombo({ f, val, pick, touch, shown, inputId, errId, phone }) {
   }, [qq, f.remote]);
   const list = [], flat = [];
   if (f.groups) f.groups.forEach(([h, items]) => { const it = items.filter(o => apfHit(o, qq)); if (it.length) { list.push({ g: h }); it.forEach(o => { list.push({ o }); flat.push(o); }); } });
-  else if (remote) remote.forEach(r => { list.push({ o: r.name, sub: [r.lga, r.state].filter(Boolean).join(", ") }); flat.push(r.name); });
-  else (f.opts || []).filter(o => apfHit(o, qq)).slice(0, 40).forEach(o => { list.push({ o }); flat.push(o); });
+  else {
+    /* Names that START with what was typed come first, here as on the server:
+       in the list's own (alphabetical) order, "Egbeda Sen" + Enter chose
+       "Anglican Senior Grammar School, Egbeda". The schools near our centres
+       stay offered while the open-data answer is on screen. */
+    const local = apfRank((f.opts || []).filter(o => apfHit(o, qq)), qq).slice(0, 40);
+    if (remote) {
+      const have = new Set(remote.map(r => String(r.name).toLowerCase()));
+      local.filter(o => !have.has(String(o).toLowerCase()) && apfStarts(o, qq)).forEach(o => { list.push({ o }); flat.push(o); });
+      remote.forEach(r => { list.push({ o: r.name, sub: [r.lga, r.state].filter(Boolean).join(", ") }); flat.push(r.name); });
+    } else local.forEach(o => { list.push({ o }); flat.push(o); });
+  }
   const h = Math.min(hi, Math.max(0, flat.length - 1));
   const listId = "apf-lb-" + f.id;
   const choose = o => { pick(o); setQ(null); setOpen(false); setHi(0); };
@@ -783,9 +850,13 @@ function ApfCombo({ f, val, pick, touch, shown, inputId, errId, phone }) {
 
 /* A division's icon, by what it is about (the stored icons are emoji, which this form does not use). */
 function apfDivisionIcon(name) {
-  const n = String(name || "").toLowerCase();
-  return /not sure/.test(n) ? "question" : /tech|engineer|cod/.test(n) ? "code" : /media|film|content/.test(n) ? "film-slate"
-    : /art|music|perform|creative/.test(n) ? "music-notes" : /business|admin|operation/.test(n) ? "briefcase" : "squares-four";
+  /* Whole words, not fragments: "art" inside "Smart Technology" or "cod" inside "Decoding" once picked the wrong icon. */
+  const n = String(name || "").toLowerCase(), w = new Set(n.split(/[^a-z]+/).filter(Boolean));
+  const any = list => list.some(x => w.has(x));
+  return /not sure/.test(n) ? "question" : any(["tech", "technology", "coding", "code", "engineering"]) ? "code"
+    : any(["media", "film", "content"]) ? "film-slate"
+    : any(["art", "arts", "music", "performing", "creative"]) ? "music-notes"
+    : any(["business", "administration", "admin", "operations"]) ? "briefcase" : "squares-four";
 }
 
 /** Courses as cards grouped by the Club's divisions, plus "Something else". */
@@ -855,9 +926,10 @@ function ApfPhoto({ v, err, W, addPhotoFile, takePhoto }) {
   const check = (t, s, sub) => ({ t: compact ? SHORT[t] || t : t, s, sub });
   const checks = [
     check("One face, looking straight at the camera", !m || m.faces == null ? "idle" : m.faces === 1 ? "ok" : "bad", m && m.faces === 0 ? "No face found" : m && m.faces > 1 ? "More than one face" : ""),
-    check("Good, even light on the face", !m || m.lum == null ? "idle" : m.dark || m.bright ? "bad" : "ok", m && m.dark ? "Too dark" : m && m.bright ? "Too bright" : ""),
-    check("Sharp and in focus", !m || m.lum == null ? "idle" : m.blurry ? "warn" : "ok", m && m.blurry ? "Looks soft. Hold still and retake if you can." : ""),
-    check("Big enough to print", !m || m.lum == null ? "idle" : m.small ? "bad" : "ok", m && m.small ? "Too small" : ""),
+    check("Good, even light on the face", !m || !m.issues ? "idle" : m.issues.some(i => ["too_dark", "too_bright", "clipped", "low_contrast"].includes(i)) ? "bad" : "ok",
+      m && m.issues ? (m.issues.includes("too_dark") ? "Too dark" : m.issues.includes("too_bright") ? "Washed out" : m.issues.includes("clipped") ? "Uneven light" : m.issues.includes("low_contrast") ? "Flat or foggy" : "") : ""),
+    check("Sharp and in focus", !m || !m.issues ? "idle" : m.issues.includes("blurry") ? "bad" : "ok", m && m.issues && m.issues.includes("blurry") ? "Blurry. Hold still, tap the face to focus, retake." : ""),
+    check("Big enough to print", !m || !m.issues ? "idle" : m.issues.includes("too_small") ? "bad" : "ok", m && m.issues && m.issues.includes("too_small") ? "Too small: use the camera" : ""),
   ].concat(compact ? [] : [check("Plain, light background. No hat, sunglasses or filter. Religious head coverings are fine.", "idle", "")]);
   const ICON = { idle: "ph ph-circle", ok: "ph-fill ph-check-circle", warn: "ph-fill ph-warning-circle", bad: "ph-fill ph-x-circle" };
   const pick = (ev, src) => { const fl = ev.target.files && ev.target.files[0]; ev.target.value = ""; if (src === "camera") closeCam(); addPhotoFile(fl, src); };
@@ -866,7 +938,7 @@ function ApfPhoto({ v, err, W, addPhotoFile, takePhoto }) {
       <div className="apf-photo-pv">
         {m ? <>
           <img src={v.photoData || v.photoUrl} alt="Passport photo preview"/>
-          <span className={"apf-photo-badge " + (err ? "is-bad" : m.blurry ? "is-warn" : "is-ok")}><i className={"ph " + (err ? "ph-x" : "ph-check")} aria-hidden="true"/>{err ? "Needs another try" : m.blurry ? "Check sharpness" : "Meets the rules"}</span>
+          <span className={"apf-photo-badge " + (err ? "is-bad" : "is-ok")}><i className={"ph " + (err ? "ph-x" : "ph-check")} aria-hidden="true"/>{err ? "Needs another try" : "Meets the rules"}</span>
         </> : <span className="apf-photo-oval" aria-hidden="true"><i className="ph ph-user"/></span>}
       </div>
       <div className="apf-photo-body">
@@ -1002,7 +1074,7 @@ function ApfReview({ v, age, go }) {
   );
 }
 
-function ApfDone({ done, sibling, restart }) {
+function ApfDone({ done, sibling, restart, setPage }) {
   const steps = [["We check the details", "Usually within 3 working days. If something’s missing we’ll call the main contact."],
     ["Pay with the link we send", "Only after acceptance. Paystack or bank transfer; the receipt is emailed to you."],
     ["Come to " + (done.centre || "your centre") + " on Saturday", "Bring this reference. Your ID card is printed from the photo you sent."]];
@@ -1019,6 +1091,7 @@ function ApfDone({ done, sibling, restart }) {
         <button type="button" className="apf-btn apf-btn--ghost" onClick={restart}>Start a new application</button>
       </div>
       <span className="apf-hint">Applying for a brother or sister? We’ll keep the parent, address and centre details so you don’t type them again.</span>
+      <span className="apf-hint">To see where it stands later, enter this reference and your email under “Check your status” on the <a href="/contact" onClick={e => { e.preventDefault(); setPage && setPage("contact"); }}>contact page</a>.</span>
     </section>
   );
 }

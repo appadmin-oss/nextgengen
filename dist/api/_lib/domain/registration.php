@@ -1931,7 +1931,7 @@ function student_send_id(string $studentId): array {
         $html = email_template([
             'title' => $first . "'s Genius ID",
             'intro' => 'Hello' . (!empty($s['guardianName']) ? ' ' . esc_html((string)$s['guardianName']) : '') . " — here is {$first}'s Next Generation Genius ID.",
-            'bodyHtml' => '<p style="margin:0 0 10px"><b>Student ID:</b> ' . esc_html($displayId) . '</p>'
+            'bodyHtml' => '<p style="margin:0 0 10px"><b>Participant number:</b> ' . esc_html($displayId) . '</p>'
                 . $qrHtml
                 . '<p style="margin:0 0 10px">The QR above (and the button below) open ' . $first . "'s digital ID and attendance profile — the same code printed on the card. Show either at any centre to check in.</p>",
             'ctaLabel' => "Open {$first}'s ID →", 'ctaUrl' => $url,
@@ -2316,6 +2316,8 @@ function reshoot_submit(array $p): array {
         ? photo_intake_url((string)($p['photoUrl'] ?? ''))
         : (string)($p['photoUrl'] ?? '');
     if ($url === '') return ['ok' => false, 'error' => 'bad_photo'];
+    // A retake that is itself blurred or tiny would only need another retake: refuse it, and say why.
+    if (($q = photo_qa_gate($url)) !== null) return $q;
     // The retake IS the new photo — apply it whether or not the governed
     // pipeline can run, or a guardian who did what they were asked would see
     // the old picture on the card indefinitely.
@@ -2925,7 +2927,7 @@ function admin_centres_list(array $p): array {
     $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
     $canWrite = in_array('people', member_effective_caps($g['requester']), true);
     $c = summer_ensure_cohort();
-    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, summerLeadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, summerAddress, summerArea, summerLat, summerLng, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt, programmes, cacLocationId, cacCalendar, cacSyncedAt FROM centres ORDER BY name");
+    $rows = db_all("SELECT centreId, name, code, color, online, status, capacity, address, area, leadVolunteerId, summerLeadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, summerAddress, summerArea, summerLat, summerLng, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt, programmes, cacLocationId, cacCalendar, cacSyncedAt FROM centres ORDER BY name");
     // A scoped admin's directory is their centres.
     $scopeNames = admin_centre_names_in_scope($g['requester']);
     if ($scopeNames !== null) $rows = array_values(array_filter($rows, static fn($r) => in_array((string)$r['name'], $scopeNames, true)));
@@ -3037,6 +3039,28 @@ function centre_is_full(string $centreName, string $cohortId): bool {
  * programme offers is filtered by it — so a Summer-only venue is not offered to
  * an NGG member, and a Club-only centre is not on the Summer form. Empty reads
  * as both, which is what every row was before the column existed. */
+/* ── Online membership (owner, 16–17 Nov 2026; docs/ONLINE-MEMBERS-PLAN.md) ──
+ * An online member's home is a real centres row marked `online` ("NGG Online", seeded by migration 236,
+ * never linked to CACENTRE), so every desk keyed by centre — scope, mentors, timetable, notices — reaches
+ * them. Nothing that assumes a building applies: no meeting days, no gate, no absence. */
+const CENTRE_ONLINE_ID = 'CTR-ONLINE';
+/** Lower-cased names of the online centres — one read per request (centre_online_reset() after a change). */
+function centre_online_names(bool $reset = false): array {
+    static $names = null;
+    if ($reset) { $names = null; return []; }
+    if ($names === null) {
+        $names = [];
+        try { foreach (db_all('SELECT name FROM centres WHERE online = 1') as $r) $names[] = mb_strtolower(trim((string)$r['name'])); }
+        catch (Throwable $e) { $names = []; }   // a schema before migration 236
+    }
+    return $names;
+}
+function centre_online_reset(): void { centre_online_names(true); }
+/** Is this centre (by name) an online one? */
+function centre_is_online(string $name): bool { return $name !== '' && in_array(mb_strtolower(trim($name)), centre_online_names(), true); }
+/** Is this member an online member? */
+function member_is_online(?array $m): bool { return $m !== null && centre_is_online((string)($m['centre'] ?? '')); }
+
 const CENTRE_PROGRAMMES = ['ngg', 'summer'];
 const CENTRE_FALLBACK_CODE = 'ST';
 function centre_programmes_clean($raw): array {
@@ -3253,6 +3277,7 @@ function admin_centres_upsert(array $p): array {
 
     if ($existing) db_update('centres', $row, ['centreId' => $id]);
     else { $id = 'CTR-' . strtoupper(rand_hex(4)); db_insert('centres', $row + ['centreId' => $id, 'createdAt' => now_iso()]); }
+    centre_online_reset();
     audit('centre.upsert', $g['requester']['memberId'], $id, ['code' => $code, 'geofence' => $row['geofence'] ?? null], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'centreId' => $id];
 }

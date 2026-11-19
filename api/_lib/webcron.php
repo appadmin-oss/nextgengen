@@ -98,6 +98,10 @@ function web_cron_jobs(): array {
     if (defined('WIFI_CAC_EVERY')) $add('wifi_cac', WIFI_CAC_EVERY, $has('wifi_cac_tick'), true);
     $add('volpay',       3600,   $has('volpay_tick'), false);
     $add('dirpush',      3600,   $has('dirpush_tick'), true);
+    $add('photos_bucket', 3600,  $has('photo_store_to_bucket_tick'), true);   // held photos into the bucket, a batch an hour until none are left
+    $add('shop',         3600,   $has('shop_cron_tick'), true);           // shop-manage.php: expire unpaid orders, one reminder, refunds Paystack has not reported, the low-stock digest
+    $add('regcheck',     3600,   $has('rcl_tick'), true);                     // registration checklist: recount, remind supervisors and families weekly
+    $add('photo_sizes',  600,    $has('photo_variants_tick'), true);          // each bucket photo's sizes, made once by Cloudinary, stored beside it
     // Once: tracks that name courses exactly become chosen courses (curriculum.php).
     if (function_exists('member_courses_backfill_once') && defined('MEMBER_COURSES_BACKFILL') && (string)setting_raw(MEMBER_COURSES_BACKFILL) === '')
         $add('courses_backfill', 60, 'member_courses_backfill_once', false);
@@ -320,6 +324,13 @@ function web_cron_reminders(): void {
         try { fees_reminders_run(FEES_REMIND_CRON_BATCH); }
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'fees.reminders', $e->getMessage()); }
     }
+    /* Notices BEFORE a charge falls due, the payment-note nudge to the fees
+       desk (domain/dues-notices.php). Once a day for the roster scan; nothing
+       is ever said twice, whatever the cadence. Guarded on its own. */
+    if (function_exists('dues_notices_run')) {
+        try { dues_notices_run(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'dues.notices', $e->getMessage()); }
+    }
 
     /* And note — never apply — an overdue amounts review. An uprate that is only
      * visible on the tab where it is set is an uprate nobody performs, because
@@ -355,6 +366,14 @@ function web_cron_reminders(): void {
     if (function_exists('family_reports_run')) {
         try { family_reports_run(); family_reminders_run(); }
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'family.v3', $e->getMessage()); }
+    }
+
+    /* Formal family reports at the end of a session (term) and a Summer School edition, and the day's attendance
+       to the staff who run each programme (domain/parent-reports.php). Each send is claimed per recipient, so a
+       15-minute tick sends each one once. The monthly report rides family_reports_run above. */
+    if (function_exists('preport_session_run')) {
+        try { preport_session_run(); preport_edition_run(); attendance_daily_run(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'reports', $e->getMessage()); }
     }
 
     /* Support cases: solved ones nobody reopened close, and ones waiting on a
@@ -435,11 +454,7 @@ function web_cron_accrue(): void {
     $cfg = fees_settings();
     if (empty($cfg['enabled'])) return;
     $limit = max(1, min(FEES_SCAN_MAX, (int)web_cron_cfg('accrueBatch', FEES_ACCRUE_BATCH)));
-    $n = 0;
-    foreach (db_all("SELECT * FROM members WHERE status = 'active' ORDER BY id LIMIT " . $limit) as $m) {
-        fees_accrue_member($m, $cfg);
-        $n++;
-    }
+    $n = function_exists('fees_accrue_batch') ? (int)fees_accrue_batch($limit, $cfg)['members'] : 0;
     if ($n && function_exists('ops_record')) ops_record('cron', 'fees_accrue', $n . ' member(s) brought up to date');
 }
 

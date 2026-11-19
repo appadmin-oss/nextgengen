@@ -29,7 +29,6 @@ const AN_TONE = { good: "#16a34a", warn: "#f59e0b", bad: "#ef4444", info: "#4C6F
  * folds into "Other" or the chart becomes small multiples. */
 const AN_SERIES = ["#3B5BDB", "#C2410C", "#0E9F6E", "#A21CAF", "#4D7C0F", "#0369A1", "#BE123C", "#6D28D9"];
 const AN_RATE_TONE = (r) => (r >= 80 ? AN_TONE.good : r >= 55 ? AN_TONE.warn : AN_TONE.bad);
-const AN_RATE_LABEL = (r) => (r >= 80 ? "On track" : r >= 55 ? "Watch" : "Needs attention");
 
 function anFmt(n) { return (n === null || n === undefined || n !== n) ? "—" : fmtNum(n); }
 /* Always quoted, and always formula-guarded. The old version quoted only when
@@ -1424,7 +1423,7 @@ function AnalyticsWorkspace() {
         : <div className="an-grid an-gal">{ev.gallery.slice(0, 12).map(a => {
           const photo = (a.evidence || []).find(e => e.type === "photo" && e.url);
           return <div key={a.activityId} className="an-card click" style={{ padding: 10 }} onClick={() => showEvidence(a)}>
-            <div className="an-thumb">{photo ? <img src={photo.url} alt="" loading="lazy"/> : "🖼"}</div>
+            <div className="an-thumb">{photo ? <img src={nggImg(photo.url, "small")} alt="" loading="lazy"/> : "🖼"}</div>
             <b style={{ display: "block", marginTop: 9, fontSize: 14 }}>{a.title}</b>
             <div style={{ color: "var(--ink-400)", fontSize: 12, margin: "2px 0 6px" }}>{a.category} · {a.centre || "All"} · {a.date}</div>
             <div className="an-ev">{(a.evidence || []).map((e, i) => <span key={i} className="an-evtype" style={{ fontSize: 10 }}>{e.type}</span>)}</div>

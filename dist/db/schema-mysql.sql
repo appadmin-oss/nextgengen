@@ -5025,7 +5025,270 @@ ALTER TABLE awards ADD COLUMN category VARCHAR(32) NOT NULL DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (215) ON DUPLICATE KEY UPDATE version = version;
 
--- ── 216 · Who was told about an assignment, and of what ──
+-- 216: dues and payment notices — what a family or the fees desk was told, and by which channels.
+CREATE TABLE IF NOT EXISTS dues_notices (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL DEFAULT '',
+  kind VARCHAR(24) NOT NULL,
+  refKey VARCHAR(120) NOT NULL,
+  title VARCHAR(200) NOT NULL DEFAULT '',
+  amount INT NOT NULL DEFAULT 0,
+  dueOn VARCHAR(10) NOT NULL DEFAULT '',
+  channelsJson TEXT,
+  reached INT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT 'sending',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_dues_notices (memberId, kind, refKey),
+  KEY idx_dues_notices_at (createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (216) ON DUPLICATE KEY UPDATE version = version;
+
+-- 217 — Paystack's charge, borne by the family, recorded beside the invoice's own total.
+ALTER TABLE membership_invoices ADD COLUMN processingFee INT NOT NULL DEFAULT 0;
+INSERT INTO schema_version (version) VALUES (217) ON DUPLICATE KEY UPDATE version = version;
+
+-- 218 — staff broadcasts shown in Community: one post per source message; a notice's Community choice.
+ALTER TABLE community_posts ADD COLUMN sourceRef VARCHAR(80) NOT NULL DEFAULT '', ADD INDEX idx_community_posts_source (sourceRef);
+ALTER TABLE notices ADD COLUMN communityOn TINYINT NOT NULL DEFAULT 0;
+INSERT INTO schema_version (version) VALUES (218) ON DUPLICATE KEY UPDATE version = version;
+
+-- 219 — Maths Lab: map state, profile, sessions, course enrolments.
+CREATE TABLE IF NOT EXISTS mlab_state (
+  id INT AUTO_INCREMENT PRIMARY KEY, memberId VARCHAR(64) NOT NULL, comp VARCHAR(16) NOT NULL, state VARCHAR(16) NOT NULL DEFAULT 'none',
+  p DOUBLE NOT NULL DEFAULT 0.15, attempts INT NOT NULL DEFAULT 0, correct INT NOT NULL DEFAULT 0, fast TINYINT NOT NULL DEFAULT 0,
+  nextReview VARCHAR(10) NOT NULL DEFAULT '', masteredAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_mlab_state (memberId, comp)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS mlab_profile (
+  memberId VARCHAR(64) PRIMARY KEY, xp INT NOT NULL DEFAULT 0, streak INT NOT NULL DEFAULT 0, lastDay VARCHAR(10) NOT NULL DEFAULT '',
+  freezes INT NOT NULL DEFAULT 0, climbStage INT NOT NULL DEFAULT 1, climbDone TINYINT NOT NULL DEFAULT 0, momentum INT NOT NULL DEFAULT 0,
+  xpDay VARCHAR(10) NOT NULL DEFAULT '', xpToday INT NOT NULL DEFAULT 0, bosses TEXT, createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS mlab_sessions (
+  sessionId VARCHAR(32) PRIMARY KEY, memberId VARCHAR(64) NOT NULL, mode VARCHAR(16) NOT NULL, ref VARCHAR(16) NOT NULL DEFAULT '',
+  items MEDIUMTEXT, resp MEDIUMTEXT, startedAt VARCHAR(32) NOT NULL DEFAULT '', finishedAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_mlab_sessions_member (memberId, startedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS mlab_enrol (memberId VARCHAR(64) NOT NULL, courseId VARCHAR(40) NOT NULL, enrolledAt VARCHAR(32) NOT NULL DEFAULT '', UNIQUE KEY uq_mlab_enrol (memberId, courseId)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (219) ON DUPLICATE KEY UPDATE version = version;
+
+-- 220: the ledger read by date (Transactions), and periodKey wide enough for
+-- the keys the code writes (fees_post shortens anything over 96 to fit).
+-- MODIFY is idempotent; the index is created once by name.
+ALTER TABLE member_ledger MODIFY COLUMN periodKey VARCHAR(96) DEFAULT '';
+CREATE INDEX idx_mledg_created ON member_ledger (createdAt);
+INSERT INTO schema_version (version) VALUES (220) ON DUPLICATE KEY UPDATE version = version;
+
+-- 221: money that arrived and could not be applied, resolved by a person.
+CREATE TABLE IF NOT EXISTS unapplied_payments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  reference VARCHAR(120) NOT NULL,
+  source VARCHAR(32) NOT NULL DEFAULT 'paystack',
+  cause VARCHAR(32) NOT NULL DEFAULT 'unapplied',
+  invoiceId VARCHAR(64) DEFAULT '',
+  memberId VARCHAR(64) DEFAULT '',
+  amount INT NOT NULL DEFAULT 0,
+  currency VARCHAR(8) DEFAULT 'NGN',
+  status VARCHAR(16) NOT NULL DEFAULT 'open',
+  note VARCHAR(255) DEFAULT '',
+  ledgerEntryId VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  resolvedAt VARCHAR(32) DEFAULT '',
+  resolvedBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY uq_unapplied_ref (reference),
+  KEY idx_unapplied_status (status, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (221) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 222 · Saturday formation, versioned: main day, a centre's own, one Saturday; and Saturdays off ──
+CREATE TABLE IF NOT EXISTS saturday_formation_blocks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  scope VARCHAR(80) NOT NULL DEFAULT '', blockKey VARCHAR(40) NOT NULL, sort INT DEFAULT 0,
+  startTime VARCHAR(5) NOT NULL, endTime VARCHAR(5) NOT NULL, title VARCHAR(160) NOT NULL, flow VARCHAR(80) DEFAULT '',
+  purpose TEXT, quote TEXT, forJson MEDIUMTEXT, kind VARCHAR(16) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '', updatedBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY uq_sfb (scope, blockKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO saturday_formation_blocks (scope, blockKey, sort, startTime, endTime, title, flow, purpose, quote, forJson, kind, updatedAt, updatedBy)
+  SELECT '', blockKey, sort, startTime, endTime, title, flow, purpose, quote, forJson,
+         CASE blockKey WHEN 'checkin' THEN 'checkin' WHEN 'musing' THEN 'mentor' WHEN 'division' THEN 'classes' WHEN 'break' THEN 'break' WHEN 'close' THEN 'close' ELSE '' END,
+         updatedAt, updatedBy
+    FROM saturday_formation WHERE status = 'active';
+CREATE TABLE IF NOT EXISTS saturday_formation_dates (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  onDate VARCHAR(10) NOT NULL, centreId VARCHAR(64) NOT NULL DEFAULT '', off TINYINT NOT NULL DEFAULT 0, note VARCHAR(300) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '', updatedBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY uq_sfd (onDate, centreId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (222) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 223 · The registration checklist: admin-defined items, one checklist per member, verdicts, evidence and the reminder ledger ──
+CREATE TABLE IF NOT EXISTS reg_checklist_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  itemId VARCHAR(40) NOT NULL, title VARCHAR(160) NOT NULL, help VARCHAR(600) NOT NULL DEFAULT '',
+  evidence VARCHAR(16) NOT NULL DEFAULT 'none', presence TINYINT NOT NULL DEFAULT 0, maxAgeDays INT NOT NULL DEFAULT 0,
+  sort INT NOT NULL DEFAULT 0, status VARCHAR(16) NOT NULL DEFAULT 'active',
+  createdAt VARCHAR(40) NOT NULL DEFAULT '', createdBy VARCHAR(64) NOT NULL DEFAULT '', updatedAt VARCHAR(40) NOT NULL DEFAULT '', updatedBy VARCHAR(64) NOT NULL DEFAULT '',
+  retiredAt VARCHAR(40) NOT NULL DEFAULT '', retiredBy VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_rcl_item (itemId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS reg_checklists (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, status VARCHAR(16) NOT NULL DEFAULT 'open', done INT NOT NULL DEFAULT 0, total INT NOT NULL DEFAULT 0,
+  supervisorId VARCHAR(64) NOT NULL DEFAULT '', supervisorKind VARCHAR(16) NOT NULL DEFAULT '', supervisorName VARCHAR(160) NOT NULL DEFAULT '',
+  assignedAt VARCHAR(40) NOT NULL DEFAULT '', assignedBy VARCHAR(64) NOT NULL DEFAULT '', startedAt VARCHAR(40) NOT NULL DEFAULT '', startedBy VARCHAR(64) NOT NULL DEFAULT '',
+  completedAt VARCHAR(40) NOT NULL DEFAULT '', updatedAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_rcl_member (memberId),
+  KEY idx_rcl_sup (supervisorId, status),
+  KEY idx_rcl_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS reg_checklist_state (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, itemId VARCHAR(40) NOT NULL, status VARCHAR(16) NOT NULL DEFAULT 'verified',
+  submissionId VARCHAR(40) NOT NULL DEFAULT '', at VARCHAR(40) NOT NULL DEFAULT '', byId VARCHAR(64) NOT NULL DEFAULT '', reason VARCHAR(400) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_rcl_state (memberId, itemId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS reg_checklist_submissions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  submissionId VARCHAR(40) NOT NULL, memberId VARCHAR(64) NOT NULL, itemKey VARCHAR(60) NOT NULL, supervisorId VARCHAR(64) NOT NULL,
+  url VARCHAR(600) NOT NULL DEFAULT '', ext VARCHAR(10) NOT NULL DEFAULT '', mime VARCHAR(120) NOT NULL DEFAULT '', bytes INT NOT NULL DEFAULT 0,
+  capturedOn VARCHAR(10) NOT NULL DEFAULT '', note VARCHAR(500) NOT NULL DEFAULT '', verdict VARCHAR(20) NOT NULL, reason VARCHAR(400) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_rcl_sub (submissionId),
+  KEY idx_rcl_sub (memberId, itemKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS reg_checklist_sends (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sendKey VARCHAR(160) NOT NULL, channel VARCHAR(16) NOT NULL DEFAULT '', recipient VARCHAR(190) NOT NULL DEFAULT '',
+  memberId VARCHAR(64) NOT NULL DEFAULT '', sentAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_rcl_send (sendKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (223) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 224 · NGG's printed documents: one counter per series, and every document issued ──
+CREATE TABLE IF NOT EXISTS doc_serials (
+  series VARCHAR(32) NOT NULL PRIMARY KEY,
+  last INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS documents (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  docNo VARCHAR(40) NOT NULL, kind VARCHAR(16) NOT NULL, memberId VARCHAR(64) NOT NULL DEFAULT '', sourceKey VARCHAR(160) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'issued', supersededBy VARCHAR(40) NOT NULL DEFAULT '', data MEDIUMTEXT NULL,
+  token VARCHAR(40) NOT NULL, irn VARCHAR(120) NOT NULL DEFAULT '', issuedAt VARCHAR(40) NOT NULL DEFAULT '', updatedAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_doc_no (docNo), UNIQUE KEY uq_doc_source (sourceKey), UNIQUE KEY uq_doc_token (token),
+  KEY idx_documents_member (memberId, kind)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (224) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 225 · Written rules carry frog jumps and repeat escalation, like the rulebook's own ──
+ALTER TABLE conduct_rules ADD COLUMN jumps INT NOT NULL DEFAULT 0;
+ALTER TABLE conduct_rules ADD COLUMN escalateAfter INT NOT NULL DEFAULT 0;
+ALTER TABLE conduct_rules ADD COLUMN escalateTo VARCHAR(16) NOT NULL DEFAULT '';
+ALTER TABLE conduct_rules ADD COLUMN suspendDays INT NOT NULL DEFAULT 7;
+ALTER TABLE conduct_rules ADD COLUMN reentryFee INT NOT NULL DEFAULT 0;
+
+INSERT INTO schema_version (version) VALUES (225) ON DUPLICATE KEY UPDATE version = version;
+
+-- 226: a lesson's questions answered from memory on a later day (the opening review).
+ALTER TABLE curriculum_progress ADD COLUMN reviewedAt VARCHAR(32) NOT NULL DEFAULT '';
+INSERT INTO schema_version (version) VALUES (226) ON DUPLICATE KEY UPDATE version = version;
+
+-- 227: Maths Lab — a topic's lesson must be studied before practice, and a failed check or boss is owed practice before a retake.
+ALTER TABLE mlab_state ADD COLUMN studiedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE mlab_state ADD COLUMN owed INT NOT NULL DEFAULT 0;
+INSERT INTO schema_version (version) VALUES (227) ON DUPLICATE KEY UPDATE version = version;
+
+-- 228: the member an application became (convert claims the row; a converted application cannot be declined).
+ALTER TABLE applications ADD COLUMN convertedMemberId VARCHAR(40) NOT NULL DEFAULT '';
+INSERT INTO schema_version (version) VALUES (228) ON DUPLICATE KEY UPDATE version = version;
+
+-- 229: the Labs — the climb and bosses per member per Lab; every session records its Lab.
+CREATE TABLE IF NOT EXISTS mlab_track (
+  memberId VARCHAR(64) NOT NULL, lab VARCHAR(16) NOT NULL, climbStage INT NOT NULL DEFAULT 1, climbDone TINYINT NOT NULL DEFAULT 0,
+  momentum INT NOT NULL DEFAULT 0, bosses TEXT, createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_mlab_track (memberId, lab)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT IGNORE INTO mlab_track (memberId, lab, climbStage, climbDone, momentum, bosses, createdAt, updatedAt)
+  SELECT memberId, 'maths', climbStage, climbDone, momentum, COALESCE(bosses, '{}'), createdAt, updatedAt FROM mlab_profile;
+ALTER TABLE mlab_sessions ADD COLUMN lab VARCHAR(16) NOT NULL DEFAULT 'maths';
+INSERT INTO schema_version (version) VALUES (229) ON DUPLICATE KEY UPDATE version = version;
+
+-- 230: the Learn exam — named slips on multiple-choice options, and one row per exam sitting.
+ALTER TABLE curriculum_checks ADD COLUMN whys TEXT;
+CREATE TABLE IF NOT EXISTS curriculum_sittings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sittingId VARCHAR(40) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL,
+  kind VARCHAR(16) NOT NULL DEFAULT 'session',
+  unitId VARCHAR(40) NOT NULL DEFAULT '',
+  course VARCHAR(191) NOT NULL DEFAULT '',
+  items MEDIUMTEXT,
+  answers MEDIUMTEXT,
+  confidence TEXT,
+  marks MEDIUMTEXT,
+  integrity TEXT,
+  viva MEDIUMTEXT,
+  score DOUBLE NOT NULL DEFAULT 0,
+  maxScore DOUBLE NOT NULL DEFAULT 0,
+  pct INT NOT NULL DEFAULT 0,
+  band VARCHAR(24) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'open',
+  timeLimitSec INT NOT NULL DEFAULT 0,
+  startedAt VARCHAR(32) NOT NULL DEFAULT '',
+  deadline VARCHAR(32) NOT NULL DEFAULT '',
+  submittedAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_csit_member (memberId, kind, unitId),
+  KEY idx_csit_course (course, kind, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (230) ON DUPLICATE KEY UPDATE version = version;
+
+-- 231 — formal family reports and the daily attendance mail (domain/parent-reports.php)
+CREATE TABLE IF NOT EXISTS parent_reports (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  reportId VARCHAR(40) NOT NULL UNIQUE,
+  subjectId VARCHAR(64) NOT NULL,
+  subjectType VARCHAR(16) NOT NULL DEFAULT 'member',
+  kind VARCHAR(16) NOT NULL,
+  period VARCHAR(32) NOT NULL,
+  periodFrom VARCHAR(10) NOT NULL DEFAULT '',
+  periodTo VARCHAR(10) NOT NULL DEFAULT '',
+  data MEDIUMTEXT,
+  issuedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY idx_preport_key (subjectId, kind, period)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS report_sends (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  kind VARCHAR(24) NOT NULL,
+  refKey VARCHAR(120) NOT NULL,
+  recipient VARCHAR(191) NOT NULL,
+  sentAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY idx_rsend_key (kind, refKey, recipient)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (231) ON DUPLICATE KEY UPDATE version = version;
+
+-- 232: a leave request sent less than 24 hours before the day it excuses (domain/member-self.php).
+ALTER TABLE member_requests ADD COLUMN shortNotice INT NOT NULL DEFAULT 0;
+INSERT INTO schema_version (version) VALUES (232) ON DUPLICATE KEY UPDATE version = version;
+
+-- 233: WhatsApp through Kapso (domain/kapso.php).
+CREATE TABLE IF NOT EXISTS whatsapp_messages (
+  wamid VARCHAR(191) NOT NULL PRIMARY KEY,
+  direction VARCHAR(8) NOT NULL DEFAULT 'out',
+  phone VARCHAR(32) NOT NULL DEFAULT '',
+  body TEXT NULL,
+  kind VARCHAR(32) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT '',
+  error VARCHAR(255) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_wa_phone (phone, direction, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (233) ON DUPLICATE KEY UPDATE version = version;
+-- ── 234 · Who was told about an assignment, and of what ──
 -- One row per assignment, member and kind; the UNIQUE key is the claim, so a
 -- re-publish tells only those not yet told and a due reminder goes once.
 CREATE TABLE IF NOT EXISTS assignment_notices (
@@ -5037,9 +5300,9 @@ CREATE TABLE IF NOT EXISTS assignment_notices (
   UNIQUE KEY uq_asg_notice (assignmentId, memberId, kind)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO schema_version (version) VALUES (216) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (234) ON DUPLICATE KEY UPDATE version = version;
 
--- ── 217 · A lesson's homework is issued once ──
+-- ── 235 · A lesson's homework is issued once ──
 -- autoKey = the lesson's unitId on an auto-issued row, NULL on a hand-set one,
 -- so the UNIQUE key binds only what the curriculum issues. The backfill of
 -- existing rows is NGG_MYSQL_ROW_FIXUPS 'assignments.autoKey' (api/_lib/db.php).
@@ -5052,4 +5315,145 @@ CREATE UNIQUE INDEX uq_assign_autokey ON assignments(autoKey);
 ALTER TABLE assignments MODIFY COLUMN centre VARCHAR(80);
 ALTER TABLE assignments MODIFY COLUMN track VARCHAR(80);
 
-INSERT INTO schema_version (version) VALUES (217) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (235) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 236 · Online membership: the "NGG Online" home (docs/ONLINE-MEMBERS-PLAN.md) ──
+-- A real centres row marked online, NGG only, never linked to CACENTRE. Never named "Online": that word
+-- means "every member" on events.
+ALTER TABLE centres ADD COLUMN online TINYINT NOT NULL DEFAULT 0;
+INSERT IGNORE INTO centres (centreId, name, code, color, status, programmes, online, pageStatus, meetDays, notes, createdAt, updatedAt)
+  VALUES ('CTR-ONLINE', 'NGG Online', 'ONL', '#2E6BE6', 'active', 'ngg', 1, 'draft', '', 'Online members: no building, no gate, no meeting days.', NOW(), NOW());
+INSERT INTO schema_version (version) VALUES (236) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 237 · The NGG shop: souvenirs and merchandise (domain/shop.php) ──
+CREATE TABLE IF NOT EXISTS shop_products (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  productId VARCHAR(24) NOT NULL, slug VARCHAR(120) NOT NULL, name VARCHAR(120) NOT NULL,
+  category VARCHAR(32) NOT NULL DEFAULT 'Other', description TEXT, price INT NOT NULL DEFAULT 0,
+  imageUrl VARCHAR(500) NOT NULL DEFAULT '', options TEXT, stock TEXT,
+  status VARCHAR(16) NOT NULL DEFAULT 'draft', sort INT NOT NULL DEFAULT 100,
+  createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '', updatedBy VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_shop_product (productId), UNIQUE KEY uq_shop_slug (slug), KEY idx_shop_products_status (status, sort)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_orders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  orderId VARCHAR(32) NOT NULL, token VARCHAR(64) NOT NULL,
+  buyerName VARCHAR(160) NOT NULL DEFAULT '', email VARCHAR(200) NOT NULL DEFAULT '', phone VARCHAR(24) NOT NULL DEFAULT '',
+  items MEDIUMTEXT, subtotal INT NOT NULL DEFAULT 0, delivery INT NOT NULL DEFAULT 0, total INT NOT NULL DEFAULT 0,
+  processingFee INT NOT NULL DEFAULT 0, currency VARCHAR(8) NOT NULL DEFAULT 'NGN',
+  fulfil VARCHAR(16) NOT NULL DEFAULT 'collect', centre VARCHAR(160) NOT NULL DEFAULT '', centreId VARCHAR(48) NOT NULL DEFAULT '', address VARCHAR(400) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'pending', paystackRef VARCHAR(40) NOT NULL DEFAULT '',
+  paidAt VARCHAR(32) NOT NULL DEFAULT '', readyAt VARCHAR(32) NOT NULL DEFAULT '', completedAt VARCHAR(32) NOT NULL DEFAULT '',
+  note VARCHAR(600) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_shop_order (orderId), UNIQUE KEY uq_shop_token (token), KEY idx_shop_orders_status (status, id), KEY idx_shop_orders_ref (paystackRef)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (237) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 238 · Managing the shop (domain/shop-manage.php): the stock ledger, order timelines, refunds, cash sessions, codes ──
+ALTER TABLE shop_products ADD COLUMN lowStock INT NOT NULL DEFAULT -1;
+ALTER TABLE shop_products ADD COLUMN preorderUntil VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN channel VARCHAR(12) NOT NULL DEFAULT 'online';
+ALTER TABLE shop_orders ADD COLUMN payMethod VARCHAR(16) NOT NULL DEFAULT 'paystack';
+ALTER TABLE shop_orders ADD COLUMN sessionId VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN pickupCode VARCHAR(8) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN gatewayFee INT NOT NULL DEFAULT 0;
+ALTER TABLE shop_orders ADD COLUMN refunded INT NOT NULL DEFAULT 0;
+ALTER TABLE shop_orders ADD COLUMN refundState VARCHAR(12) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN cancelKind VARCHAR(12) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN cancelledAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN remindedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN tracking VARCHAR(300) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN discountCode VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN discount INT NOT NULL DEFAULT 0;
+ALTER TABLE shop_orders MODIFY COLUMN note TEXT;
+CREATE INDEX idx_shop_orders_paid ON shop_orders(paidAt);
+CREATE INDEX idx_shop_orders_created ON shop_orders(createdAt);
+CREATE INDEX idx_shop_orders_session ON shop_orders(sessionId);
+CREATE TABLE IF NOT EXISTS shop_stock_moves (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  productId VARCHAR(24) NOT NULL, variant VARCHAR(40) NOT NULL DEFAULT '', delta INT NOT NULL DEFAULT 0, balance INT NOT NULL DEFAULT 0,
+  reason VARCHAR(16) NOT NULL DEFAULT '', note VARCHAR(300) NOT NULL DEFAULT '', orderId VARCHAR(32) NOT NULL DEFAULT '', byId VARCHAR(64) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_shop_moves_product (productId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_order_events (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  orderId VARCHAR(32) NOT NULL, kind VARCHAR(16) NOT NULL DEFAULT '', text VARCHAR(1000) NOT NULL DEFAULT '', byId VARCHAR(64) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_shop_events_order (orderId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_refunds (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  refundId VARCHAR(32) NOT NULL, orderId VARCHAR(32) NOT NULL, amount INT NOT NULL DEFAULT 0, method VARCHAR(12) NOT NULL DEFAULT 'paystack',
+  status VARCHAR(12) NOT NULL DEFAULT 'pending', gatewayId VARCHAR(40) NOT NULL DEFAULT '', reason VARCHAR(300) NOT NULL DEFAULT '', restock TEXT,
+  byId VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '', processedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_shop_refund (refundId), KEY idx_shop_refunds_order (orderId), KEY idx_shop_refunds_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_cash_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sessionId VARCHAR(32) NOT NULL, label VARCHAR(80) NOT NULL DEFAULT '', centre VARCHAR(160) NOT NULL DEFAULT '', centreId VARCHAR(48) NOT NULL DEFAULT '', openingFloat INT NOT NULL DEFAULT 0,
+  status VARCHAR(8) NOT NULL DEFAULT 'open', openedBy VARCHAR(64) NOT NULL DEFAULT '', openedAt VARCHAR(32) NOT NULL DEFAULT '',
+  closedBy VARCHAR(64) NOT NULL DEFAULT '', closedAt VARCHAR(32) NOT NULL DEFAULT '', expected INT NOT NULL DEFAULT 0, counted INT NOT NULL DEFAULT 0,
+  difference INT NOT NULL DEFAULT 0, note VARCHAR(300) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_shop_session (sessionId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_codes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(32) NOT NULL, kind VARCHAR(8) NOT NULL DEFAULT 'percent', amount INT NOT NULL DEFAULT 0, maxUses INT NOT NULL DEFAULT 0,
+  perBuyer TINYINT NOT NULL DEFAULT 1, minSpend INT NOT NULL DEFAULT 0, startsAt VARCHAR(10) NOT NULL DEFAULT '', endsAt VARCHAR(10) NOT NULL DEFAULT '',
+  status VARCHAR(12) NOT NULL DEFAULT 'active', used INT NOT NULL DEFAULT 0, note VARCHAR(300) NOT NULL DEFAULT '',
+  byId VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_shop_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (238) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 239 · The Membership Agreement (MoU), signed online (domain/mou.php) ──
+CREATE TABLE IF NOT EXISTS mou_agreements (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  mouId VARCHAR(32) NOT NULL, memberId VARCHAR(48) NOT NULL, version VARCHAR(16) NOT NULL DEFAULT '', status VARCHAR(20) NOT NULL DEFAULT 'awaiting_family',
+  tokenHash VARCHAR(64) NOT NULL DEFAULT '', tokenExp VARCHAR(32) NOT NULL DEFAULT '', docTokenHash VARCHAR(64) NOT NULL DEFAULT '',
+  termsJson TEXT, prefillJson TEXT, familyJson TEXT, memberJson TEXT,
+  tripsChoice VARCHAR(12) NOT NULL DEFAULT '', quizPassedAt VARCHAR(32) NOT NULL DEFAULT '', quizAttempts INT NOT NULL DEFAULT 0,
+  sentAt VARCHAR(32) NOT NULL DEFAULT '', sentTo VARCHAR(600) NOT NULL DEFAULT '', viewedAt VARCHAR(32) NOT NULL DEFAULT '',
+  clientName VARCHAR(160) NOT NULL DEFAULT '', clientRel VARCHAR(16) NOT NULL DEFAULT '', clientSignature MEDIUMTEXT, clientSignedAt VARCHAR(32) NOT NULL DEFAULT '', clientIp VARCHAR(64) NOT NULL DEFAULT '',
+  witnessName VARCHAR(160) NOT NULL DEFAULT '', witnessPhone VARCHAR(32) NOT NULL DEFAULT '', witnessSignature MEDIUMTEXT, witnessSignedAt VARCHAR(32) NOT NULL DEFAULT '', witnessBy VARCHAR(16) NOT NULL DEFAULT '',
+  nggName VARCHAR(160) NOT NULL DEFAULT '', nggRole VARCHAR(120) NOT NULL DEFAULT '', nggById VARCHAR(48) NOT NULL DEFAULT '', nggSignature MEDIUMTEXT, nggSignedAt VARCHAR(32) NOT NULL DEFAULT '',
+  docHash VARCHAR(64) NOT NULL DEFAULT '', familyMailedAt VARCHAR(32) NOT NULL DEFAULT '', finalMailedAt VARCHAR(32) NOT NULL DEFAULT '',
+  voidReason VARCHAR(400) NOT NULL DEFAULT '', voidedAt VARCHAR(32) NOT NULL DEFAULT '', voidedBy VARCHAR(48) NOT NULL DEFAULT '',
+  createdBy VARCHAR(48) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_mou (mouId), KEY idx_mou_member (memberId, status), KEY idx_mou_status (status), KEY idx_mou_token (tokenHash), KEY idx_mou_doc (docTokenHash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (239) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 240 · NGG entry steps: checklist steps, resumption day, follow-ups, the signed paper MoU ──
+ALTER TABLE reg_checklist_items ADD COLUMN step VARCHAR(16) NOT NULL DEFAULT 'documents';
+ALTER TABLE reg_checklists ADD COLUMN resumedOn VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE reg_checklists ADD COLUMN lastProgressAt VARCHAR(40) NOT NULL DEFAULT '';
+ALTER TABLE reg_checklists ADD COLUMN nextFollowUpOn VARCHAR(10) NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS reg_checklist_followups (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, channel VARCHAR(16) NOT NULL DEFAULT 'call', outcome VARCHAR(24) NOT NULL DEFAULT '', note VARCHAR(500) NOT NULL DEFAULT '',
+  nextOn VARCHAR(10) NOT NULL DEFAULT '', byId VARCHAR(64) NOT NULL DEFAULT '', byName VARCHAR(160) NOT NULL DEFAULT '', createdAt VARCHAR(40) NOT NULL DEFAULT '',
+  KEY idx_rcl_fu (memberId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE INDEX idx_rcl_next ON reg_checklists(status, nextFollowUpOn);
+ALTER TABLE mou_agreements ADD COLUMN signedVia VARCHAR(12) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperUrl VARCHAR(600) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperChecks VARCHAR(400) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperReceivedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperReceivedBy VARCHAR(48) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperByName VARCHAR(160) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperCentre VARCHAR(120) NOT NULL DEFAULT '';
+INSERT IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+  VALUES ('RCI-ORIENTATION', 'Orientation attended', 'The child and a parent or guardian came to orientation at the centre, and it covered the policies, the membership fee, the monthly commitment fee and the NGG T-shirt. Note who came and any question they asked.', 'none', 1, 0, 10, 'active', 'orientation', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+INSERT IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+  VALUES ('RCI-FILE', 'File handed in', 'The member’s file (folder) has been handed in at the centre, with their name on it.', 'none', 1, 0, 20, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+INSERT IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+  VALUES ('RCI-REPORTCARD', 'Latest school report card', 'Photograph or scan the member’s most recent school report card: every page, readable. Give the date on it.', 'document', 0, 400, 30, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+INSERT INTO schema_version (version) VALUES (240) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 241 · WhatsApp replies: a number that answered STOP to registration reminders ──
+CREATE TABLE IF NOT EXISTS whatsapp_optout (
+  phone VARCHAR(32) NOT NULL PRIMARY KEY, at VARCHAR(32) NOT NULL DEFAULT '', via VARCHAR(24) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (241) ON DUPLICATE KEY UPDATE version = version;

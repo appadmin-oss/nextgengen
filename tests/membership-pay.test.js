@@ -128,10 +128,14 @@ function cleanup() {
     console.log('the Control Room: divisions, acceptance, payments');
     const P = await open('/control', A1);
     await P.waitForSelector('.cr-app', { timeout: 30000 });
+    /* The jump hook is installed by an effect, after the shell first paints: wait for it, not for the markup. */
+    await P.waitForFunction(() => typeof window.__adminSection === 'function', null, { timeout: 30000 });
     await P.evaluate(() => window.__adminSection('divisions'));
     await P.waitForSelector('.cr-dv-card', { timeout: 20000 });
     chk('Learning → Divisions & courses shows the four NGG divisions, with icon and card label', (await P.$$('.cr-dv-card')).length === 4
       && (await P.$eval('.cr-dv-card >> nth=2', el => el.querySelector('.cr-dv-short input').value)) === 'TECH' && /Summer School keeps its own catalogue/.test(await P.innerText('.cr-dv-intro')));
+    chk('each division shows its major: Technology starts children on Coding', (await P.$eval('.cr-dv-card >> nth=2', el => el.querySelector('.cr-dv-major select').value)) === 'Coding');
+    await P.selectOption('.cr-dv-card >> nth=2 >> .cr-dv-major select', 'Robotics');
     await P.fill('.cr-dv-card >> nth=2 >> input[placeholder="Add a course…"]', 'Drone Engineering');
     await P.keyboard.press('Enter');
     await P.fill('.cr-dv-card >> nth=1 >> input[placeholder="Add a course…"]', 'robotics');
@@ -140,6 +144,7 @@ function cleanup() {
     await P.click('button:has-text("Save divisions")');
     chk('saving says so', await crToast(P, /Saved\. The join form/));
     chk('…and the server has the new course in its division', JSON.parse(php(`echo json_encode(club_catalogue()['Technology & Applied Engineering']);`, ['bootstrap'])).includes('Drone Engineering'));
+    chk('…and the major chosen on screen', JSON.parse(php(`echo json_encode(array_column(club_divisions(), 'major', 'name')['Technology & Applied Engineering']);`, ['bootstrap'])) === 'Robotics');
 
     await P.evaluate(() => window.__adminSection('inbox', 'applications'));
     await P.waitForSelector('.cr-ib-row', { timeout: 20000 });
@@ -154,6 +159,22 @@ function cleanup() {
     const inv = JSON.parse(php(`echo json_encode(db_row("SELECT i.*, m.disciplines, m.joinDate FROM membership_invoices i JOIN members m ON m.memberId = i.memberId ORDER BY i.id DESC LIMIT 1"));`));
     const wantDues = +php(`echo membership_prorate(4000, '${start}', db_row("SELECT * FROM members WHERE memberId = '${inv.memberId}'"))['amount'];`, ['bootstrap']);
     chk('the invoice is the membership fee and the pro-rated first month, from the start date', inv.total === 10000 + wantDues && inv.joinDate === start && inv.disciplines === 'TECH');
+
+    /* A mentor application left "accepted" with no mentor behind it (the old Inbox's Accept did only that):
+       it is back in the Inbox, and finishing it makes the mentor. Owner, 17 Nov 2026: "she registered
+       yesterday … we couldn't acknowledge it". */
+    php(`db_insert('applications', ['kind' => 'mentor', 'name' => 'Ngozi Stuck', 'email' => 'ngozi.stuck@example.org', 'phone' => '08035550101', 'role' => 'Coding mentor', 'why' => 'I want to mentor young coders.', 'status' => 'accepted', 'createdAt' => now_iso()]);`, ['bootstrap']);
+    await P.reload({ waitUntil: 'domcontentloaded' });   // the Inbox loads its list on opening; this one arrived since
+    await P.waitForSelector('.cr-app', { timeout: 60000 });
+    await P.waitForFunction(() => typeof window.__adminSection === 'function', null, { timeout: 30000 });
+    await P.evaluate(() => window.__adminSection('inbox', 'applications'));
+    await P.waitForSelector('.cr-ib-row:has-text("Ngozi Stuck")', { timeout: 20000 });
+    await P.click('.cr-ib-row:has-text("Ngozi Stuck")');
+    chk('a mentor application accepted without a mentor is back in the Inbox, with a Finish action',
+      await P.waitForSelector('.cr-ib-pane button:has-text("Finish: create the mentor")', { timeout: 10000 }).then(() => true, () => false));
+    await P.click('.cr-ib-pane button:has-text("Finish: create the mentor")');
+    chk('finishing it creates the mentor and says the welcome was emailed', await crToast(P, /Mentor created · MEN-[\s\S]*welcome emailed to ngozi\.stuck@example\.org/));
+    chk('…and the mentor exists, pending safeguarding checks', php(`echo db_row("SELECT status FROM mentors WHERE email = 'ngozi.stuck@example.org'")['status'] ?? 'none';`, ['bootstrap']).trim() === 'pending-checks');
 
     await P.evaluate(() => window.__adminSection('membership'));
     await P.waitForSelector('.cr-mp-table', { timeout: 20000 });
@@ -183,6 +204,8 @@ function cleanup() {
 
     const Q = await open('/control', A2);
     await Q.waitForSelector('.cr-app', { timeout: 30000 });
+    // As above: the jump hook arrives with the shell's first commit, which can follow the markup.
+    await Q.waitForFunction(() => typeof window.__adminSection === 'function', null, { timeout: 30000 });
     await Q.evaluate(() => window.__adminSection('membership'));
     await Q.waitForSelector('.cr-mp-table', { timeout: 20000 });
     const evHref = await Q.getAttribute('.cr-mp-table a:has-text("Evidence")', 'href');
@@ -198,12 +221,12 @@ function cleanup() {
     chk('a reference that does not match the record is refused at the field', await Q.waitForFunction(() => /does not match the one recorded/.test(document.querySelector('.cr-sheet')?.innerText || ''), null, { timeout: 10000 }).then(() => true, () => false));
     await Q.fill('#crf-ref', 'gtb 2026 55128');
     await Q.click('.cr-sheet button[type=submit]');
-    chk('the right figures settle it and send the receipt', await crToast(Q, /Verified\. Receipt NGG-RCT-\d{4}-\d{5}/));
+    chk('the right figures settle it and send the receipt', await crToast(Q, /Verified\. Receipt NGG-RCP-\d{4}-\d{5}/));
     const paid = JSON.parse(php(`echo json_encode(db_row("SELECT status, paidVia, receiptNo, receiptToken, payToken FROM membership_invoices WHERE invoiceId = '${inv.invoiceId}'"));`));
     chk('…the invoice is paid by transfer, checked by the second person', paid.status === 'paid' && paid.paidVia === 'transfer'
       && php(`echo db_row("SELECT verifiedBy FROM offline_payments WHERE invoiceId = '${inv.invoiceId}'")['verifiedBy'];`) === A2);
     await Q.waitForFunction(() => /Paid/.test(document.querySelector('.cr-mp-table')?.innerText || ''), null, { timeout: 10000 });
-    chk('…and the row shows the receipt and who checked it', /checked by Bola Ade/.test(await Q.innerText('.cr-mp-table')) && !!(await Q.$('.cr-mp-table a:has-text("NGG-RCT-")')));
+    chk('…and the row shows the receipt and who checked it', /checked by Bola Ade/.test(await Q.innerText('.cr-mp-table')) && !!(await Q.$('.cr-mp-table a:has-text("NGG-RCP-")')));
 
     await Q.evaluate(() => window.__adminSection('centres'));
     // The Control Room's centres page: the Runs filter reads it programme by programme.
@@ -220,7 +243,7 @@ function cleanup() {
     const R = await open('/');
     await R.goto(BASE + '/api/public/receipt.php?t=' + paid.receiptToken, { waitUntil: 'domcontentloaded' });
     const rec = await R.innerText('body');
-    chk('the receipt is a printable document: number, PAID, member, method, reference, total', new RegExp(paid.receiptNo).test(rec) && /PAID/.test(rec) && /Tobi Ade/.test(rec) && /Bank transfer/.test(rec) && /GTB-2026-55128/.test(rec) && /Mrs Ade/.test(rec));
+    chk('the receipt is a printable document: number, paid in full, member, method, reference, total', new RegExp(paid.receiptNo).test(rec) && /Paid in full/i.test(rec) && /Tobi Ade/.test(rec) && /Bank transfer/.test(rec) && /GTB-2026-55128/.test(rec) && /Mrs Ade/.test(rec));
     await R.goto(BASE + '/pay/' + paid.payToken, { waitUntil: 'domcontentloaded' }); await waitForBoot(R);
     await R.waitForSelector('.mpay-title', { timeout: 20000 });
     chk('the payment link of a paid invoice thanks them and links the receipt — it cannot be paid twice', /fully enrolled/.test(await R.innerText('.mpay-title')) && !!(await R.$('a:has-text("View and print the receipt")')) && !(await R.$('.mpay-pay')));

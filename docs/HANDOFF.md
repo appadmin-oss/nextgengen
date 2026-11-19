@@ -5258,3 +5258,2432 @@ one out of step.
 - **Not changed, on purpose:** the attendance settings (doors, grace,
   sign-out) and the rulebook's lateness bands are admin-owned policy; the
   guide tells the operator to move a 14:00 sign-out to 15:00 if one is set.
+
+
+## 2026-11-02 — Families hear about dues before they are owed (domain/dues-notices.php)
+
+Owner's request: "improve the messaging and reminder systems for dues, pending
+payments and so on — parents should have started seeing notices and reminders
+for upcoming dues some time before."
+
+What was there: one arrears reminder, **off by default** (`remindEnabled`),
+emailed to `parentEmail` only, and only after money was owed. A guardian with
+the family app but no email was skipped as "noEmail"; nothing was said before a
+due date; an "I've paid" note was silent until decided.
+
+- **New domain `dues-notices.php`** (bootstrap list, after `membership-pay`).
+  `dues_notice_send($m, $kind, $refKey, $msg)` is the one delivery path:
+  every active guardian link's family app (`family_notice_add`, kind
+  `dues-<kind>`), guardians' emails + `parentEmail`, Telegram per phone, SMS
+  once per family only if Telegram missed, and the member's own portal for
+  upcoming notices. It **claims a `dues_notices` row first** (migration 216,
+  UNIQUE memberId+kind+refKey) so the cron and the button cannot double-send;
+  the row then records `channelsJson`, `reached`, `sent|unreachable`.
+- **Before it falls due**: `dues_upcoming_for()` reads
+  `membership_upcoming_charges()` (un-posted dues on the 1st, renewals on the
+  join anniversary) inside `noticeDaysBefore` and spends paid-ahead credit in
+  date order. `dues_upcoming_candidates()` groups by due day (refKey
+  `YYYY-MM-DD:kind-key+kind-key`) and counts the skipped (optedOut, paidAhead,
+  nothingDue, alreadyTold, noContact). `dues_notices_run()` runs from
+  `web_cron_reminders()`, once a day (setting `dues_notices_state.doneOn`)
+  unless the 400-row batch filled.
+- **Arrears**: `fees_reminder_candidates` skips `noContact` (no app, email or
+  phone) instead of `noEmail`; `fees_reminder_send` delivers through
+  `dues_notice_send(..., 'arrears', today)`. Still off by default — that is
+  policy, the advance notices are on.
+- **Payment notes**: `member_request_create` → `dues_claim_ack()`;
+  `admin_request_decide` → `dues_claim_decided()` (what is still to pay, or the
+  next amount and date when nothing is owed). `dues_claims_staff_nudge()`
+  tells `fees` staff in scope once a day when notes wait past `claimStaffHours`.
+- **Settings** (FEES_DEFAULTS, bounded in `fees_settings_save`, bounds in
+  `fees_bounds`): `noticeEnabled` true, `noticeDaysBefore` 7 (1–30),
+  `noticeApp/Email/Telegram` true, `noticeSms` false, `claimStaffHours` 48 (12–168).
+- **Control Room**: Money → Dues & arrears → Reminders now leads with the
+  notices (`admin.fees.notices`, GET view `notices`: coming fortnight, sent
+  history, open notes, last run; the told-lookup is one query, not per row) and
+  **Send today's … now** (`admin.fees.notices.run`, scoped to the requester's
+  centres). Amounts has the settings group. `dues_notices` is in the member
+  merge policy (MOVE_UNIQUE).
+- Tests: PHP block "Dues and payment notices" in `api/tests/run.php`;
+  browser suite `tests/dues-notices-ui.test.js` (`test:duesnotices`, in
+  `test:all`). The pre-existing failure "portal: reading an entry marks it
+  read" fails on the untouched base too and is not from this change.
+
+
+## 2026-11-03 — Family app money fixes; parents pay Paystack's charge
+
+Owner's requests: "Continue. Fix other UX issues" and "The parents should pay
+the paystack charges".
+
+**UX, found by driving every Control Room tab (89, desk and phone — clean) and
+the family app with a seeded family:**
+
+- A dues notice in the family inbox was a dead end (only *Close*). Money
+  notices (`dues-upcoming`, `dues-arrears`, `dues-claim_decided`) carry
+  `act: 'money'` from `family_inbox()` and open **Fees for that child**
+  ("See fees and pay"); they show a wallet icon. Notices are now stamped with
+  the child's `memberId` (arrears filed with the alerts, `cat = 'alert'`).
+- "This month's commitment fee" was said of October's fee in November. Ledger
+  entries now carry `period` (the periodKey), so a single dues line shows its
+  month and an older one is named; several show the span.
+- **Next charge / Coming up** was "next month's fee" regardless of paid-ahead
+  credit or renewals. `family_fees_view()` reads `dues_coming_charges()` —
+  the same calculation the notices use (`dues_upcoming_for()` now wraps it).
+  An empty list says why (paid ahead to …, or nothing in two months).
+- The terms line promised "a reminder is emailed every N days" whatever the
+  settings; `fp3TellTerms()` says how the family is told, from the live
+  notice/reminder settings and channels.
+- Notices use the family's word, "Commitment fee · December 2026", not "Dues".
+- The family pay sheet's *Total* read the ledger balance, which is ₦0 for a
+  joining invoice; it now reads the invoice total.
+
+**Paystack's charge** (`paystack_family_charge()` in membership-pay.php):
+
+- Grossed up on the amount Paystack charges: `gross = ceil(net / (1 − rate))`,
+  plus the flat part only if that gross reaches the waiver threshold, capped.
+  Settings in FEES_DEFAULTS: `payFeeOn` true, `payFeeBps` 150, `payFeeFlat` 100,
+  `payFeeFlatUnder` 2500, `payFeeCap` 2000 (bounded: 5%, ₦1,000, ₦10,000).
+- `public_membership_pay_init` initialises for `total + fee` and puts
+  `processingFee` in the transaction metadata; `membership_paystack_verify`
+  expects `(total + metadata fee) × 100` (a pre-change checkout has none, so
+  it still verifies), records `membership_invoices.processingFee` (migration
+  217) and settles the invoice **total** — the ledger never sees the charge.
+- Shown before paying: `public_membership_invoice.onlineFee`,
+  `family_fees_view.payFee` (fees for the joining invoice total when one is
+  open), `member_fees_account.payFee`; the receipt lists *Paystack charge*.
+- The family view's button label moved into the design source
+  (`mo.payOnlineL` in family-portal-v3.dc.html), recompiled with dc-compile.
+- Tests: PHP block "Parents pay Paystack's charge" (the money reaching NGG is
+  checked across ₦500–₦500,000, the flat-charge line and the cap; init amount;
+  a bare-dues payment refused; ledger, receipt, paid page).
+
+
+## 2026-11-03 — Announcements reach the member portal and Community
+
+Owner's request: "As part of the reminders, quick messages and announcements
+should also display in member portals and community."
+
+Found: quick messages, club announcements (app channel) and official notices
+already reached the member's bell; none reached Community; the arrears
+reminder never reached the member.
+
+- `community_announce($authorId, $sourceRef, $title, $body, $centre, $link)`
+  (community.php) posts a staff broadcast as a pinned `announce` post in the
+  commons through `community_post_create()` (so the staff-only rule and the
+  safeguarding screen apply), once per `community_posts.sourceRef`
+  (`qm:<notifId>`, `ann:<annId>`, `notice:<noticeId>`; migration 218). The
+  per-author spam throttle is skipped for this path only, via a request-scoped
+  global. `community_announce_withdraw()` sets `removed`.
+  `community_announce_fits()` keeps Summer-only and guardians-only messages out
+  and names the centre for a one-centre message.
+- Quick message: `admin_broadcast` takes `community` (the route passes it),
+  returns `community: {posted, why}`. Notices: `notices.communityOn`
+  (migration 218), set in the editor, posted on publish (with a /notice link),
+  removed on withdraw. Club announcements: `community` in `CP_ANN_CHANNELS` and
+  in `cp_ann_default_channels()`; `cp_ann_send` posts by the approver and counts
+  it in `stats.community`.
+- Member portal Today (`todayVals`, mp9-app.jsx) leads with up to three unread
+  announcements/notices from the last 14 days; reading one marks it read.
+- `dues_notice_send` takes `member => ['title','text']` for the member's own
+  words; the upcoming notice and the arrears reminder (`fees_reminder_send`)
+  both reach the member's portal. Money is never posted to Community.
+- Tests: PHP block "Staff broadcasts reach Community and the member's portal";
+  the club-portal default-channels check now expects Community.
+- Also in this round: `window.__adminSection` is installed once in a layout
+  effect (it was missing between first paint and the effect, and torn down per
+  render); membership-pay and portal-account tests wait for what they assert.
+
+
+## 3 Nov 2026 — Lates before the first band; one penalty per entry; fines owed read the account
+
+Reported with a screenshot of Compliance → Frog jumps to do: "Arrived 09:21 …
+(09:45 to before 10:00) — 3 frog jumps", "Arrived 09:01 …", and an absence row
+"₦1,000 fine and 7 frog jumps" under a "How many" of 7.
+
+- **Cause.** Two definitions of late. The ladder logged a member late from
+  resumption + grace; the rulebook (30 Oct) is late from its first band. The
+  rulebook re-reads every late on record, and `policy_band_for()` answered the
+  FIRST band for any minute below it, so ladder-era lates were charged under a
+  band their own arrival time contradicts. It now answers `before`, and
+  `policy_apply_session()` issues nothing for it.
+- **Repair.** `policy_prelate_repair()` — half-day repair's shape: per person in
+  one transaction, bounded, `more` to continue; runs at the top of both nightly
+  sweeps and on demand (`admin.policy.prelate.run`, Compliance → "Correct lates
+  before the first band"). Voids each pre-band late (`POLICY_PRELATE_TAG`), logs
+  the day tardy, `policy_relift` lifts the fine and owed jumps (a paid fine's
+  charge is voided — the payment stands as credit). Done jumps stay done.
+  Only under `rulebook = session`.
+- **Wording.** `policy_session_reason()` is the one place a rulebook row's words
+  come from: one penalty per row. The repair rewrites older rows and the fine's
+  ledger note. The jumps list carries `for` (late/absence) and `date` from the
+  tier; the column is named for the exercise, plus a For column.
+- **Money.** `policy_reentry_sync` → `policy_fines_sync`: every pending policy
+  fine the account covers is paid by the ledger (both ways; a voided payment
+  makes it owed again; `admin_fees_void` re-syncs). Before, only the re-entry
+  fee was read this way, so a fine paid online stayed "owed" on the conduct
+  board and froze awards. `policy_states_for()` counted proposed fines as owed
+  while `policy_state()` did not — aligned.
+- Tests: PHP block "Arrivals before lateness begins are not lates" (19 checks,
+  mutation-checked: removing the `before` branch fails two, re-entry-only sync
+  fails two); `tests/conduct-rulebook.test.js` checks the column and wording.
+- Baseline before this change: PHP 6501/1 failed (`portal: reading an entry
+  marks it read`), UI smoke 648/1 failed (`…a named reason for every family NOT
+  included`) — both pre-existing and unchanged.
+
+
+## 3 Nov 2026 — Money screens read the account one way
+
+Reported: "the UX for finance-related things is terrible". Walked every Money
+view and the family's Fees page with a realistic ledger (part payments, a
+waiver, policy fines, the training place) and fixed what the figures got wrong
+before touching how they look:
+
+- **The family breakdown named the wrong charges.** `family_fees_view` walked
+  the charges newest-first until they added up to the payable; payments are
+  applied oldest-first by due day everywhere else. `fees_charges_left()` is the
+  one allocator now (the walk `fees_unpaid_of` does, per entry); the breakdown
+  reads the ledger itself (the member's account view withholds `entryId`, held
+  by the "withholds which member of staff" test) and carries `of` for a part-paid
+  charge — the page says "₦3,000 already paid of ₦5,000" instead of showing a
+  ₦2,000 membership.
+- **Charged − Received ≠ Payable** on the staff account: `charged` held the
+  ₦60,000 training place. The tiles read `realCharged` / `realCredited`, and the
+  place has its own tile. The account search returns the real figures too.
+- **A waiver was capped at `outstanding`** (training included), so waiving more
+  than was owed stood as credit that paid the coming months. Capped at
+  `payable`; the form says "payable now"; Waive is off when nothing is payable.
+- Smaller: a part first month is "Monthly dues YYYY-MM (part month, from …)"
+  like every other month (it was "Commitment fee YYYY-MM", the family-side word,
+  in a staff ledger); a fine line no longer repeats its amount ("— ₦1,000
+  absence fine." beside ₦1,000); the account no longer carries a second "Back to
+  the list" button; a parent on file as "Mrs Chukwujeme" is greeted "Good
+  evening, Mrs Chukwujeme", not "Good evening, Mrs".
+- Tests: PHP block "Money read one way" (6 checks; restoring the newest-first
+  walk and the `outstanding` cap fails two). Pre-existing and unchanged:
+  `membership-pay.test.js` harness error (`window.__adminSection is not a
+  function`) fails the same with and without this change.
+- **The account is a statement** (follow-up the same day, after "this
+  structure of analysing the funds is unprofessional and confusing"). The
+  account was four tiles that did not reconcile, seven equal buttons and an
+  amounts list with no balance. `fees_account_statement()` builds it on the
+  server (on `admin.fees.member` as `account`): `summary` (charged by kind −
+  received by kind = payable, with credit said as credit), `open` (each charge
+  with something left, in the allocator's own due-day order, with `due`, `paid`
+  and `left`) and `statement` (every entry with the running balance after it; a
+  voided entry is listed and moves nothing; the training place is not in it
+  unless it became owed on leaving). The screen: a summary with the
+  reconciliation table (`.cr-stmt`, `.cr-recon`, container query, not a media
+  query), "What is owed", "Statement", then the training place apart. Header
+  actions are the four money actions; the MOU and reminders are settings in the
+  summary. Checks: PHP "statement · …" (3), `dues-notices-ui.test.js` reads the
+  reconciliation off the page.
+
+
+## 2026-11-03 — Math Lab → The Mathematics Clinic: review, research and plan (nothing built)
+
+Owner's request: review the Mathematics Clinic curriculum (JSON, 170
+competencies), say how feasible it is, how it scales, how assessment is
+structured and how real exam questions (SAT, WAEC, Ghana, Nigeria and more) can
+be used; transform Math Lab into the Clinic (keep the name), put it on the study
+page at its own address, and restructure it — "it is currently shit", "the
+questions are also shit". Explicitly: research, plan in full detail, do not
+build yet.
+
+- `docs/MATH-LAB-PLAN.md` is the result: the curriculum measured (13 of 16
+  fields per competency are boilerplate; 160 of 170 prerequisites point to
+  themselves; no questions at all), the current Lab and all 91 of its question
+  forms audited, three research streams (exam formats and copyright; learning
+  science with effect sizes; competitors and maths tech), and the design.
+- Owner decisions recorded in its §17: interface replaced completely; members
+  only, free, Coursera-style courses; Math Lab Lite for non-members; members
+  start at the lowest point and climb fast on performance and speed (§9.4a);
+  pilot Stages 5–7; exam track and licences are the long run; AI drafting
+  heavily guarded (§8.7); Claude and ChatGPT are the team.
+- `HANDOFF-NEXT-AGENT.md` restored with the Math Lab as the next job.
+
+## 2026-11-03 — Maths Lab: the deep functional preview (built)
+
+Owner's request: "build a deep functional preview version of the new maths lab
+… and send me a production zip". Name decided: **Maths Lab** (just that).
+"Defend" decided: a smarter machine-marked method — built as "Spot the error"
+items plus a confidence check on every question.
+
+- `/study/lab` is a new tab of the study page (`STT_TOOLS` entry `lab`, flag
+  `deep` so its sub-addresses survive); `/mathlab`, `/math-lab`, `/mathslab`,
+  `/lab` forward there (`pageFromPath`). The Arcade's Math Lab card now opens it.
+- Content: `domain/mathslab-map.php` (all 170 competencies, strands, courses;
+  the drafted graph for Stages 5–7, a default chain elsewhere) and
+  `domain/mathslab-gen.php` (Stages 1–7: 70 competencies, ~120 forms; seeded,
+  answers and wrong options derived; worked solutions; KaTeX stems; diagrams;
+  "Spot the error"; a safe expression evaluator for algebra answers — no eval).
+  Stages 8–17 show as "in preparation".
+- Engine `domain/mathslab.php`: members only (NGG), free. The climb from MC-001
+  (6-question gates, all right and fast clears a stage as "known", momentum
+  shortens gates, a partial gate ends the climb at the gaps), practice with
+  instant feedback and a BKT-style probability, mastery checks (10 items, 85%),
+  spaced reviews (10 days → secure → 45 days → long-term), stage bosses (80%),
+  XP with a daily practice cap, streak with earned freezes, badges, courses with
+  enrolment and a printable certificate with a verification code. Maths Lab
+  Lite for everyone else: signed-token questions, marking and solutions, no
+  record. Ops `mathslab.*`, `public.mathslab.*`; routes `api/member/mathslab.php`,
+  `api/public/mathslab.php`; migration 219 (+ MySQL mirror); merge policy.
+- Interface `src/modules/mathslab/mlb-app.jsx` (+ `styles.css` `.mlb-*`); KaTeX
+  0.16.11 vendored under `vendor/katex/` (woff2 only) and registered in
+  `vendor/VERSIONS.json`. `vendor-build.js --check` compared 16-character hashes
+  with 64-character ones and failed every file — fixed; nothing ran it before.
+- Verified: PHP suite 6560/0 (the Maths Lab block re-derives ~3,000 generated
+  questions and walks the climb, practice, check, review and Lite); a browser
+  smoke at 390 px as a member and as a guest, no page errors.
+- Not yet (see docs/MATH-LAB-PLAN.md): Stages 8–17 content, the exam track,
+  instructor/parent views, offline packs, question bank and AI pipeline,
+  migrating old Math Lab progress. The old Arcade Math Lab code is still in
+  page-club.jsx, unused by the entry card.
+
+
+## 3 Nov 2026 — Money data-risk fixes (from the money research)
+
+Nine faults found by reading the money code end to end; each fixed with a PHP
+check that fails without it (mutation-checked).
+
+1. **Summer accounts were charged** by the nightly run (membership, dues, the
+   training place). `fees_accrue_member` refuses a non-NGG account.
+2. **Months away were back-billed** on return. Dues months and membership years
+   are charged only if the member was active on a day of them
+   (`member_status_log`, `fees_active_between`).
+3. **The ceiling was checked once** before a backlog posted. Now before every posting.
+4. **Members past the first batch were never charged automatically**
+   (`ORDER BY id LIMIT N`, no cursor). `fees_accrue_batch` carries a cursor
+   (`fees_accrue_cursor`) and wraps.
+5. **`fees_post` read any insert error as "already posted".** Only a duplicate
+   key does (`fees_is_duplicate`); keys over 96 characters are shortened the
+   same way on both databases; migration 220 widens MySQL `periodKey` (was 32)
+   and indexes `member_ledger.createdAt`.
+6. **A family's payment claim skipped the payment guards** (reused reference,
+   own account, open joining invoice). `fees_payment_guard` serves both doors;
+   a claim's parts post in one transaction.
+7. **A void could split an invoice from its ledger.** Payments keyed `minv:`,
+   charges posted by `invoice:` and deductions keyed `volpay:` are corrected at
+   their source (`void_at_source`).
+8. **Three owed totals.** The Members overview and Analytics read real money
+   (training place out, owing only above zero); the member drawer shows the
+   statement's figures; the first ageing band reads "up to 30 days overdue".
+9. **Fines matched by wording** ("chocolate" counted as late) and a capped fine
+   left its sanction owed with nothing charged. Policy fines name their rule;
+   old rows match whole words; a refused or trimmed fine updates its sanction.
+10. **Unapplied money** (paid against a replaced invoice, or a mismatched
+    amount) lived only in the audit log. Migration 221 `unapplied_payments`,
+    one row per reference, listed on Membership payments with Apply to account
+    / Refunded / Dismiss (`admin.fees.unapplied.resolve`); the old audit rows
+    are brought in once (`unapplied_backfill`). Merge policy: BLOCK.
+
+## 4 Nov 2026 — Statements and reports read as statements
+
+- **Member money screen** (`mp9-more.jsx`, design source
+  `docs/design/portals/member-portal-v9.dc.html`, regenerated with
+  `tools/dc-compile.js`). The training card printed a hardcoded "MOU done" for
+  every member; `member_statement` now returns a `training` block (cost,
+  covered, owed, mouDone/mouAt, left) and the card reads it. Ledger rows are
+  `.m9x-led-*` classes with a container query: on a narrow panel the
+  description leads and the figures sit labelled beneath it. Notes are shown
+  in words (`mp9Plain`: months and days as dates, the fine amount not
+  repeated, "Commitment fee" — the name families and receipts use). The
+  last-eight view states the balance brought forward.
+- **Family statement**: `family_fees_view` entries carry `balance` (real
+  money after the entry; training and voids move nothing); each month closes
+  on *Owed at month end*. The Fines card goes through `fp3Note`.
+- **Period report**: `admin.fees.journal` returns `roll` from
+  `fees_journal_roll()` — opening, charged, received, waived, otherCredit,
+  closing, and `months` (≤ 24, each opening where the last closed). Not
+  narrowed by kind/direction/state; narrowed by scope and member search.
+  Drawn on Transactions as a statement for the period plus a month-by-month
+  table with CSV.
+- **Bug fixed on the way**: `/api/admin/fees.php` passes `limit` as `''`
+  when the client sends none, and `max(1, (int)'')` made Transactions draw
+  **one row a page**; the training list had the same floor. A blank or
+  nonsense limit is now the default page. Test: "a limit the route passes as
+  blank is the default page, not one row".
+- PHP suite 6588 passed (all new tests mutation-checked). UI smoke 367/1 —
+  the one failure (Math Lab `.ml-ladder` timeout) reproduces on the commit
+  before this work.
+
+## 4 Nov 2026 (later) — One breakdown of what is owed; Volunteer pay and Donations add up
+
+- **`fees_owed_made()`** (fees.php) is the one answer to "what is the payable
+  made of": open charges left (oldest-first allocation), dues grouped with
+  months named and gaps said (`fees_month_spans`), fines with their reason
+  (amount not repeated), and a `training_owed` line when a member left before
+  the MOU. It returns `ok` = the lines sum to `payable`. Read by
+  `family_fees_view` (the old browser grouping `fp3Lines` is gone),
+  `member_statement` → `owed` (shown on the member's To pay card, design source
+  regenerated), and Who owes' `made.training`. Before this, a member who left
+  early had a payable larger than every breakdown of it.
+- **Volunteer pay**: `admin.volpay.period` totals carry `paidOut`, `fineNgg`,
+  `fineAv`, `payouts` and `settles` (earned = paid + fines kept/held + unpaid).
+  The tab draws it as a settlement statement; the per-row column is renamed
+  *NGG fines owed*.
+- **Donations**: `admin_donations_list` counts raised, gifts, distinct donors,
+  largest, average, pending and abandoned (> `DONATION_ABANDON_HOURS` = 48)
+  over every row, plus `months` and `channels`; `export=1` returns every row
+  to `DONATIONS_EXPORT_MAX` (named when hit). The screen counted three of its
+  four tiles from the newest 500 rows.
+- Still open: a Money overview tab (needs a registry entry in `cr-pages.jsx`).
+
+
+
+## 2026-11-04 — Photos: stored in R2, optimised once, served from R2
+
+Owner's plan: the bucket (R2) stores; Cloudinary optimises. Cloudinary bills every
+byte it serves on every view and R2 serves free, so Cloudinary is used ONCE per
+photo per size, never on a view. (A first cut delivered every view through
+Cloudinary fetch; the owner pointed out the per-view cost and it was rebuilt.)
+
+- `photo_variants_make` (domain/photos.php): each size in `PHOTO_VARIANTS` is
+  fetched once from Cloudinary (`/image/fetch/f_webp,q_auto,<steps>/<bucket url>`)
+  and stored as `<photo>__<size>.webp`; only when all are stored are the records
+  repointed to `<photo>?nv=1` (`photo_repoint_urls`). `photo_variants_tick`
+  every 10 min; Diagnostics → Optimise photos.
+- `nggImg(url, size)` (photos.js): `?nv=1` → the stored size in the bucket; a
+  Cloudinary-hosted photo → its size after any edit; else as is.
+  `NGG_IMG_SIZES` = `PHOTO_VARIANTS`, held by a PHP test. 21 display sites and
+  the Club's `cmOpt` go through it.
+- Held own-store photos move into the bucket (`photo_store_to_bucket`), records
+  repointed, local file kept, missing left alone; hourly and from Diagnostics.
+- Edits: with a bucket, `cloudinary_adopt` edits bucket/own-store photos by
+  fetch (no copy into Cloudinary storage); `photo_materialise` saves the
+  finished edit into the bucket and makes its sizes.
+- Card printing frames a bucket photo by fetch (`nggImgFetchParts`, needs
+  site-config `img`), once per print.
+- Not done: moving photos stored IN Cloudinary into the bucket (frees its
+  storage and their per-view bandwidth). Same machinery; wants a dry run on
+  production data first, since those URLs are on printed-card records.
+## 2026-10-30 — the Saturday formation is editable, per centre and per Saturday
+
+- **Versions of the day** (migration 204, `saturday_formation_blocks.scope`):
+  `''` the main day, `centre:<centreId>`, `date:<Saturday>`,
+  `date:<Saturday>@<centreId>`; `sf_day($date, $centreId)` resolves them in that
+  order, most specific first, and is the one resolver every reader uses.
+  Centres are keyed by id, so a CACENTRE rename leaves their day in place. The
+  old `saturday_formation` table is copied once and left unread.
+- **Saturdays off** (`saturday_formation_dates`): everywhere or at one centre,
+  with a note families read. Nothing is sent; portals say so.
+- **Times are the day's.** A save refuses an overlap unless it ripples; add,
+  remove and move keep the day's end; `shift` moves the whole day. The hours,
+  the parent plan/absent/close times and the reminders follow the version in
+  force at the child's or mentor's centre that Saturday. Nothing is pinned to
+  8:00 or 2:00 any more, except that no family email goes before 8:00.
+- **What a block is for is its `kind`** (`checkin`, `mentor`, `classes`,
+  `break`, `close`), not its key: the reminders and `mp_breakout_window()` read
+  the kind (falling back to the seeded `musing`), so a renamed or re-keyed
+  block keeps working.
+- One route, one op per verb (`admin.formation.add/remove/move/shift/
+  version.create/version.delete/day.set`), capability `content`, centre-scoped,
+  one audit event each, `cache_invalidate('formation')`.
+- The family email lost its inline `style` attributes.
+- Tests: the formation section of `api/tests/run.php`;
+  `tests/formation-editor.test.js` (in `test:all`, `npm run test:formation`).
+
+## 2026-10-31 — application review fixes (NGG membership and volunteers)
+
+From a read-through of both journeys; each item has a test in the
+"Application review fixes" block of `api/tests/run.php`.
+
+- **Siblings**: convert matched "already a member" on email alone, so the second
+  child on a parent's email got no record. Now email + date of birth (or name).
+- **Details required**: the Club's guardian/school/consent checks ran only when
+  the request sent `details`; leaving it out skipped them. Now `details_required`.
+- **Changing an application** needs a 6-digit code emailed to that address
+  (`app_edit_code_check`, stored hashed in `details._edit`, stripped from the
+  admin list).
+- **Convert guards**: refuses a declined application, re-checks age 10–17,
+  asks for a centre instead of defaulting to Egbeda (must be an active centre).
+  `status=accepted` for a child is refused (`use_convert`).
+- **Waitlist** stays in the inbox (`status` accepts a comma list); waitlist and
+  reject tell the family by email and text (`app_tell_family`).
+- **Centre scope** on applications list/status/convert/update/delete; volunteer
+  list filtered in SQL above the caps; decline and safeguard scope-checked.
+- **Volunteer safeguarding**: two referees + declaration on both forms
+  (`volunteer_apply_safeguarding`); under 18 needs a guardian who agrees, and
+  approval needs `guardianConfirmed` (recorded in `consents`,
+  type `volunteer_guardian`). The instructor roster refuses until
+  `safeguarding = 'cleared'`, and its per-child queries are now two grouped ones.
+- **Programmes**: volunteer dedupe is per programme; approving a second-programme
+  application widens the volunteer to `both`. NGG's volunteer door checks the
+  centre runs the Club. Control Room has the `ngg_volunteer_applications_open` switch.
+- **Copy and structure**: welcome email no longer says "cohort"/"Summer Students";
+  admin alert says "NGG membership"; decline email is programme-aware; inline
+  styles removed from these emails. `window.__nggProgram` removed (the URL is the
+  state). Unmounted `AdminApplications` and `ApplicationEditor` deleted.
+  `/join/volunteer` rebuilt with classes (`.nvj-*`, `.vsg-*`).
+- **Not done**: bulk actions and a waitlist state on the volunteer review queue;
+  the applications CSV still carries guardian phones in full (it is an admissions
+  call sheet, now limited to the admin's own centres).
+
+## 2026-10-31 — the registration checklist
+
+- **One list per NGG member, two sources** (`domain/registration-checklist.php`,
+  migration 205). Automatic items are one registry, `RCL_AUTO`, each with a
+  verifier `rcl_verify_<key>()` that reads the record (guardian link, the five
+  membership consents, photo, date of birth, school, emergency contact,
+  courses, the joining invoice while fees are on, a non-proof printed card).
+  They are computed on every read from grouped queries (`rcl_facts`), never
+  stored, and evidence never ticks one. Admin items are `reg_checklist_items`
+  (photo | document | none, presence, max age), retired not deleted.
+- **Supervisors** are suggested by the server (`rcl_candidates`): staff with
+  `people` covering the centre, NGG mentors there with screening recorded
+  (`ms_clearance_bulk`), NGG volunteer mentors and instructors there with
+  safeguarding cleared. "Physically available" is presence at that centre in
+  the last six weeks: `attendance` rows attributed to a centre by the row's own
+  `centreId`/`centre`, else the gate link its device names, else the person's
+  home centre; the check-in desk rota (`attendance_duty`) and `timetable_slots`
+  there. Ranked by Saturdays present, other days, rota, classes, being the
+  member's mentor, and load (cap `RCL_SUPERVISOR_MAX` = 12). Somebody with no
+  presence is listed only to pick with a typed reason (audited). A person is
+  one principal: a volunteer or mentor with a member account is their memberId.
+  `admin.regcheck.assign` re-derives all of this per row, per centre.
+- **Verification** (`member.regcheck.submit`, `rcl_check_evidence`): assigned
+  supervisor only; the file must be ours (`results_file_ok`), its extension
+  and declared type must match the item's evidence, its size bounded (the
+  size `media_objects` recorded wins), its date within `maxAgeDays`, and, for a
+  presence item, the supervisor checked in at the member's centre that day.
+  Every attempt is a `reg_checklist_submissions` row with a verdict and a
+  reason in words. Staff reject reopens (`reg_checklist_state`).
+- **Upload**: `evidence` is a media-aware kind in `upload-sign.php` (a PDF stays
+  a PDF), and a volunteer's card session may sign that kind only, because a
+  volunteer can be the supervisor.
+- **Reminders** through the web-cron (`rcl_tick`, hourly): recount open
+  checklists; each supervisor once an ISO week; each guardian once a week with
+  only the family's items; claimed in `reg_checklist_sends` before sending, at
+  most 60 sends a tick.
+- **Screens**: Control Room → Members → Registration (tab id `reg-checklist`,
+  because `registration` is the alias for the Summer desks), `cr-tab-registration.jsx`;
+  My registrations in the Mentor Portal and the progress card for the member
+  (Me) and family (Today), `mp15-registration.jsx`. `admin_application_convert`
+  starts a new NGG member's checklist with one guarded call.
+- Merge policy: `reg_checklists` keep the survivor's, state moves unique,
+  submissions and sends move.
+- Tests: the registration checklist section of `api/tests/run.php` (rolled back
+  after it runs) and the convert check beside the convert test;
+  `tests/registration-checklist.test.js` (in `test:all`, `npm run test:regcheck`).
+
+## 2026-11-04 — NGG documents: invoice, receipt, acknowledgement, Math Lab certificate
+
+From the handoff `design_handoff_ngg_documents`. `api/_lib/domain/documents.php`
+owns all of it; migration 224 adds `doc_serials` and `documents`.
+
+- **Numbers without gaps.** `doc_mint()` bumps a counter row in the same
+  transaction as the record, so a rolled-back invoice takes its number with it.
+  The invoice number IS `membership_invoices.invoiceId`, so the pay page, the
+  emails, the narration and the paper carry one number. The receipt number is
+  minted inside `membership_settle()`'s transaction. Old `NGG-INV-xxxxx`,
+  `NGG-BAL-`, `NGG-ADV-` and `NGG-RCT-` numbers are kept, never renumbered.
+- **Frozen receipts and certificates.** `documents.data` holds what they said,
+  including the legal details filled in at issue. A detail blank then takes
+  today's value, because a blank was never printed as a fact.
+  An invoice is rendered fresh, with its status derived (due, overdue, paid,
+  void).
+- **No server PDF.** The host has no headless browser. The page is printed by
+  the browser; fonts come from `/assets/fonts` (the CSP has no font host), and
+  the icons and the QR are inline SVG. A page that runs past one sheet hides its
+  print button and says so.
+- **Verification.** `/verify/<number>?c=<check code>` (`.htaccess` →
+  `api/public/doc-verify.php`). Numbers are sequential and so guessable; the
+  code (an HMAC of the number) is the key. A wrong code and an unknown number get
+  the same answer. Rate-limited (`doc.verify`).
+- **Acknowledgement**, not a receipt, for a transfer the desk recorded and a
+  second person has not checked. It carries the payment's own id, not a receipt
+  number, so a refused transfer leaves no receipt number behind.
+- **Certificates** on a member's first clear of a level; a later 90%+ issues a
+  Distinction one and the old one verifies as superseded. The paper printed is
+  the real one (Foundation, Standard or Stretch), not the handoff's two-way
+  rule. Each level carries its `formula` in `mathlab_levels()`; blurbs 8 and 14
+  were aligned with the handoff.
+- Departures from the handoff: no `pay.ngg.ng/INV-#####` short link (an
+  invoice number in a URL would let anyone enumerate families' invoices), so
+  the pay QR and link are the private `/pay/<token>`; billing address prints
+  only where the application recorded one.
+- Tests: the documents block at the end of `api/tests/run.php`.
+## 2026-11-04 — Notice editor: an overflow, and a pasted notice that never saved
+
+Reproduced with the owner's own notice pasted into the editor, measured at 390px
+and 1360px, in the editor, its preview, the member's /notice page and the
+desk's notice page:
+
+- The letterhead's remove button hung 6px outside the page (`right: -6px`)
+  on a phone. It sits inside now, and the two letterhead lines keep clear of
+  it on both sides.
+- **A notice pasted whole onto a new page never saved by itself.** The paste
+  fills the subject in the same event that reads the body, before React
+  re-renders, so `changed()` saw no subject and left the state at `new`; the
+  autosave only ran from `dirty`. It waited for the next keystroke — or lost
+  the paste to a closed tab. The autosave now runs from `new` too once the
+  notice is valid. `tests/notices.test.js` asserts it with nothing else
+  touched (the earlier test changed a setting right after pasting, which is
+  why it never saw this).
+- Not a fault: `.cr-pchips` (every phone table's filter row) is a deliberate
+  edge-to-edge scrolling strip; the page itself does not scroll sideways.
+
+## 2026-11-04 — One Rules page; the Learn review made real
+
+**Rules page** (Money → Conduct & fines → Rules, `admin.policy.rules`): the
+rulebook's four rows and every written rule in one table — trigger,
+consequence (fine and/or frog jumps), repeat escalation, cap, breaches.
+Written rules gained frog jumps and "every Nth breach in a term → suspension
+(+ re-entry fee) or review" (migration 225; `policy_apply_rules`, tiers
+1e8–5e8 in `policy.php`). Breaches are recorded per person or in bulk
+(`admin.policy.ruleBreach`, cap 100, per-row verdicts, one audit event), and
+the rulebook's four are edited from the same page by `people`
+(`admin.policy.rulebookSave`). *Announce the rules* drafts an "Our rules"
+notice. Tests: the "One Rules page" block in `api/tests/run.php`,
+`tests/rules-page.test.js`. `conduct-tab.test.js` now expects the Rules view
+first, and a club admin to see Rules + Compliance.
+
+**Learn audit — three faults that between them meant the week-later review
+almost never happened and a lesson's score measured nothing:**
+
+1. `curriculum_opening_review()` took the row before today's lesson in a list
+   ordered *week, course, position*; for a member with two courses (or a
+   Club-wide lesson that week) that row was another course's, and it returned
+   null. It now walks back to the previous lesson **in the same course**.
+2. A pass on the lesson page, with the lesson still on screen, counted as the
+   review being done, so the page's own "have a go now" turned the review off.
+   Recall is now an answer **≥ 2 days** after the lesson was opened
+   (`curriculum_progress.reviewedAt`, migration 226; `curriculum_recalled()`
+   also accepts a pre-226 completion that was already that late). Not offered
+   in the same sitting.
+3. The submit returned every right answer after the first try, beside
+   "Submit again". It now returns `right` per question, and the answers only
+   once passed or after `CURR_REVEAL_AFTER` (3) tries
+   (`curriculum_attempt_review()`). `CurCheckField` reads either shape.
+
+Not changed, worth knowing: the opening review still offers last week's
+questions to a member who never opened last week's lesson (it was always so —
+"you missed a session" is information too); and an instructor's mark on a
+written answer days later does not stamp `reviewedAt` (only the member's own
+submit does).
+
+## 2026-11-04 — The Arcade's Math Lab door, and a smoke suite that had stopped halfway
+
+`tests/ui-smoke.js` failed on "waiting for `.ml-ladder`". Not a slow page: on
+3 Nov the old twenty-one-level ladder was replaced by the Maths Lab at
+`/study/lab`, the Arcade band's button became a navigation there, and the
+test went on waiting for the retired ladder. That wait sat outside `step`, so
+its timeout THREW and every assertion after it in the file silently never
+ran — the run read "367 passed, 1 failed" over a suite of 627.
+
+- **The band** (`MathLabTeaser`, page-club.jsx) still read the RETIRED
+  ladder's board and said "Twenty-one levels across six strands … Next up:
+  Surds" on the way into a Lab that has neither. It now asks the new Lab
+  (`mathslab.home`) and shows its next step, level and topics mastered; a
+  Summer account (members_only) gets the door without figures. It is an
+  `<a href="/study/lab">`, not a button that sets `location`.
+- **Removed, unreachable since 3 Nov:** `MathLab`, `MathLevelCard`,
+  `MathPaper`, `MathMarked`, `ML_TIERS`, the Arcade's `lab` state, the
+  `NGGApi.member.mathlab` client namespace and ~100 `.ml-*` rules (only
+  `.ml-teaser*` remains). The server ops in `mathlab.php` / `arcade.php`
+  (`mathStart`, `mathSubmit`, the level certificates) are untouched: issued
+  certificates must keep verifying, and the PHP suite still covers them.
+- **Tests now cover the new Lab in a browser for the first time.**
+  ui-smoke's Math Lab blocks hold the band (asks the new Lab, names its next
+  step, never the retired ladder, links to /study/lab, copes with a Summer
+  account, 4.5:1 on the community surface, fits 360px) and render the real
+  `MathsLab` home on the same data. `mathlab-shot.js` photographs the band and
+  the Lab's home and map, with the map read from `mathslab-map.php`.
+  Fixture trap: the ui-smoke API stub is a Proxy, and a stub assigned through
+  `NGGApi.member` before `member` has been stored on it is silently lost.
+- **One more fault the abort had hidden:** the fees Reminders test expected
+  "no guardian email"; the server deliberately became `noContact` ("no way to
+  reach the family") in 19f44ec1 when reminders gained app and phone. The test
+  was brought up to the contract.
+
+## 2026-11-04 — Wi-Fi audit fixes (NGG and CACENTRE), and the 406
+
+**The 406 on Control Room → Wi-Fi ("The last list didn't reach CACENTRE … answered 406").**
+- CACENTRE's host (cPanel ModSecurity) refused the request before CACENTRE saw it. NGG already pages at 96 KiB, so either the host's limit is lower, or something in a row trips a firewall rule.
+- The push stopped at the first refusal, so nothing went at all.
+- `wifi_cac_push` now **halves a refused part and retries**. A person still refused when sent alone is set aside and **named** in the result's note (`firewalled`). Everybody else goes through. At most `WIFI_CAC_MAX_CALLS` (120) requests a push.
+- If the named people are always the same, look at their name or email, or ask CACENTRE's host which rule fired.
+
+**Withdrawals finally work for a roster in parts.**
+- Every request carries `sync: {id, part, last}`. CACENTRE (cacentre-site `claude/finme-dues-training-fees-l54o5j` @ 27dc876) withdraws whoever an unbroken, complete set did not list.
+- `last` is never sent when anybody was set aside, so an incomplete list withdraws nobody.
+- The result's `synced` says whether CACENTRE confirmed it.
+- Before this, NGG's ~1,200-person roster was always paged and **nobody was ever withdrawn**.
+
+**Status is allow-listed.**
+- `wifi_access_for` treats only `active`, blank and graduated records as members. Everything else is `blocked`: deleted (self-delete sets `deleted`), merged, inactive, suspended, pending, and anything an import brings.
+- Before, only `suspended`/`inactive` were blocked, and a deleted or merged member kept Wi-Fi.
+
+**Tests.** `api/tests/run.php` has 11 more checks (sync parts, the honest note, the 406 split, statuses). Suite: 6816/0.
+
+**CACENTRE side (same audit; details in its `cac/docs/wifi.md`).**
+- `#` refused in passwords; `#end` passwords replaced.
+- Children are never put on a router at a site that does not filter, hubs included. **The CACENTRE hub was created with filtering off, so children lose Wi-Fi there until a manager turns its filtering on.**
+- Routers report the filter they actually imported.
+- One bad line no longer stops a router's sync.
+- NGG rows need a verdict; junk dates are refused.
+- Afrovanguard password tokens are spent.
+- Names are made one line before they go into router scripts.
+- Tests: full unit suite 6676/0; new MySQL integration test `wifiroster.php` 18/0.
+
+**Left as designed, for the owner to decide.** A CACENTRE override can still turn on somebody NGG has off. That is CACENTRE's rule 2, documented as "on the record, with a reason".
+
+**Deploy order.** Either side can go first: an old CACENTRE ignores `sync`, and the note says nobody was withdrawn. Withdrawals start once both are live. Routers set up before 27dc876 keep the old script until their one-line install is run again; the server-side guards protect them meanwhile.
+
+## 2026-11-04 — One certificate system for the Maths Lab; better questions; Progress; fines beside frog jumps
+
+- **Certificates.** The documents domain (`df531900`) issued certificates only
+  for the retired ladder's levels, and the new Lab printed its own uncheckable
+  page. Now: a **stage certificate** every ten topics (all mastered + the stage
+  boss; `doc_mlb_stage_issue`, `NGG-MLS-`) and the full **course certificate**
+  after every stage of a course (`doc_mlb_issue`, `NGG-MLC-`), both in the
+  committed certificate design (`doc_render_certificate`, the level layout for
+  a stage), in Family → Documents, on `/verify`. Issued by
+  `mlb_issue_certificates()` at the end of every session (and on Lab home, for
+  anyone who had already earned one); the Lab's own certificate box
+  (`MlbCert`, `.mlb-cert`) is deleted — the Lab links the documents (Map,
+  Courses, Progress, the result banner). The X-Frame-Options DENY on the API
+  is why it links rather than frames.
+- **Questions.** An audit of 40 seeds × every form found every spot-the-error
+  form put the mistake on the same line (MC-022 line 1; MC-027, MC-049 line 2;
+  MC-045 line 1). `mlb_error_of()` picks among genuine mistakes on different
+  lines, later lines carrying the mistake forward. "What mistake did X make?"
+  (MC-013) now has four outcomes including "nothing — it is right"; "which is
+  equal to N" varies its form; one comparison in four is "="; profit/loss %
+  is drawn from ten rates, not five. A test sweeps every form for a fixed
+  error line or a constant typed answer; it was shown failing on the old
+  generator on exactly MC-022/1, MC-027/2, MC-045/2, MC-049/1.
+- **Features.** `mathslab.progress`: each stage's topics, boss and
+  certificate; every certificate; the mistakes that keep coming back (wrong
+  answers in the last 40 sessions, re-generated from their seeds and
+  re-marked, with the misconception or hint as the reason, and "Practise it");
+  the last 14 days with "sure but wrong". In practice, a wrong pick is marked
+  (✕) as well as the right one.
+- **Compliance wording.** The frog-jumps table said "not money; fines are under
+  Policy fines owed", read as "fines are not monetary". It now says the jumps
+  are on top of the fine, and each row shows *Fine for it* — the fine for the
+  same incident (late band, absent day, rule breach, keyed by tier) and its
+  status (`admin_policy_correctives`, one query per 500 people).
+
+## 4 Nov 2026 — Maths Lab: all 170 topics, "Why it works", Explore it, the framework
+
+- **Content complete.** Stages 8–17 (MC-071..170) are in
+  `api/_lib/domain/mathslab-gen-upper.php`, at least four forms per topic,
+  typed and choice, across procedure / application / reasoning. Prerequisite
+  edges for 71–170 are in `MLB_EDGES`. A prerequisite in a LATER stage
+  (055→091/094, 058→061, the plan's "sequencing problems") never blocks:
+  `mlb_need_ahead()`. Without it, Stage 6 would be locked behind Stage 10 and
+  the climb could never finish Stage 6.
+- **Proofs** (`domain/mathslab-why.php`). The owner said "only necessary": the
+  foundations (Stages 1–4) plus every topic resting on a provable result,
+  91 in all. Each is [idea, claim, [[statement, reason]…]]. Statements and
+  reasons are distinct within a proof, because `mlb_why_justify` uses the
+  other reasons as its wrong options. `mlb_why_forms()` appends two forms per
+  proof AFTER a topic's own forms, so stored sessions keep their form
+  numbers.
+- **New item kind `order`**: options shuffled (never shown already in
+  order); the answer is the option indexes in order; marked by equality.
+  `MlbOrder` uses move buttons, per the no-drag rule.
+- **Bands**: `MLB_BANDS` in `mathslab-map.php` is the one table (map, Lite,
+  Progress).
+- **Root gaps**: `mlb_root_gaps()` traces a struggling topic (≥4 attempts,
+  p < 0.6) down unmet, non-ahead prerequisites to the earliest ones whose own
+  needs are met.
+- **Diagrams**: `MlbDiagram` now draws `figure` (points, labelled sides,
+  angle arcs, right-angle marks, circles; auto-fit) and `plot`.
+  **Explore it**: `MLB_EXPLORE` maps topic → explorer, 15 explorers, all
+  sliders (`MlbSlider`, a native range input).
+- Tests: run.php pins the proofs (distinct, both forms mark right, order
+  never pre-solved), the bands, root gaps and the ahead rule; each of these
+  was checked to fail when broken. `tests/mathlab-shot.js` now photographs
+  four Learn pages, the order exercise and a figure question, and drives a
+  slider, the proof walk-through and the order buttons.
+
+## 2026-11-04 (night) — Wi-Fi tested on a real RouterOS; the routers and Afrovanguard fixed
+
+The owner reported the CACENTRE Wi-Fi and Afrovanguard's still not working.
+
+**How it was tested.** RouterOS 7.19.4 (MikroTik CHR) ran under QEMU against a local CACENTRE on MariaDB, over HTTPS with a test CA. The setup was CACENTRE's real one-line install, followed by 1,500+ people, suspensions, withdrawals, password changes, a two-page full list and the filter.
+
+**What only a real router showed (fixed in cacentre-site 6ed0144):**
+- **Every scheduled sync failed at its end.** RouterOS logged "user's policy does not allow to edit this script". The state scripts were made during the install with full permissions, and the schedule runs with `read,write,test,ftp`. So a router updated once at install and never again.
+- **The apply loop pinned the CPU at 100% for hours on a large list.** It looked each user up by name three times per line. It now reads the router's users once and writes only changes: 1,527 users in under 30s.
+- **A dead sync froze the router until a reboot.** The busy flag now clears on error and expires after five skipped runs.
+- **Every router must run its one-line install again** to get the fixed script.
+
+**Afrovanguard (afrovanguard-site 01d8724).**
+- Its roster went as one base64 token, so anything over about 640 members was a 406 at CACENTRE's host. Measured: 700 members = 140 KB, 1,500 = 302 KB.
+- It now sends parts under one sync id, with the same split-on-406 as NGG's `wifi_cac_push`. CACENTRE's Afrovanguard endpoint reads `sync`.
+
+**Deploy all three:**
+- NGG (e32e3e66 and later)
+- cacentre-site (6ed0144, the cPanel package from its release branch)
+- afrovanguard-site (01d8724)
+
+Then run each router's one-line install again.
+
+## 4 Nov 2026 — Maths Lab: clean, structured redesign
+
+Audit found: map stars stretched to ~60 px with topic names only in
+tooltips; loose nav pills; single-column Home/Learn with Practise below the
+fold; three button systems; flat cards with mixed paddings. Changed:
+
+- One token set on `.mlb` (colour, radius, shadow) and the Lab owns its
+  buttons (`.mlb .stt-btn`, `.mlb-go`), so it looks the same wherever it is
+  mounted. Cards are a hairline, with no resting shadow; depth only on an
+  open stage and the question card.
+- Segmented tab bar (`.mlb-nav`); Map stays lit while on a topic page.
+- Home: hero stat tiles, then content + side column (`.mlb-cols`) from
+  860 px of the LAB's width (container query, not media).
+- Map: band sections → stage cards (`.mlb-stage`, accordion,
+  `aria-expanded`), each with progress, and a list of its ten topics BY
+  NAME (`.mlb-topic`). The stage in progress opens itself. The constellation
+  in the card is decorative (`MlbStars decorative`): the list is the one
+  keyboard route.
+- Learn: content column + a sticky side card (state, readiness, Practise,
+  Mastery check, Builds on); on narrow screens the side card comes first, so
+  Practise is above the fold.
+- Player is a centred 760 px focus column.
+- Framework card is compact: one sentence and a five-step band strip.
+
+## 4 Nov 2026 (later) — Maths Lab in Duolingo's visual language (owner: "Duolingo is your no. 1 model … and Brilliant")
+
+The "clean structured" pass above was rejected ("still terrible"). It is
+replaced by a Duolingo-modelled UI; the structural parts (tokens, container
+queries, one button system) stay.
+
+- **Shell** (`.mlb-shell`): a sidebar of big uppercase tabs once the Lab is
+  ≥ 980 px; a four-tab strip (icon over label) on a phone. `.mlb-main` is its
+  own container, so Home/Learn/Map columns measure the column beside the
+  sidebar, not the window.
+- **Map = the path.** Per stage, a unit banner in its band colour, then ten
+  round 3D lesson nodes on a zig-zag (`MLB_PATH_X`, a per-element `--dx`):
+  done (check), the ONE current lesson (star, ring, bobbing START bubble),
+  open, locked (grey). The stage boss is a trophy node at the end. A node
+  opens a card (`.mlb-pop`) with the topic name and Start/Review; Escape or a
+  click outside closes it and focus returns. A section divider per band.
+  On wide screens a right rail holds the stats, *Up next* and a key.
+- **Band colours** (`.is-foundations|junior|waec|further|beyond` → `--b`,
+  `--b-edge`, `--b-ink`, `--b-soft`): the bright fill carries icons only;
+  every surface with words uses `--b-ink` (≥ 4.5:1 with white). The primary
+  button is `#2f7d00` for the same reason: Duolingo's `#58cc02` with white
+  text is 2.1:1.
+- **Chunky controls**: a 2 px hairline and a solid bottom edge that `:active`
+  pushes down (buttons, options, keys, nodes).
+- **Player**: a thick progress bar, large stem, tile options, a full-width
+  CHECK, and green/red result sheets.
+- **Learn**: the topic header is the stage's colour banner; the
+  Brilliant-style content column has the interactive first.
+- `tests/mathlab-shot.js` now waits for `.mlb-path`, loads Phosphor, and
+  photographs the player (desktop and phone): 15 screens.
+
+## 4 Nov 2026 (latest) — Maths Lab: Duolingo's structure, the Control Room's design
+
+Owner: "Use my design style, not Duo's. The Control Room style." The
+Duolingo-coloured block above (band colours, 3D bottom edges, uppercase
+labels) is gone. What stays is the STRUCTURE: the path of lesson nodes with
+one current lesson, the stage boss at the end, the node card, *Up next*, the
+stats, the focused player, and the interactive-first Learn page.
+
+- `.mlb` is added to the Control Room token declaration in `styles-app.css`
+  (`.cr-app, .signin-scrim, …, .mlb`). The Lab's block in `styles.css`
+  styles everything with `var(--cr-*)`: Geist, ink on white, 1 px hairlines,
+  `--cr-r`/`--cr-r-lg` radii, `.cr-seg`-style tabs on a phone, `.cr-nav-item`
+  rows in the sidebar, `.cr-kpis`-style 1 px-gapped stat tiles, dot pills,
+  `.cr-btn` shapes (ink primary). Gold (`--cr-gold`) marks only what is live:
+  the current lesson node, the Home continue button, the streak flame.
+- No uppercase labels any more. The Duolingo labels' `text-transform` had
+  broken two ui-smoke assertions that read `innerText`.
+- Path nodes: done = ink with a check; now = gold with a soft ring and an ink
+  *Start* tag; open = white hairline; locked = grey `--cr-s2`. The band classes
+  stay on the markup but carry no colour.
+- **Topic page = a lesson in steps** (owner: "the steps is not well structured.
+  Duolingo is your model"): Explore → Why it works → Worked example →
+  Practise, ONE screen at a time, with a step bar (`.mlb-stepbar`, each step a
+  button), a sticky Back / Continue bar (`.mlb-lesson-foot`) and *Already know
+  it? Skip to practice*. Steps a topic has no content for are left out.
+  Practise (readiness, Practise, Mastery check, Builds on; or Lite's inline
+  questions) is always last. Focus moves to the step's heading on every step.
+- The phone Home button is back to ≥ 44 px (`.mlb-go` min-height 44); ui-smoke
+  had measured 40.
+- **No cutting corners, no guessing through** (owner: "Everyone must study.
+  No cutting corners. No failing and failing and failing until you get the
+  answer"). Migration **227**: `mlab_state.studiedAt` and `mlab_state.owed`.
+  - **No skip.** *Skip to practice* and *Show the whole argument* are gone.
+    A step is done only when worked: `MlbExplore` reports the first slider or
+    button use, deferred with `setTimeout`, because updating the lesson
+    inside the range's own input event snapped the slider back; `MlbWhy`
+    reports when every line is shown; the example when every line is shown.
+    Continue waits for that, and steps ahead are disabled.
+  - **`mathslab.studied`** (`mlb_mark_studied`) is called on reaching
+    Practise. `mlb_start` refuses practice and check with `not_studied` for a
+    topic that is not studied and not already known.
+  - **The check needs `state = ready`** on the server too (`not_ready`). The
+    client used to be the only gate.
+  - **A failed check** sets `owed = MLB_RETAKE_OWED` (5). Only an unaided
+    right practice answer pays it down, the state cannot reach `ready` while
+    anything is owed, and a retake is `practice_owed`.
+  - **A lost boss** puts each topic it caught back to `practising` with
+    `owed = 5`, so the boss is locked until they are mastered again.
+  - `run.php` pins every rule. The owed rule was checked by switching it off
+    (the suite then fails), and the test uses `mlb_set_state`, not an
+    SQLite-only upsert, because the suite also runs on MySQL.
+- **Map: only the focus stage is open** (owner). `MlbMap` derives
+  `focusStage` (the stage holding the next lesson, else the first
+  unfinished, else Stage 1) and renders a path for one stage only. Every
+  other stage is a header button (`.mlb-unit-tog`, `aria-expanded`) with its
+  progress. Opening one closes the rest; closing the open one leaves none
+  open (`-1`). mathlab-shot asserts there is exactly one path and that it is
+  the focus stage's, both on load and after opening another stage.
+- **The Lab's ink is the site's navy** (owner: "Change the blacks to the
+  site's navy"). One line after the Control Room token block in
+  `styles-app.css`, `.mlb { --cr-ink: var(--navy-900); --cr-nav-on: #e7eaf3; }`,
+  re-points the token every Lab ink surface reads. The Control Room keeps its
+  black.
+
+## 5 Nov 2026 — Maths Lab: the real thing, end to end (owner: "the site is not working … improve the UX")
+
+Walked the PRODUCTION build against a real backend as a new member would.
+`tests/mathlab-e2e.test.js` now does the same on every run, at desktop and
+phone widths; it is in `test:all` and `npm run test:mathlab-e2e`. What it
+found, all fixed:
+
+- **The question player had no styling.** `MathsLab` returned `<MlbPlayer>`
+  outside `<div class="mlb">`, so none of the Lab's tokens resolved: no
+  borders on the options, and bare "Check", "Leave" and confidence buttons.
+  The fixture shots never caught it, because they render components with
+  stubs. The player is wrapped now, and the e2e asserts computed borders and
+  a filled button inside `.mlb`.
+- **The placement gate asked proof questions** ("why is line 1 true?") of a
+  brand-new child. `mlb_pick_items(…, $skillOnly)` / `mlb_skill_form_count()`
+  leave the two Why-it-works forms out of the climb, reviews and the boss.
+  Practice and the mastery check keep them. Pinned in `run.php`.
+- **Three levels of navigation and three "Maths Lab" headings.** Study tools'
+  tabs, then the Lab's sidebar, a brand line and a hero eyebrow. The Lab's
+  sections are now one segmented control at every width. Inside the Lab, the
+  Study panel heading is kept for screen readers only (`.stt-panel:has(.mlb)
+  > .stt-panel-h`), and the hero eyebrow is gone.
+- **Results** show the score once (a ring), say what to do next, and list the
+  missed questions first with their solutions open. Practice and review offer
+  *Practise again*, which re-keys the player for a fresh session.
+- **Back from practice** opens the topic on its Practise step when it has
+  been studied, not step 1 again.
+- **Keyboard**: 1–9 pick an answer and Enter checks it or moves on; the
+  options are numbered to match. This is ignored while typing in a field,
+  and Enter on a button is left to the button.
+- **Phone**: the stat tiles and the map's stats are one row each; the
+  player's title row keeps *Leave* on it; the number keypad lost the "/"
+  key, which a whole-number answer never needs.
+- **Home restructured** (owner: "Improve the structure"). The order is now:
+  1. where you are: "You are in Stage N · title (band)", from `focus` on
+     `mathslab.home`;
+  2. **Up next**, one card with one button;
+  3. **Your progress**: the three stats, the level bar, the current stage's
+     topics known, *Open the map*;
+  4. the rest: foundations to fix, courses, *How the climb works* as a
+     fold-away, and badges (earned first, four shown, link to all).
+
+  `mlb_next()` now also returns `kind`, `title` and `what` (one sentence a
+  child understands), so the card shows the step and its title separately.
+  The button is a short verb (*Start the gate*, *Continue*, *Take the
+  check*), and ui-smoke reads the card plus the button rather than the old
+  long button label.
+- **Courses lock, and enrolling shows it worked** (owner: "the courses
+  should display a proper lock instead of me clicking enrol and nothing
+  happens").
+  - `mlb_reached_stage()` is where the climb placed the learner, or one past
+    the last stage whose every topic is known.
+  - A course opens when its first stage is reached. Otherwise
+    `mlb_course_lock()` gives `locked` and a `lockReason` naming the stage to
+    finish and how far along it is ("Opens at Stage 5. Know all of Stage 4 …
+    first — 3 of 10 so far"). `mlb_enrol` refuses `course_locked` and passes
+    that reason through to the page.
+  - Enrolling shows *Enrolling…*, then *Enrolled* and a line saying so.
+    *Continue* goes to the course's next open topic (the course's `next`).
+- **Map sections behave sensibly** (owner: "closing the map sections is not
+  very smart").
+  - Opening a stage closes the one that was open and scrolls the new one
+    into view.
+  - Closing a stage you went to look at brings your own (focus) stage back,
+    in view; the map is never left with nothing open by accident. Closing
+    your own stage folds it.
+  - A stage you are visiting shows *Back to my stage (Stage N)*.
+  - The e2e covers both, and `run.php` pins the lock and the refusal.
+
+## 5 Nov 2026 — Registration audit: the NGG application, review and acceptance
+
+Owner asked for an audit of the NGG registration process and every change made
+to it (8fd21f5f, dd69a3be, c30083be, 9b59e618, 910fc0db, 9041e19c, 0c1d92e3,
+a77261e9, 21745ef3, a0ddb750, 85fd94e1, 6b80dadd, e54aa58b and the merges).
+Read end to end: `/join` (page-apply.jsx) → `api/public/apply.php` →
+`public_apply` / `club_apply_details` / `club_apply_consents` / edit codes →
+the Applications inbox (cr-tab-inbox.jsx) → `admin_application_convert` →
+member, consents, card number, invoice, registration checklist.
+
+**Baseline before any change**: PHP 6849/0. `club-apply.test.js` 11 passed,
+2 failed (the run stopped at step 2). `membership-pay.test.js` 21 passed, 1
+failed (stopped at the second admin). `registration-checklist.test.js` 15/0.
+All three are in `test:all`, so `test:all` was red.
+
+Faults found and fixed (each held by a check that fails on the old code):
+
+- **"Use it" on the email suggestion never worked.** The suggestion hid while
+  anything in the field had focus, and its own button is in the field, so
+  pressing it unmounted it before the click landed. A family typing
+  `@gmail` could not take the fix and could not continue. It now hides only
+  while the input itself is being typed in.
+- **The school picker chose the wrong school.** Typing "Egbeda Sen" and
+  pressing Enter took *Anglican Senior Grammar School, Egbeda*, because the
+  local list kept alphabetical order. Names that begin with what was typed
+  now come first (as the server already ranked them), and the local schools
+  near our centres stay offered beside the open-data answer.
+- **Convert could make two members.** Two presses at once (or two tabs) both
+  passed the "already a member?" check and each made a member, a printed ID
+  and an invoice. The re-press check also depended on the date of birth and
+  name still matching. Migration 228 adds `applications.convertedMemberId`.
+  Convert claims the row by writing it, a new unique value, so the guarded
+  update changes the row on MySQL as on SQLite. A re-press answers with that
+  member. A failed insert releases the claim.
+- **A converted child could be declined.** Setting a converted application
+  to *rejected* or *waitlist* emailed and texted the family a refusal while
+  the member stayed active. It is refused now (`already_member`).
+- **Duplicate detection ignored the programme.** A Club application within
+  24h of a Summer one for the same child came back with the Summer
+  reference and was never filed. Summer applications were deduplicated on
+  email alone, so two siblings from one parent's email in a day became one.
+  Both now match email + date of birth + programme.
+- **Application edits took any text** for `program` (which decides whether
+  conversion makes an NGG member or a Summer account) and `dob` (the age
+  check at conversion). Both are validated (`bad_program`, `bad_dob`).
+- **Server refusals the form did not explain** (`course_not_in_division`,
+  `bad_division`, `division_required`, `details_required`, `bad_dob`,
+  `bad_sex`, `bad_email`, `phone_required`) now say what to fix and take the
+  family to that step.
+
+Tests that had rotted (product right, test stale):
+
+- `club-apply`: sending the same child again now asks for the emailed code
+  (21745ef3, deliberate). The test sets a known code, as the inbox would,
+  proves a wrong one is refused, then updates.
+- `membership-pay`: the second admin's page jumped before the jump hook was
+  installed (now waits for it, as the first admin's already did). The
+  receipt number is `NGG-RCP-` since the documents system, and the receipt
+  says *Paid in full*.
+
+Known and left as is (by design or out of scope):
+
+- The edit code allows 5 tries per code. After that, sending again mints a
+  new code and emails it, so the inbox owner hears about every round. The
+  rate limits on `apply` bound it.
+- `public.apply.check` answers seen or open for an email + date of birth.
+  Rate limited, says nothing else. Accepted in 21745ef3.
+- Deleting an application leaves its `APP:<ref>` consent rows. Kept: they
+  are the record that agreement was given.
+
+After: PHP 6856/0, club-apply 50/0, membership-pay 36/0,
+registration-checklist 15/0.
+## Wi-Fi routers at scale: one sync at a time, self-update (2026-11-05, CACENTRE acd6dc5)
+
+Found by running CACENTRE's router setup on RouterOS 7.19.4 with 6,000 people.
+All of it is on CACENTRE's side; NGG's push (sync parts, split-on-406) is
+unchanged. Detail in CACENTRE `cac/docs/wifi.md` → "Scale and self-update".
+
+- **RouterOS does not keep a scheduled script's global variables between
+  runs.** The "sync still running" flag never held, so a new sync started every
+  two minutes beside the last (fourteen at once, CPU 100%, none finished). The
+  guard now reads the router's own job list; what the sync remembers lives in a
+  small `cac-wifi-memo` script.
+- **Routers update themselves.** Every list carries the script's fingerprint
+  (`sv=`); a router on an older script re-installs the setup by itself after a
+  good sync, once per version. The new script is added beside the old before
+  the old is removed. Routers on a setup older than this need the one line run
+  **once more**, and never again for a script change.
+- **Fast when little changes:** a no-change sync at 6,000 went from ~2.8 min to
+  3 s; two changes applied in 9 s. Passwords are readable to the sync
+  (`sensitive`), so unchanged users and profiles are no longer rewritten.
+- A router asking from a version not on record now gets every page of the full
+  list (page 2 used to answer `start_again` for ever).
+
+## 5 Nov 2026 — The desk's 10-minute let-in, rebuilt on Google Workspace's model
+
+Owner: "The 10 minutes sign in allowance does not work… It's as though the
+site has no idea it happened." Then: "Do it how Google does it securely", and
+"The Google Workspace admins had the time window".
+
+What Google gives its admins for a user who cannot pass their second step
+(Admin console > Directory > Users > Security):
+
+- **Login challenge > Turn off for 10 minutes.** Per user, fixed length,
+  admin only. Google warns the account is weaker during the window.
+- **2-Step Verification > Get backup verification codes.** The admin sends
+  one code to the user, who signs in with their password and that code.
+
+Faults found in ours (domain/mfa.php, auth/mfa.jsx, cr-tab-security.jsx):
+
+1. **The waiting screen never noticed.** The desk's confirm promised "if they
+   are on the question screen now, it opens", but nothing re-checked. The
+   "I've been let in" button existed only for question and PIN steps, so a
+   volunteer with a new phone (an app step) had no way through at all.
+2. **Getting in did not let them fix anything.** Changing the step demanded
+   the current one, which is the thing they had lost. The help centre's
+   "let you in for ten minutes so you can set it up again" could not happen.
+3. **The window let every sign-in through** for ten minutes, not the person
+   at the desk. A status read cleared any waiting session too.
+4. **Nobody was told.** The owner got no alert, unlike Google's.
+
+Now:
+
+- **Let in for 10 minutes** (`action: bypass`) lets ONE sign-in through. The
+  window is claimed in one guarded write, so a second sign-in in the same
+  minutes still owes the step. The step screen asks every 4 seconds while it
+  is visible (`mfa.window`) and opens by itself. The length is fixed.
+- **Give a one-time code** (`action: code`, new): 8 characters with no
+  0/O/1/I, shown once to the member of staff, stored as a hash in
+  `mfa.code1`, 10 minutes, single use, typed in the backup-code box.
+- Either way in opens a **replace window**: a new step is set without the
+  old one, then both grants close (`mfa_grants_close`). Audited as
+  `mfa.change` with `letIn: true`.
+- The owner is emailed and pushed when either is issued (`mfa_tell_letin`).
+- Neither is offered to somebody with no second step (`not_enrolled`).
+- State keys only (`member_state`), so no migration.
+
+Tests: `run.php` grew to 6868 checks (from 6860 before this change), with 0
+failures; the old window checks were rewritten to the one-sign-in rule.
+`tests/mfa.test.js` no longer presses a button: it waits for the screen to
+open by itself, checks the new-step dialog asks for nothing old, and checks
+a second sign-in still owes the step and the desk code passes once. Result:
+42 passed, 0 failed.
+
+## 5 Nov 2026 — The let-in needs no password; Sign-in security rebuilt in the Control Room design
+
+Owner: "They do not have to first enter a password", and "fix the UI of the
+security tab. It is not in the updated control room design".
+
+**No password.** The desk's *Let in for 10 minutes* now hands the member of
+staff a one-time code and the ID to sign in with (`signInAs`: the printed ID
+for a member, else the record id). On the sign-in screen, *I have a code from
+staff* takes the ID and the code (`api/auth/desk.php` → `auth.desk` →
+`auth_desk()` in domain/mfa.php) and signs them in with no password and
+nothing owed.
+- The code is the proof. A window with no code would let in anybody who
+  typed their ID in those minutes.
+- The code is made in person, for one account, lives 10 minutes, is stored
+  hashed and is spent once (`mfa_grant_claim`, one guarded write).
+- A wrong code counts against the account like a wrong second step (five,
+  then 15 minutes), and an unknown ID gets the same answer as a wrong code.
+- Staff accounts are refused: theirs is the console's authenticator.
+- Using the code also spends the waiting-screen window: one let-in, one way
+  in. It opens the replace window, so the next screen asks for a new second
+  step without the old one.
+- The let-in is offered to people with no second step too, since it is now a
+  way in rather than a way past a step.
+- The separate *Give a one-time code* action from earlier today is folded
+  into this one. `action: code` still works on the server and does the same.
+
+**The tab.** `cr-tab-security.jsx` was a v1 panel mounted with `crPanel`. It
+is now Control Room v2 data (CONTRACT.md):
+- KPIs per kind of person, and a note on the let-in;
+- one server-paged table, with *Who* and *Second step* as facets and the
+  search on the server;
+- a drawer per person: *Let in for 10 minutes* (primary), *Reset*, *Require
+  it* / *Back to the policy*, *Email a reminder*;
+- the code shown once in its own drawer, with what to tell them;
+- the bulk bar (reset, require, back to the policy, remind; capped at 200,
+  per-row verdicts in the toast);
+- the policy as a form block: per kind, the step and the ways they may
+  choose as chips, held until *Save changes*.
+
+The old `.mfa-desk*` rules are deleted. The row actions read the live ctx
+through `crSecCtx`, as the members tab does: the table's rows are built in
+`load`, whose ctx has no `setData`. That was a real fault, caught by the
+browser test.
+
+Tests: `run.php` 6873 passed, 0 failed (desk sign-in: wrong code, unknown ID,
+right code, single use, window spent). `tests/mfa.test.js` 51 passed, 0
+failed, covering:
+- signing in through the real sign-in screen with an ID and code (a wrong one
+  refused in words), then the new-step dialog;
+- the desk drawn in v2 classes, with facets, drawer and policy save;
+- the code shown from the drawer, then used to sign in.
+## Wi-Fi: a centre is found by its place, not only its code (2026-11-05, CACENTRE 302fa31)
+
+The Wi-Fi panel said "CACENTRE has no site for EGB (147), AYO (7)": NGG sent
+its centre code, and CACENTRE's sites have their own codes (`egbeda`). Both
+already share one list of places (CACENTRE's locations, which NGG's centres
+follow), so each roster row now also names its place — `homeLocation` (the
+linked `cacLocationId`) or `homeName` (`wifi_cac_places` / `wifi_cac_place`).
+CACENTRE matches the code, then the location, then the name, and makes a
+location's Wi-Fi site itself the first time. Only a place that is not one of
+CACENTRE's locations is still "could not place", and the panel now says to add
+the location there, not to type a code.
+
+## 5 Nov 2026 — Maths Lab courses: understandable at a glance, and Duolingo's praise
+
+Owner: "Improve the understandability of courses. Make it more effective.
+You know the psychological effect Duolingo has? The praises and so on."
+
+**Understandable.** Each course card now shows the path inside it
+(`stageRows` from `mlb_course_view`). Every stage is listed by name, marked
+done (all ten known and the boss beaten), on now, or ahead, with "N of 10
+topics". An enrolled course says how close the next certificate is.
+Enrolling says "You're in!" and names the first topic.
+
+**Praise, on Duolingo's pattern but aimed at the work.**
+- The headline varies (`MLB_PRAISE`, eight phrases picked by question
+  index, so never the same twice running).
+- A run of right answers shows a flame counter in the player bar and is
+  called out at 3, 5 and 8.
+- A right answer after a miss is greeted ("Back on track").
+- A right answer with a hint says "next time, try it before the hint". A
+  right guess says to remember why. A quick, sure answer says so.
+- A wrong answer gets a lift (`MLB_NUDGE`) and the working, in gold, not red.
+- The praise names effort and method, never ability, so children keep
+  attempting the hard ones. Practice only: gates, checks and bosses are
+  unchanged and still give nothing until the end.
+
+**The end screen**:
+- a headline by score (*Perfect!* … *You finished it. Keep going!*);
+- tiles for XP, accuracy with a word, and the best run (shown from 2 in a
+  row; the time on task otherwise);
+- the stars lit, and a pointer to the missed questions below;
+- confetti at 85% or more, skipped under `prefers-reduced-motion`.
+
+All of it uses the Control Room tokens. No sound, no new colours.
+
+Tests: `mathlab-e2e` 38 passed, 0 failed, 9 more checks than before:
+- every course card lists its stages by name with progress;
+- an enrolled course states the distance to the next certificate;
+- each answer's headline is more than a bare verdict;
+- the result has a headline and tiles with a word.
+
+Also passing: PHP suite 6875/0, `mathlab-shot` 16 clean, contrast 21/0.
+
+## 5 Nov 2026 — The let-in, from the user's side: four faults, and Google's email-alone window
+
+Owner: "The security features are STILL not working. On the side of the User
+it does not work … We cannot even get past the first!" Then: "For Google, the
+allow for 10 mins works immediately after the email or ID … is inputed."
+
+Reproduced from the user's side on the **production build**, with no
+session, a shared family email, a printed card ID, a guardian and an
+instructor. Faults found, in order of damage:
+
+1. **The production build crashed ("Hold on.") for anyone with a second
+   step.**
+   - `MfaDialog` read `letIn` (added earlier today) above the line that
+     declared it.
+   - In development, in-browser Babel compiles `const` to `var`, so it was
+     `undefined` and harmless. esbuild keeps `const`, so production threw a
+     TDZ ReferenceError on every render of the dialog.
+   - That is every step screen and every setup screen, for every member,
+     instructor and guardian with a second step. The dev-mode `mfa.test.js`
+     could not see it.
+   - Fixed by declaring it first. The new production suite fails on it.
+2. **A shared email resolved to nobody.**
+   - `auth_resolve_member_id` turns an address shared by siblings into an
+     `@shared:` key, so the desk code was refused as `invalid` for the
+     commonest case.
+   - Now `mfa_desk_candidates()` lists every account the identifier could be,
+     and the grant, bound to one of them, picks it.
+3. **The way out was missing where people get stuck.** *I have a code from
+   staff* was on the first screen only. It is now also on the password and
+   emailed-code screens.
+4. **Guardians had no door.** Their code could not be typed anywhere. The
+   family app now has *I have a code from staff* (`api/family/desk.php`). The
+   desk drawer names the door (`door: family`).
+
+**Google's window.** Inside the desk's 10 minutes, the email or ID alone
+signs the person in, with no password, code or second step
+(`auth_window_signin`, op `auth.window`):
+- it runs at the first step: `auth/gateway.php`, and `family/request.php` for
+  guardians;
+- it lets in one sign-in, claimed in one guarded write, and spends the code
+  made with it;
+- if two accounts on one shared email are both open, it is refused as
+  ambiguous;
+- staff accounts and the suspended are refused;
+- it is audited `login.success` with `via: desk_window`;
+- the window is now opened for everybody let in, not only people with a
+  second step: it is a way past the first step.
+
+The weakness is the one Google accepts: anyone who types that email or ID
+inside those minutes gets in. The guards are that it is one sign-in, ten
+minutes, made by a person for one account at a time, and that the owner is
+emailed. The desk copy says so.
+
+New suite **`tests/desk-signin.test.js`**: production build, real backend,
+no session, in `test:all` and `npm run test:desk`. 19 passed, 0 failed:
+- the email alone signs in, then the setup dialog with no crash;
+- the next sign-in on that email gets the password door;
+- the code is spent with the window;
+- after the window: stuck on the password screen, the link is there, a wrong
+  code is refused in words, and the shared email plus the code works;
+- a phone with the printed ID, spaces and all;
+- an instructor's email alone;
+- a guardian with the code, and a guardian's email alone.
+
+PHP suite 6887 passed, 0 failed. `mfa.test.js` 51 passed, 0 failed.
+
+## 5 Nov 2026 — A stage complete is celebrated, Duolingo style
+
+Owner: "We need a celebration when each stage is complete. Duolingo style!"
+
+A stage is complete when its certificate is issued: all ten topics known and
+the boss beaten. The session that does it (`mlb_issue_certificates` returns
+the new certificate in `finish`) now opens `MlbStageWin` over the result. It
+shows:
+- a medal with turning rays and confetti;
+- "Stage N complete" and "You conquered <stage>!";
+- a line that praises the persistence, not the person;
+- tiles for topics known, boss beaten and the session's XP;
+- the certificate card;
+- one big button onward to the next stage, named (`next`, added to the stage
+  certificate in `mlb_issue_certificates`).
+
+A course completed in the same session follows with a trophy. It is a real
+dialog (`aria-modal`, focus held and returned, Escape closes), in the
+Control Room tokens, with motion only when the reader has not asked for less.
+
+`mathlab-shot.js` renders it at desktop and phone width and checks the
+dialog, the stage name, the certificate, the onward button, the focus, and
+that Escape closes it onto the result: 18 screens clean. Maths Lab e2e 36
+passed, 0 failed. PHP suite 6887 passed, 0 failed. Contrast 21 passed, 0
+failed.
+
+## 5 Nov 2026 — Certificates are findable after a stage
+
+Owner: "most of the times, the users find it hard to find the certificate
+after completing the stage."
+
+Before, a certificate appeared in four places, none of them a place called
+"certificates": a line in the session result, a badge on the map's stage
+header, chips on a course card, and a list at the foot of Progress. Once the
+celebration was closed, a child had nowhere obvious to go.
+
+Now:
+- **A Certificates tab** in the Lab (`MlbCerts`, route
+  `/study/lab/certificates`). Each certificate is a card with *Open* and
+  *Print*, newest first; "Next to earn" sits underneath.
+  - `?print=1` on the document page opens the print dialog once it fits.
+  - The certificates come from `mlb_cert_list()`, one list, now used by Home
+    and Progress too, carrying `scope`.
+- **A "new" marker.** A certificate not yet opened on this device puts a
+  count on the tab and a banner first on the Lab's Home. Opening it, from
+  the banner, the card or the celebration, clears both. It is kept in
+  `localStorage` (`ngg.mlb.certsSeen`): a convenience, not a record.
+- **The celebration** gains *All my certificates*.
+- **On a phone** the five tabs show as icons, each keeping its name for
+  screen readers.
+
+Also fixed: the confetti's `--k` custom property had no fallback, which
+`build.test.js` refuses. That failure arrived with the celebration commit,
+and the build test had not been re-run after it.
+
+Tests:
+- `mathlab-shot.js`, 21 screens clean: the Home banner, the tab with its
+  dot, the card with *Print*, and the dot cleared once opened.
+- `run.php` 6889 passed, 0 failed: Home's certificate list (newest first,
+  scoped) and the print hook.
+- Maths Lab e2e 37 passed, 0 failed.
+- `build.test` 31 passed, 0 failed.
+- Contrast 21 passed, 0 failed.
+
+
+## 5 Nov 2026 — Maths Lab: Stages 5–7 deepened; the Gods of Maths summit (Stages 18–20)
+
+**Owner:** "Broaden the maths labs stage from stage 5. Go deeper and make them become Gods of Maths". Later in the same turn: "Make things tough, but easy".
+
+### Stages 5–7 are deeper
+
+**Problem.** Stages 5–7 (MC-041 … MC-070) had 1.7–2.4 kinds of question per topic. Seventeen topics had a single kind. Stages 8–17 have 5–6.
+
+**Change.** `mathslab-gen-deep.php` adds 2–4 forms to every one of the thirty topics. Every topic now has at least four forms of its own and at least one with `dim` `'challenge'`. It also adds six proofs (`mlb_why_deep`): MC-041, 052, 055, 059, 066 and 068.
+
+### Form numbers stay stable
+
+A session stores `(topic, form, seed)`, so no form may change its number:
+
+- the deeper forms are appended **after** the proof pair;
+- the proof pair is therefore no longer always the last two forms;
+- `mlb_why_at($comp)` says where the pair is;
+- `mlb_skill_forms($comp)` (replacing `mlb_skill_form_count`) lists the non-proof forms that placement, review and the boss draw from.
+
+The tests that found the proof pair at `count - 2` now use `mlb_why_at`.
+
+### The Gods of Maths summit
+
+`mathslab-gen-gods.php` adds Stages 18–20 at olympiad level:
+
+- **18**: number theory.
+- **19**: combinatorics.
+- **20**: algebra, inequalities and geometry.
+
+There are four forms per topic, and nineteen proofs (`mlb_why_gods`).
+
+**Answers are derived by brute force where possible.** Divisors are listed, routes are walked and arrangements are enumerated, so a formula slip cannot reach a child as a "right" answer.
+
+**Map.** `mathslab-map.php` adds:
+
+- the stage table and strands;
+- the sixth band, `gods`, with `summit: true`, which the map passes through so the client draws a crown;
+- prerequisite edges into the school topics each olympiad topic grows from;
+- the `gods-of-maths` course.
+
+**Totals.** Home's total is now `count(mlb_competencies())`, not a typed 170.
+
+### Client
+
+- The question player shows a **Challenge** chip on challenge items.
+- The framework card names the summit.
+
+### Tests
+
+- `run.php`: 6892 passed, 0 failed. Updated: 200 topics, Stages 1–20 covered by the bands, and proof forms found via `mlb_why_at`. New checks:
+  - four or more forms and a challenge in every Stage 5–7 and Gods topic;
+  - the proof pair kept its numbers;
+  - placement and the boss can draw the new forms;
+  - the band, course, edges and availability are correct.
+- Generator sweep: 60 seeds over every Stage 5–7 and 18–20 form (31,380 items). Every key marks itself right, no option repeats, and no typed form gives everyone the same answer.
+- Maths Lab e2e: 36 passed, 0 failed. The "number key picks an answer" check only runs when the first random question is multiple choice.
+- `build.test`: 31 passed, 0 failed.
+- Contrast: 21 passed, 0 failed.
+
+
+## 5 Nov 2026 — Maths Lab map UI/UX
+
+**Owner:** "Improve the map UI/UX".
+
+**Faults seen in screenshots:**
+
+- the path's circles carried no names;
+- band headings were 12–13px grey text;
+- 20 collapsed rows looked identical;
+- locked stages did not say why.
+
+**Changes in `MlbMap`:**
+
+- `.mlb-node-lab` titles beside each node, placed on the side away from the zig-zag offset;
+- `.mlb-bandh` band banners with known/total and a meter, from `bandTally` computed over the stages;
+- `.mlb-bandnav` jump bar, which opens a band's first unfinished stage through the existing `openStage` and `scrollTo` mechanism;
+- `.mlb-dots` per-topic dots on closed stages;
+- `.mlb-unit-lock`, the "Opens when…" note.
+
+**Test fixture fix.** `tests/mathlab-shot.js` built its fixture map from a hand-listed set of domain files and so showed Stages 18–20 as "being prepared". It now loads `mathslab-gen-deep.php` and `mathslab-gen-gods.php`.
+
+**New checks:**
+
+- every open node has a label;
+- six band banners, with the summit crowned;
+- dots on the closed stages;
+- the summit jump opens Stage 18.
+
+**Results:**
+
+- Shots: 22 rendered clean.
+- Maths Lab e2e: 37 passed, 0 failed.
+- Contrast: 21 passed, 0 failed.
+- `build.test`: 31 passed, 0 failed.
+
+
+## 5 Nov 2026 — Maths Lab: the Daily Olympiad Problem
+
+**Owner:** "Add more features to the maths lab"; "Make things tough, but easy".
+
+### How it works
+
+- `mlb_daily_pick($day)` chooses one (topic, form, seed) from the Stage 18–20 skill forms, by hashing the date alone. Every member therefore gets the same problem, and it cannot be chosen from the request.
+- Answers are stored as an ordinary `mlab_sessions` row (`mode` 'daily', `ref` = the day, a sessionId derived from member and day), so no migration was needed. Progress's "mistakes that come back" reads it like any other session.
+
+### Ops
+
+- `mathslab.daily` (GET `?view=daily`) returns the problem. The answer and steps are included only once the problem is over.
+- `mathslab.dailyAnswer` (POST action `daily`) takes one try: three tries in all, hint use recorded, and 50 or 25 XP for a solve. A solve also counts towards the Lab's day streak.
+- `mlb_daily_streak` gives the run of days solved and the total.
+- **Guard:** `mlb_session()` now excludes `mode = 'daily'`, so the daily row cannot be answered or finished through `mathslab.answer` or `mathslab.finish`, which would bypass its tries and reward. A test pins this.
+
+### Client
+
+- The `MlbDaily` view at `/study/lab/daily`.
+- A gold crown card on Home.
+
+### Generator fixes
+
+Two olympiad forms could produce "no solutions" as the answer: MC-176 form 0 and MC-180 form 1. They now redraw until there is at least one solution. "None" is a trick answer, not an olympiad one.
+
+### Tests
+
+- `run.php`: 6893 passed, 0 failed. New: the same problem for two members; answer hidden until over; three tries, then `already_done`; 50 XP and a run of 1 on a first-try solve; Home's daily summary; the session ops refuse the daily row.
+- Maths Lab e2e: 42 passed, 0 failed. New: the Home card, the free hint, and the solution and "tomorrow" message at the end, on desktop and phone.
+- a11y: 19 passed, 0 failed.
+- `build.test`: 31 passed, 0 failed.
+
+
+## 5 Nov 2026 — Maths Lab: JAMB-style and SAT-style questions, and timed practice papers
+
+**Owner:** sent JAMB Mathematics past papers (1983–2004) and a digital SAT practice test (#4) with scoring guides for #4 and #11, then: "Proceed. Adapt them all over".
+
+**No copying.** Past papers are copyrighted, so no question is copied. `mathslab-gen-exam.php` holds original generators modelled on the KINDS of question those papers repeat.
+
+**JAMB-style forms.** There are 40, each five-option (A–E) with every wrong option naming its slip. They cover:
+
+- number bases;
+- significant figures;
+- simple interest;
+- ratio sharing;
+- index equations;
+- log combinations;
+- surds;
+- difference of two squares, a² + b² with 2ab, and x + 1/x;
+- completing the square;
+- the factor theorem;
+- quadratic minimum;
+- partial fractions;
+- f(x − a) substitution;
+- inverse functions;
+- binary operations;
+- AP relations and the sum to infinity;
+- linear–quadratic simultaneous equations;
+- joint variation;
+- polygon angles;
+- sector area;
+- rhombus diagonals;
+- similar solids;
+- hemisphere surface area;
+- angle of elevation with the observer's height;
+- the cosine rule with 60°;
+- distance between points;
+- pie-chart angles;
+- the mean after adding a number;
+- median plus mode;
+- standard deviation and mean deviation;
+- vowel probability;
+- three-digit arrangements;
+- the gradient of a curve;
+- y from dy/dx;
+- ∫(k/x + m cos x);
+- the rate of change of a circle's area.
+
+**SAT-style forms.** There are 15: four-option choice (A–D) or typed "grid-in". They cover:
+
+- interpreting a linear model;
+- percent change twice;
+- a word system;
+- an exponential model;
+- a linear function from values;
+- a circle's radius from its general equation;
+- complementary trigonometry;
+- the sum of a quadratic's roots;
+- vertex form;
+- a unit rate;
+- an inequality word problem;
+- an equation from words;
+- similar right triangles;
+- the original price after a coupon.
+
+**Where they go.** The forms are appended to their topics AFTER the deep forms. `mlb_why_at` now subtracts both added sets. `mlb_public` passes `exam` and `letters`.
+
+**Distinct options.** `mlb_jamb` and `mlb_sat` take more slips than they need and keep the first DISTINCT ones. The measured rate of short JAMB questions is at most 5%, and never fewer than four options. That sweep found and fixed three faults:
+
+- a variation answer duplicated by a wrong option worded differently;
+- a² + b² < 2ab, which is impossible for real numbers;
+- two broken stems.
+
+**Papers** (`MLB_PAPERS`, `mlb_exam_pool`, `mlb_exam_pick`, `mlb_exam_report`, `mlb_exams`):
+
+| Paper | Questions | Time | Stages | Mix |
+|---|---|---|---|---|
+| JAMB | 40 | 40 min | 3–16 | all multiple choice, about two thirds exam-style, one topic per question, in syllabus order |
+| SAT | 27 | 43 min | 3–12 plus selected topics | about 7 typed |
+
+- **Modes and ops:** `mathslab.start` mode `exam` with `paper` (no map gate); `mathslab.exams` (GET `?view=exams`).
+- **Time:** `mlb_answer` refuses an answer after minutes + `MLB_EXAM_GRACE` (`time_up`).
+- **Finishing:** `mlb_finish` reports by strand, awards 2 XP per right answer, and changes no map state.
+- **Scores:** JAMB is out of 100. SAT is an estimate on the 200–800 scale, labelled as such, because the College Board's conversion tables are per-form and not reproduced.
+
+**Client:**
+
+- the Exams tab (sixth) and `MlbExams`;
+- the player's exam mode: a server-anchored countdown with auto hand-in, A–E letters (and A–E keys), "Leave it", "Hand in now", and no confidence chips;
+- the result screen's report by area, with "Try another paper";
+- a Home card.
+
+**Tests:**
+
+- `run.php`: 6896 passed, 0 failed. New: the exam form counts and option counts; paper composition for both papers; time-up refusal; score and areas; the map unchanged; history and best score; the SAT scaling bounds.
+- Maths Lab e2e: 48 passed, 0 failed. New, desktop and phone: the Exams page, the clock and A–E letters, leaving a question, handing in, and the report by area.
+- Shots: 22 rendered clean.
+- Contrast: 21 passed, 0 failed.
+- `build.test`: 31 passed, 0 failed.
+
+
+## 5 Nov 2026 — Maths Lab: logarithms made findable, typeable and deeper; groundwork for more Labs
+
+**Owner:** "I also realised there's no logarithm. Also, I need you to prepare we'll be adding more labs".
+
+### Logarithms
+
+Logs were there, in two Stage 7 topics, but:
+
+- nothing let a learner find them by name;
+- an answer could not contain a log;
+- only exact powers were taught.
+
+**Changes:**
+
+- **Map search** (`mlbFindTopics`):
+  - every typed word must match the start of a word in a topic title;
+  - stage titles are used only when no topic title matches, otherwise "log" pulled in "…Mathematical Logic";
+  - a small synonym table (logs/logarithm/ln → log, …).
+- **Typing logs:**
+  - `mlb_expr_eval` reads `log(` (base 10) and `ln(` before single letters, so they are not read as l·o·g;
+  - a log of a non-positive number is unreadable, not a value;
+  - the keypad has `log(` and `ln(`; the preview and the answer text render them.
+- **New log forms** (`mathslab-gen-more.php`):
+  - change of base;
+  - standard-form logs (characteristic and mantissa, bar notation);
+  - ln and e (three ways);
+  - the curve through (1, 0);
+  - making x the subject of y = k·bˣ (a typed log answer, any base accepted);
+  - exponential equations;
+  - log equations;
+  - doubling and half-life;
+  - combining laws;
+  - d/dx ln(ax + b).
+- **Log explorer:** `MlbExLog`, for MC-068, MC-069 and MC-155.
+
+**Proof-pair positions.** `mlb_why_at` is now RECORDED while `mlb_forms` builds the lists (`mlb_why_at_map`), instead of being recomputed by subtracting each appended file. A future file of forms cannot move the proof pair, and the exam test that relied on that arithmetic now reads the stored position.
+
+### Groundwork for more Labs
+
+- **Registry:** `api/_lib/domain/labs.php` — `LABS`, the one registry. Maths is `MC`, `/study/lab`, live.
+- **Helpers:** `LAB_COMP_RE` (`XX-NNN`), `lab_for_comp`, `lab_comp_ok`, and the `labs.list` op (public `?view=labs`).
+- **Ids:** Maths ids come from `MLB_PREFIX`. The client's topic-route pattern accepts any registered prefix.
+- **Guide:** `docs/LABS.md` covers:
+  - registering a Lab;
+  - the content files a Lab brings;
+  - the generator rules the suite enforces;
+  - the mechanical engine changes to make when the SECOND Lab's content exists. They are deliberately not made in advance: an abstraction with one user is a guess about the second.
+
+### Tests
+
+- `run.php`: 6898 passed, 0 failed. New:
+  - **Logs:** read in any base, the wrong base refused, the new forms present, the proof pairs where they were.
+  - **The Lab registry:** unique prefixes and paths, every Maths id resolving to the Maths Lab, malformed or unknown ids resolving to nothing, `labs.list`.
+- Shots: 23. New: searching "log" finds exactly the three log topics.
+
+
+## 5 Nov 2026 — Maths Lab path: stage header and Guidebook, mini review, chest, the way back
+
+**Owner:** sent screenshots of Duolingo's path (a sticky unit header with a book icon, the unit Guidebook of "key phrases") and asked: "Improve the map feature. Please research. … Add a mini review feature after a long time of practice."
+
+**Research.** Duolingo's blog and reviews describe the path as lessons interleaved with personalised practice placed by spaced repetition and the learner's own mistakes, a Guidebook per unit, chests along the way, and end-of-unit challenges. Sources:
+
+- [blog.duolingo.com/new-duolingo-home-screen-design](https://blog.duolingo.com/new-duolingo-home-screen-design)
+- [blog.duolingo.com/how-to-review-lessons-on-duolingo](https://blog.duolingo.com/how-to-review-lessons-on-duolingo)
+- [blog.duolingo.com/spaced-repetition-for-learning](https://blog.duolingo.com/spaced-repetition-for-learning)
+
+### Server (`domain/mathslab.php`)
+
+- **`mathslab.guide`** (`?view=guide&stage=N`): ten topics, each with:
+  - the key idea and claim from `mlb_why_of`, where the topic has a proof;
+  - the hint as a tip;
+  - a deterministic worked example (`mlb_item(id, 0, crc32('guide|id'))`).
+- **`mathslab.start` mode `mini`** (optional `stage`):
+  - `mlb_mini_pick` takes up to two topics from recent mistakes (last 30 sessions), then the practised topics with the oldest `updatedAt`;
+  - finishing pushes a right known topic's next review out 21 days, sends a missed known topic to `review`, and pays 5 XP a right answer;
+  - `mlb_mini_status` gives `ready` after `MLB_MINI_AFTER` (20) answers since the last mini review today. Home and the practice result carry it.
+- **`mathslab.chest`:**
+  - opens when `MLB_CHEST_AT` (5) stage topics are known, for `MLB_CHEST_XP` (25);
+  - recorded as a session row (`mode` 'chest', `ref` = stage, sessionId derived from member and stage), so it opens once with no migration;
+  - `mlb_session()` excludes `chest` and `daily` rows, so neither can be answered or finished as a session.
+- **`mathslab.map` per stage:** `chest {opened, ready}` and `miniReady`.
+
+### Client (`mlb-app.jsx`)
+
+- `.mlb-pathhead`: a sticky header coloured by band. An IntersectionObserver tracks the unit in view, and the Guidebook button lives on the header.
+- `MlbGuide` at `/study/lab/guide/N`.
+- `MlbChestNode` after topic 5; the mini review node (`.is-practice`) before the boss.
+- `.mlb-jump`: the floating way back to the "now" node, with its direction from an observer.
+- The mini review offer on Home and on the practice result (`onMini` chains a new session).
+
+### Tests
+
+- `run.php`: 6901 passed, 0 failed. New: the Guidebook; the mini review's offer threshold, topic choice, state changes, XP and reset; the chest lock, once-only rule and session refusal.
+- Maths Lab e2e: 56 passed, 0 failed. New, desktop and phone: the stage header, the chest and mini review on the path, and the Guidebook opening, showing ten topics with worked examples, and closing.
+
+
+## 5 Nov 2026 — Maths Lab map: visual polish ("Improve UX. It looks rough")
+
+- The separate sticky path header is gone. The open stage's own banner (`.mlb-unit.is-open .mlb-unit-h`) is now sticky and filled with its band's colour, and the Guidebook is a button inside it (`.mlb-guidebtn`). One header, not two stacked ones.
+- Band colours are custom properties set once per band on `.mlb-unit` / `.mlb-bandh` (`--band`, `--band-dk`, `--band-ink`). Coins, the banner, dots, band icons and the Start bubble all read them. Gold's ink is dark (#2b1d00) so text on it keeps 4.5:1.
+- Nodes are raised coins (a solid `box-shadow` underneath; `:active` presses them down). Chest and mini review take the same shape. The `<small>` sub-labels say when each opens.
+- Band headers are plain dividers. `.mlb-upnext` is hidden in the rail on narrow layouts through a container query (min-width 760px), not a media query, because the Start coin on the path already says the same thing.
+- All rules are scoped under `.mlb-map` and win on specificity: no `!important`. The dead `.mlb-pathhead*` CSS is deleted.
+- `tests/mathlab-e2e.test.js` now asserts that the open banner is `position: sticky`, names its stage, and has a Guidebook button with an `aria-label`.
+- Tests run: PHP suite 6901/0; maths lab e2e 56/0; shots 23 clean; build 31/0; contrast 21/0; no-important clean.
+
+## 6 Nov 2026: The Labs engine, and the Physics Lab
+
+**Requests:**
+- Owner: "Alright then proceed first" (generalise the Lab engine before a second agent builds English).
+- "We need real pro diagrams for physics, examples and visualizations interactive."
+- "We need to make physics a breeze for everyone."
+- "Do NOT mention these exam bodies since we'll not be copying their questions."
+- "Research!"
+- "Make sure diagrams are the standard and they understand how it works."
+- Supplied: senior and university-entrance Physics past papers, and three olympiad problems.
+
+### The engine is Lab-aware
+- `LABS` (`domain/labs.php`) names each Lab's content functions. The engine reads content only through `lab_call()`.
+- `backend_dispatch()` sets the Lab from the op's `lab` argument (default maths) and refuses an unknown one (`unknown_lab`).
+- A topic resolves through its own prefix (`lab_for_comp`), so marking is right whatever the request says.
+- A session records its Lab and is answered and scored in it.
+- Maths functions were renamed to their content names (`mlb_maths_stage_table`, `mlb_maths_forms`, …). `mlb_stage_table()`, `mlb_forms()`, `mlb_bands()`, `mlb_edges()` and `mlb_courses()` are now Lab-aware readers.
+- **Migration 229:**
+  - `mlab_track` holds the climb, momentum and bosses, one row per member per Lab; the Maths rows are copied across. `mlab_profile`'s old climb columns stay in place, unread.
+  - `mlab_sessions.lab` added.
+  - XP and the streak stay shared.
+  - Member merge moves `mlab_track`.
+- **Certificates:**
+  - Maths keeps its `mlb:` and `mlbs:` keys; other Labs use `mlb-<PREFIX>:` and `mlbs-<PREFIX>:`.
+  - Documents carry `lab` and `labTitle`, so the title, `/verify` and the printed sheet name the Lab.
+  - The formula pattern now uses a stride coprime to the list length. A stride of 5 over 40 formulas showed only 8.
+- **Daily problem:** from the Lab's summit band. Maths keeps its old seeds, so today's problem did not change.
+- **Papers:** per Lab (`content.papers`). `mlb_exam_pool`'s cache is keyed by Lab.
+- **Marker:** a typed answer followed by a unit ("12 N", "2 × 10⁸ m/s") is read for items that declare `unit` (`mlb_strip_unit`). Digits are never stripped.
+- **Client:**
+  - `NGG_LABS` in `tools-core.jsx` gives one study tab per Lab at `/study/<seg>`.
+  - `api-client.js` names the Lab from the address (`mlabLab()`).
+  - `mlb-app.jsx` takes its title, daily-problem name, summit name, framework text and Exams tab from the Lab.
+  - `tests/labs-client.test.js` holds the two halves of the registry together.
+
+### The Physics Lab
+- `physicslab-map.php` and `physicslab-gen.php`: nine stages, PH-001…PH-090, 6 bands, 6 courses, a timed paper (40 four-option questions in 40 minutes), and the Daily Physics Puzzle from the Olympiad stage.
+  - Stages 7–8 close the gaps against what the past papers test most (by keyword count): resonance, a.c., photoelectric effect, semiconductors, heat transfer, fields.
+  - Stage 9 follows the olympiad problems: guided multi-step questions on quantum wells, radiation balance, refrigeration cycles and magnetic braking.
+- **`src/modules/mathslab/phy-visuals.jsx`** (loaded before `mlb-app.jsx`; in `build.js` ORDER and `index.html`):
+  - `PhyDiagram`: 18 figure types in school conventions, each with "How to read this diagram" (symbol key and explanation).
+  - 27 explorers, merged into the shared registries.
+  - `PhyPredict`: every explorer opens with a prediction and gives a verdict after the learner tries it.
+- **Research behind the design:**
+  - PhET's implicit-scaffolding paper (Podolefsky et al., arXiv 1306.6544): guidance through affordances and constraints, minimal wording, colour linking, illuminating extremes.
+  - Predict–observe–explain studies, including one in Nigerian classrooms.
+  - Rosengrant, Van Heuvelen and Etkina on free-body diagrams.
+
+### No exam body named
+- Removed from every learner-facing string in both Labs: Maths paper titles and descriptions, band levels ("SSS · Senior Mathematics"), courses and Lab blurbs. Internal ids (`jamb`, `sat`) are unchanged.
+- `api/tests/run.php` sweeps every Lab's questions (three draws of every form), maps, courses, papers and `labs.list`.
+- The sweep was seen to fail on a planted "WAEC".
+
+### Tests
+- **PHP suite:** 6916 passed, 0 failed.
+- **Maths Lab e2e:** 74 passed. It now includes Physics journeys on desktop and phone, the Exams page, and predict-before-explore.
+- **`tests/physicslab-shot.js`** (new, in `test:all`): 29 screens, 18 figure types, 27 explorers, every figure with its guide.
+- **`tests/labs-client.test.js`** (new, in `test:all`): 16 passed.
+- Maths shots, build, contrast and no-important: clean.
+
+### For the English Lab
+`docs/LABS.md` is rewritten as the handover. It notes that free-writing marking needs a new item kind, added once to `mlb_mark()`, and that essay marking needs its own design.
+
+## 6 Nov 2026: The Labs are findable; escape codes in children's screens
+
+- **Owner:** "The SEO for the maths lab is still 100% terrible."
+- **What a crawler used to get.** The SPA served every `/study/...` address the same empty shell: one title ("Study tools · NGG"), one description about flashcards, a canonical of `/study`, no maths in the HTML, and no Lab page in the sitemap.
+- **The fix.** `.htaccess` sends `/study/<x>` to `api/public/lab-page.php`.
+  - It serves the same `index.html` with that page's title, description, canonical, Open Graph, robots and JSON-LD.
+  - JSON-LD types: Course for a Lab, a stage or a course; LearningResource for a topic; BreadcrumbList.
+  - The page's readable content goes inside `#root`: the bands, the stages, a topic's idea and worked example as plain text (LaTeX converted, `lab_seo_text`), and internal links. React replaces it on start.
+  - Anything that is not a Lab gets the shell back untouched, so the Lab registry stays the only list of Labs.
+  - The work lives in `domain/lab-seo.php` (`lab_seo_page`, `lab_seo_shell`, `lab_seo_urls`).
+- **In the app.** `app.jsx` no longer overwrites a Lab view's head. `mlbSeo()` sets the title, canonical and robots per view as the learner navigates; a topic's title is set once it loads. Member-only screens are noindex.
+- **Sitemap.** It now lists every Lab, its courses, every stage guide and every topic: 327 addresses.
+- **Escape codes.** JSX text written as `—` / `’` was rendering literally, for example in the Study helper's intro. Fixed in `assign-desk.jsx` (2 places) and `page-dashboard.jsx` (2 places). A repo-wide search finds none left.
+- **Tests.** The PHP suite gained 3 checks:
+  - unique titles, descriptions and canonicals, readable content with no raw LaTeX, and valid JSON-LD;
+  - noindex on private screens and the untouched shell elsewhere;
+  - the sitemap's count.
+  - Result: 6919 passed, 0 failed.
+- **Competitive analysis** (owner request): published as an artifact, "Maths Lab vs the Field".
+
+
+## 6 Nov 2026 — member portal for children; explorer UX; Smartick in the comparison
+
+- **Member portal navigation** (owner: "hard to navigate… not intuitive… too patchy", then "the navigation is also pretty confusing").
+  - The full-view labels now use the plainer words: My week, Projects & ideas, Goals & scores, Badges, My requests, Ask NGG.
+  - `MP9_APPS` is built from `NGG_LABS` (the duplicate "Learn" is gone). The Learn tab reads "Labs & tools ↗".
+  - Area tabs wrap rather than scroll invisibly.
+  - The Mentor side links that duplicated its tabs are removed, along with their dead `.m9c-side-link` CSS.
+- **Today is consistent.**
+  - `startCardShown()` decides who carries the open getting-started step: the card while it is visible; the banner and To do once it is hidden.
+  - There is one streak source.
+  - The term tile shows the week of the term, not the session's code.
+  - The account section is wrapped in `todayAcc` (true only when money is owed). The design file was changed and `mp9-view.jsx` recompiled with `tools/dc-compile.js`.
+  - Each assignment has a single `meta` line.
+- **Explorers, shared layer** (`MlbExplore`, `PhyPredict`, `styles.css`).
+  - The readout is ordered under the figure with CSS `order`; the DOM is unchanged and it is still a live region.
+  - The spent prediction collapses to a guess line (`.is-made`, then `.is-ok` or `.is-no`).
+  - Reset remounts the explorer by `key`.
+  - The projectile is scaled per launch speed, with a metre scale and the previous throw shown faint.
+- **Tests.**
+  - `member-v9.test.js` gains checks for:
+    - no account card when nothing is owed;
+    - never "Nothing waiting" while steps are open;
+    - an open step listed once;
+    - the streak chip and tile agreeing;
+    - the Labs in Your apps.
+  - The `MP9_AUDIT` walk skips the app links and the ↗ tabs, because they leave the page.
+  - `physicslab-shot.js` gains checks for:
+    - the guess line;
+    - no spent buttons left on screen;
+    - the readout above the controls;
+    - Reset restoring the controls (compared by control values, because several explorers run a clock).
+- **Results.**
+  - PHP 6919/0; member v9 57/0; maths lab e2e 73/0; maths shots 23; physics shots 29.
+  - labs-client 16/0; no-important clean; contrast 21/0; build 31/0.
+- **Comparison artifact**: Smartick added as a ninth product, after a comment on the artifact.
+
+
+## 6 Nov 2026 (later) — "it should just say labs"; the study app's own navigation
+
+- **Portal.**
+  - Your apps carries one **Labs** entry (`/study/labs`), not one per Lab. Learn's "Labs & tools ↗" and the hero's "Practise in a Lab" go there too.
+- **Study app** (`tools-core.jsx`). The tab row goes from seven tabs (Today, Revise, Maths, Words, Maths Lab, Physics Lab, Course labs) to four: **Today · Labs · Revise · Tools**.
+  - **Labs** is a hub, `SttLabHub`, generated from `NGG_LABS`. Its second tab is **Course tools** (the old Course labs, `SttLabs`).
+  - **Tools** merges Maths and Words.
+  - Subject Labs are `hidden` entries with `parent: "labs"`: they keep their deep addresses, light the Labs tab, and show **All Labs**.
+  - `STT_ALIASES` forwards `/study/maths[/graph|bases]` and `/study/words[/typing]` to `/study/tools/...`. `/study/labs` is now the hub.
+- **Tests.**
+  - `study-tools.test.js` 46/0. It adds checks for the four-tab row, the hub listing every Lab, the lit Labs tab with All Labs inside a Lab, and the three old addresses forwarding. A signed-out wait now waits past the loading state.
+  - `mathlab-e2e` 73/0: the Physics Lab sits under the Labs tab.
+  - `member-v9`: one "Labs" entry in Your apps.
+
+
+## 6 Nov 2026 — The English Lab, the third Lab, built as a kit and modules
+
+Owner: *"Can you build the engine. Make it modular. Research first."*
+
+- **Research.**
+  - The road follows the strands of the English Studies curriculum (vocabulary, structure, speech work, reading and comprehension, composition) from JSS to SS 3.
+  - Writing is taught through sentence combining and other markable parts, because sentence combining has the strongest evidence for improving whole compositions.
+  - Retrieval and spacing come from the shared engine.
+- **Engine.** One new answer kind, `text`, added once to the shared marker (`mlb_text_norm`, `mlb_mark`, `mlb_answer_text`) as `docs/LABS.md` required. No second marker.
+- **Modular content.**
+  - `englishlab-kit.php`: the question builders.
+  - `englishlab-map.php`: six stages of ten, five bands (summit: Writing Well), five courses, a 40-question timed paper.
+  - Five content modules (words, grammar, sounds, reading, writing): 60 topics, 3 forms each, mostly tables of rows.
+- **Registry.** `LABS['english']` (prefix `EN`, `/study/english`, daily + exams) and `NGG_LABS` in `tools-core.jsx`.
+  - The answer box for `text` opens a text keyboard with autocorrect and spell-check off, so a phone cannot answer a spelling question for the learner.
+- **Tests.**
+  - `php api/tests/run.php`: 6928/0 (from 6919/0). Adds the English sweep and the `text`-marker, map, isolation, paper, daily and certificate checks. `labs.list` and the sitemap counts now include English.
+  - `tests/labs-client.test.js`: 22/0. `tests/route-registry.test.js`: 60/0.
+  - `tests/mathlab-e2e.test.js`: 92/0, with a new English journey at desktop and phone. The test also now finds this image's `chrome-linux64` Chromium as well as `chrome-linux`.
+- **Not built.** Judged essays (needs a teacher queue or a rubric-checked AI step) and listening questions (need audio).
+
+
+## 6 Nov 2026 — English Lab: more research, a better structure
+
+Owner: *"Research more and improve the structure."*
+
+- **Research.**
+  - The senior English paper has four parts: essay; comprehension and summary; lexis and structure; oral English. Comprehension asks for the grammatical name and function of words and clauses. Summary is marked one point per sentence. Oral English covers vowels, consonants, clusters, stress and intonation. Composition covers formal, semi-formal and informal letters and the four essay types.
+  - Learner-corpus grammar levels put mixed conditionals and modals of deduction last.
+  - Morphology instruction helps vocabulary and spelling most when it is meaning-focused.
+  - In the writing meta-analyses, summarising has one of the largest effects, and grammar taught in isolation does not improve writing.
+- **Curriculum.** Two stages were appended (EN-061 … EN-080), so no topic id moved:
+  - **Stage 7, Word Power:** roots, word families, collocations, confusables, one-word substitutes, four fields of vocabulary, and interpreting sentences.
+  - **Stage 8, The Senior Paper:** grammatical names and functions, own-words comprehension, one-point-per-sentence summary, counting sounds and syllables, consonant clusters, the semi-formal letter, the four essay types, and mixed conditionals with modals of deduction.
+  - The summit band, the Daily Word Challenge and the paper's range moved to Stage 8.
+- **Code structure.**
+  - `ENG_MODULES` is the one list of content modules, and a test checks it against the map.
+  - `eng_passage()` is a shared passage bank.
+  - Per-Lab copy (`find`, `pitch`) moved out of the shared screens into the registries. This also fixes the Physics map, whose search box suggested maths topics.
+- **Tests.**
+  - PHP suite: 6929/0. The sweep covers 80 topics, plus the module-registry check.
+  - `labs-client`: 28/0 (adds the `pitch` agreement and `find`).
+  - `route-registry`: 60/0.
+  - `mathlab-e2e`: 91/0 on two consecutive runs. An earlier run drew a typed English question and showed the test itself typed in capitals on a capitals-sensitive item; the test now respects `case`.
+
+
+## 6 Nov 2026 — English Lab: real teaching for grammar and speaking
+
+Owner: *"I need real effective learning. Grammar … Speaking … Articulation … a bit of Duolingo features. Do not use a shitty voice please … free, dependable, professional and articulate."*
+
+- **Research.**
+  - Explicit rule instruction beats implicit learning by large margins across meta-analyses (d ≈ 0.8–1.0).
+  - Metalinguistic feedback (naming the error) is the strongest feedback type. The Lab already names the slip behind every wrong option.
+  - Perception training with many talkers (HVPT) improves perception and production (g ≈ 0.77).
+  - Articulation is examined directly in oral English.
+- **Grammar.** `eng_rules()` gives 27 topics a contrast-style rule (✓/✗ with reasons), read before practice, using the existing lesson step with the Lab's own words (`teach` in `NGG_LABS`).
+- **Speaking and articulation.**
+  - `eng_speak()` gives 11 topics *How to say it* (place, manner, voicing), *Hear the difference* (eight rounds, four voices, a streak, answers locked until played) and *Say it* (normal or slow model, record, word-by-word result).
+  - Two articulation forms (voiceless dental fricative …) are appended to EN-023 and EN-024. Each wrong option changes one feature and names it.
+- **Voice.** Kokoro (open weights, Apache-2.0), four British voices. 260 clips (2.9 MB) were recorded once by `tools/english-voices.py` and committed. Phonemes were checked against the British model; "record" (verb) is forced by phonemes. Spitch and the device voice are fallbacks only.
+- **Fixed in passing.** `Permissions-Policy` denied the microphone everywhere, which had silently broken the portal's voice notes on the live site. It is now `microphone=(self)` in both places.
+- **Tests.**
+  - PHP: 6934/0. Adds checks that rules are contrasts, the speaking content is well-formed, the voice refuses text that is not the Lab's, word matching, "Say it" against a fake Spitch, and that every text has its recording.
+  - `mathlab-e2e`: 99/0. The rule renders as a contrast and must be read; Hear and say runs eight rounds; the recorded clips load.
+  - `labs-client`: 28/0. `route-registry`: 60/0. `study-tools`: 46/0.
+
+## 7 Nov 2026 — English Lab: exam-trap drills and taught rules; Maths Lab: number bases at exam speed
+
+**Owner:** "Improve the grammar rules. Follow the concept of the lab. Becoming Gods", with a concord / lexis / oral English / number-base training pack to adapt, and "What is the fastest way to solve number base problems in less than 50s".
+
+- **The concept** is the Gods of Maths brief, "tough, but easy": the traps the senior paper really sets, every wrong option naming its slip, the rule taught first.
+- **Rules** (`englishlab-teach.php`): EN-011 and EN-038 rewritten around the five concord patterns; new taught rules for EN-021, 022, 024–028 (vowels, diphthongs, ch, silent letters, stress, noun/verb stress, rhyme) and EN-050 (nearest/opposite).
+- **Drills** (`englishlab-drill.php`, `eng_drill_forms()`): appended after every topic's own forms and the articulation forms, so no stored session changes question. Concord (EN-011, EN-038), lexis (EN-043 gap-fill, EN-050), oral English (EN-021, 022, 024–028).
+- **The pack was corrected, not copied.** Collective nouns are not "always singular" (the jury ARE divided in THEIR opinion); British English says the h in herb and the l in salt; NA-tion and u-ni-VER-si-ty; con-TENT (satisfied) vs CON-tent; politics is the -ics exception; an item whose sentence did not decide its answer was given the clause that does.
+- **Number bases** (`mathslab-gen-more.php`, MC-110): unknown base by plugging the options, a missing digit across two bases, binary multiplication by shift-and-add, binary to base ten with the zeros skipped. Every unknown is chosen first, so each question has exactly one answer (the pack's "31_x = 22_5" has none).
+- **Voice:** the Nigerian YarnGPT voices were tried and dropped: a speech recogniser could not transcribe most clips correctly, and none spoke single words reliably. Recordings stay Kokoro British; bolder variants (natural pace, presence lift, compression, −14 LUFS) are prepared as samples, not yet applied.
+- Tests (`api/tests/run.php`): drills sit after each topic's own forms; the concord traps are keyed right; the sound topics teach a rule first.
+
+## 7 Nov 2026 — Bold voices, Nigerian voices, two interactive steps, and a faster site with Lite mode
+
+**Owner:** "Add them all. Add the Nigerian voices if you can make them bolder and better. Add more interactive features", then "Optimize assets. It seems the site cannot run on low end devices … create a lite version".
+
+**Voices.** Every British clip re-recorded bold (`tools/english-voices.py --redo`: natural pace, a 3 kHz presence lift, compression, −14 LUFS). Nigerian voices (YarnGPT2: Idera, Jude) come from `tools/english-voices-ng.py` and are OPTIONAL per text: a clip is kept only if Whisper transcribes it back exactly, with up to six tries; the British voices remain the ones every text must have. `ENG_NG_VOICES` in `englishlab-speech.php`. The README's WavTokenizer checkpoint is required — the newer "v2" one decodes this model's codes into garbled speech (measured).
+
+**Interactive.** The rule lesson is a game in contrast mode: each ✓/✗ example is shown bare, judged Right or Wrong, then revealed with its reason, and the lesson ends with a score (`MlbWhy`). Hear and write (`EngWrite`): dictation of a recorded sentence, marked word by word. The listening rounds say which voice is speaking and use ONE voice for both words of a pair.
+
+**Speed.**
+- `page-portals.jsx` (316 KB) moved to the signed-in bundle. `naira`, `Field`, `CurCheckField`, `CUR_SHOWS_WORK`, `CurAttach` moved to `components.jsx` because public pages use them; `page-dashboard.jsx` stays public because Learn uses its lesson components.
+- Stylesheets ship minified (esbuild): 378 → 264 KB gzipped.
+- **Lite mode** (`data-lite` on `<html>`, set before first paint in `index.html`; `nggLiteAuto` / `nggLiteOn` in `components.jsx` — keep the two tests in step). On automatically at ≤ 2 GB of memory, ≤ 2 cores, Data Saver or 2G/3G, and switchable in Accessibility. It finishes animations instantly (never `none`, which strands fade-ins at opacity 0), and drops backdrop blur, fixed backgrounds and smooth scroll; `motion.jsx` skips its scroll effects. `tests/lite-mode.test.js` (`test:lite`, in `test:all`).
+
+**Pre-existing failures seen, not caused here:** `ui-smoke.js` expects the Lab nav Home/Map/Courses/Progress but it has had Certificates since before this change; `a11y.test.js` flags `aria-label` on the footer's socials `div`.
+
+## 7 Nov 2026 — Learn: the standardised session exam, smarter questions, mastery to God, Club certificates
+
+**Owner:** "work on the learn … following the concept of the labs … assessments world-class professional grade. Not just multi-choice … AI-spoof it … create Gods … The instructors sees their progress", "turn on the per session exam by default. Upgrade the exam and make it standard", "A standard honourable exam", "a … per course-styled certificate for courses and promotions as the labs" (promotion = moving up a COURSE year, not the Summer → NGG promotion).
+
+- **Engine:** `domain/learn-exam.php`; migration 230 (`curriculum_checks.whys`, `curriculum_sittings`). Session exam = last session's checks + up to `LX_SPACED` spaced items (wrong-before first); per-sitting order and option permutation (`perm`, server only); time limit from kinds; server deadline + `LX_GRACE`; resume; one official sitting (`lx_prev_unit` finds it before any blueprint, so a reload shows the result). Marks land on last session's lesson (`lx_sync_progress`, recall stamped).
+- **One marker:** `curriculum_mark_answer()` in curriculum.php, used by the lesson page and every sitting. New kinds `order` (LIS partial credit, `curriculum_order_points`) and `evidence` (link in the `videoUrl` column, public as `linkUrl`). MCQ `whys` → `slip` on a wrong pick. An `order` question does not count as the lesson's non-choice question.
+- **AI-resistance without a detector:** `LX_VIVA_MAX` follow-ups for everybody on their strongest AI-marked answers; a reply that does not hold up HOLDS the answer for an instructor (never a machine zero). Process signals only ever go up, are shown as things to ask about. Honour pledge recorded as `integrity.pledgedAt`.
+- **Instructors:** `staff_exam_sittings` (item analysis: facility and most-chosen wrong option) and `staff_exam_mark`; scope from `curriculum_staff_members()`, now the ONE scope shared with `staff_curriculum`. UI: `Mp15CExams` in mp15-class.jsx.
+- **Mastery / certificates:** `domain/learn-mastery.php` (tiers 1–6, Trial at `LX_TRIAL_PASS`, 7-day cooldown); `doc_club_issue` / `doc_render_club_certificate` in documents.php (style by course, then division — never a regex over the division name, which put Data Analysis under technology); certificate key hashes course+level (MySQL `sourceKey` is VARCHAR(160)). New signatory `clubHead`.
+- **UI:** `src/modules/learn/lrn-exam.jsx` (`LrnExam`, `LxResult`, `LxViva`, `LrnMastery`); replaces `DashOpeningReview` in Learn and the dashboard. Editor: order steps, evidence link, a "why tempting" box per wrong option.
+- **Content:** the 66 business filler questions replaced with real ones on each lesson's skill, each wrong option with its reason; `run.php` holds every bundled lesson to publication and to no filler.
+- **Pre-existing failures seen, unchanged by this work (verified on 272dd097):** `lesson-editor.test.js` (8 lesson bodies drift on round trip); `control-members-curriculum.test.js` (a refused save's reason, and keeping the form).
+
+## 7 Nov 2026 — Exam: Outstanding (95+), a locked paper, a candidate slip and re-marks; outside-exercise proof fixed
+
+**Owner:** "Add a category for 95+. Improve the exam standard. Improve the exam env to prevent cheating", and "There's an issue with the assessment evidence feature".
+- **Bands:** Outstanding 95+ (`LX_BAND_OUTSTANDING`), Distinction 85+, Merit 70+, Pass, Not yet.
+- **Locked paper** (`lrn-exam.jsx`): full screen asked for on start (exits counted); questions cannot be selected, copied, cut or right-clicked (tries counted); pasting into exam answers is blocked and counted (except the proof link of an outside exercise); the candidate's name and exam number are watermarked across the paper; returning from another tab says leaving was recorded; closing the tab asks first. Server: a sitting keeps a HASH of each browser it was opened on (`integrity.devices`); new signals "tried to paste", "tried to copy a question", "left full screen", "opened on N devices", "re-mark requested" (`lx_signals`). None is a mark.
+- **Standard paper:** candidate slip on the result (name, member number, exam number, paper, handed in), section scores (last session / earlier weeks / the whole course), and **Request a re-mark** (`member_exam_appeal`: once, within `LX_APPEAL_DAYS`, a reason required; an instructor marking the sitting resolves it).
+- **Outside exercise (`evidence`) — the fault:** there was nowhere to put the proof. The answer was one box (so blocking paste in the exam would have blocked pasting a result link) and the upload button was only on practical/project/code questions. Now `LxEvidence` (one component, lesson page and exam) has a proof field (paste allowed, plus upload for a screenshot) and a typed account; stored as one answer, "Proof: …" then the account.
+
+## 7 Nov 2026 — Data Appreciation and Desktop Publishing: courses every member takes; Media Lab's Club-wide lessons retired
+
+**Owner:** "The medialab is for everyone right? Change it to Data Appreciation and Desktop publishing … standard modern courses … with screenshots, daigrams and presentations and appropriate learning guides and materials"; answered "Everyone; keep media".
+
+- **Courses:** `CURR_CORE_COURSES` (curriculum.php) joins `curriculum_courses()` and is appended to every member's courses in both enrolment modes, like Chess. `curriculum_is_everyones()` is the one test for "a course everybody takes" — timetable "My course", the card's division, Club class courses and community course channels use it (or exclude the core list), so an unplaced member never reads as placed on Data Appreciation.
+- **Content:** `api/_lib/seeds/curriculum-core-digital-2026.json`, 24 lessons, GENERATED by `tools/learn-core/build.py` from `lessons.py` (the lessons) and `media.py` (15 SVG diagrams, 4 worked-example pages); `node tools/learn-core/shots.js` renders the pages to PNG. Edit the sources, never the outputs. Each lesson: an inline picture, a slide deck (`assets/learn-media/core/decks/`), outside reading with a guide line, two routes, and non-recognition assessment (task/evidence/order/short/project, every MCQ with named slips). Week 1 carries a learning guide (`core/guides/`).
+- **Shipped media:** `curriculum_media_url()` resolves `media:key` to `/assets/learn-media/key` when no media host is configured and the file ships; a lesson BODY's `](media:…)` is resolved at read time too. `CUR_SAFE_URL` (components.jsx) allows `/assets/learn-media/…`. Certificates: Data Appreciation → tech style, Desktop Publishing → media style.
+- **Retiring a shipped lesson:** a seed row may carry `"status": "retired"`. The seeder retires an existing lesson only while it is still exactly as shipped, never creates a retired one, never deletes. The Media Lab file retires its six Club-wide rows this way.
+- **Tests:** run.php — the core courses (catalogue, every member in both modes, kinds, media resolve, real importer, certificate style), retirement. Stale assertions updated where the rule changed on purpose: member course lists now end with the core courses; an `evidence` question carries its link in `videoUrl` (the "no video on a non-watch question" check now excludes it).
+
+**Same day, revised:** Data Appreciation rebuilt as "the very basics to intermediate of what every computer user should [know]" (owner) — `tools/learn-core/lessons_da.py`; ten more diagrams and eight drawn work-screens (`media_more.py`: file manager, SUM and fill, sort/filter, share dialog; DTP document setup, editor, paragraph styles, print-PDF export). Drawn, not captured: no product's logo or trade dress, so they ship and do not go stale.
+
+## 7 Nov 2026 — Formal family reports (month, session, Summer edition) with fines and dues; daily attendance email
+
+**Owner:** "the parents should get a formal professional report at the end of each session and every month. Super profesh", "monthly parent reports — with fines and dues and so on", "email reports on every programme … on the attendance for the day".
+- `domain/parent-reports.php` (in the bootstrap list). Migration 231: `parent_reports` (sealed per subject/kind/period) and `report_sends` (claimed per recipient before a mail goes).
+- `preport_member_data` reads attendance (programme days, scans, `policy_unexcused_absences`), lessons/exams/certificates, sanctions, ledger entries in the period (training and write-offs excluded — their own account) and `fees_balance` as of the day. `preport_html` is ONE document for the email body and the printable page (`api/family/report.php?id=`), inline styles, tables with `scope`.
+- `family_reports_run` now delegates to `preport_monthly_run` (same signable inbox notice and refId, so the old dedupe holds). Session and edition reports and `attendance_daily_run` ride `web_cron_reminders`.
+- Ops: `family.report`, `admin.reports.member`.
+
+## 7 Nov 2026 — Labs: "Remember it" picture sequences (Maths and English), instead of looping GIFs
+
+**Owner:** "Start with the Math Lab and English Lab illustrations. Add fun to remember gifs", then "Ensure they are research-driven and -optimized, if not drop them".
+- **GIFs dropped, on the evidence.** Decorative or "fun" motion costs learning (seductive details — Rey 2012; Mayer's coherence principle); a looping, self-running animation is transient and learner-uncontrolled (Mayer's segmenting principle; the transient-information effect), must be pausable (WCAG 2.2.2), and is heavy on the low-end phones Lite mode serves.
+- **What replaced them:** a "Remember it" step before Practise. Three frames of the IDEA itself, stepped through by the learner, one caption each, at most one memory hook where the research supports one (ordered rules: BODMAS, SOH CAH TOA, PEEL; word roots by the keyword method), and it ends in retrieval — "cover it and say it" — which is what marks the step done.
+- `tools/lab-remember/build.py` generates 36 cards (20 maths, 16 English), 108 SVG frames and `assets/lab-media/remember/remember.json` (card → topics; 75 maths and 42 English topics covered). Edit the generator, never the outputs. The index is fetched once; a frame only when shown.
+- Client: `MlbRemember`, `useMlbRemember` in `mlb-app.jsx`; styles `.mlb-rem*` in styles.css. Tests: `mathlab-e2e.test.js` (pictures load with alt text; the step ends by covering them), `mathlab-shot.js` (the step reached on a phone by studying, no skipping; step list now includes "Remember it").
+
+## 7 Nov 2026 — One course, not a wall: members no longer get several courses by guesswork
+
+**Owner:** "Fix the issues with students getting multiple courses".
+- **The faults, reproduced:** an unplaced member whose record named only a division ("Tech", "Media", "Music", or a `division` alone) was proposed EVERY course in it (7–8), so they took seven sets of lessons, deadlines and fines; interests on the card piled further courses on top of the track's; and `course_scope()` widened a broad course downwards, so a child placed on "Music" took all seven instrument strands. "Graphics Design" matched nothing.
+- **The rule now** (`curriculum_member_courses_infer`): the track's course(s); else the FIRST interest, flagged `several` with `alternatives`; else, division only → no course, flagged `division_only`; a broad subject on the track sharpened by a strand in the interests ("Music" + "Piano" → Piano); an exact course name wins ("Music" is Music). A division never enters the course list (see `course_reach`): an unplaced member reaches the division's shared lessons through `curriculum_member_units_all()` + `curriculum_member_division_names()` (both the programme's name and the catalogue heading), and an assignment set for a division word reaches its members placed or not (`assignment_matches_member`). `course_scope('Music')` is `['Music']`; a strand still reaches up to its subject. Chess stays with anyone whose division is known. The member card falls back to the member's division.
+- **Stored proposals recompute:** `members_courses_inputs()` hashes a rule version (`p2`), so every unplaced member is re-proposed on the next read.
+- **Tests:** run.php fixtures that relied on "TECH means Coding" now place those members on Coding, as staff would; the inference tests assert the new promise (no wall; first-of-several; division-only reaches the spine; Music is Music, Piano reaches Music). `course-placement.test.js` walks a division-only child and a two-interest child through "Needs a look" and a confirm.
+
+## 7 Nov 2026 — Monthly Progress Report redesign (handoff), real logo and colours; dues as PDFs
+
+**Owner:** the `ngg-progress-report-handoff` package ("Implement this"), "We to also be able to export dues in PDF", "Add the real logo and use the real colors".
+- **Design:** `assets/report/report.css` holds the handoff's tokens, components and print rules (A4 `@page`, repeated `thead`, rows never split, `print-color-adjust: exact`) with NGG's colours in place of the handoff's stand-ins (`--ngg-navy` #1C2A5E = styles.css logo navy, `--ngg-amber` #F5B026 logo gold, `--amber-ink` #7A5600 the AA-safe dark gold; every pair re-measured ≥ 6:1). Self-hosted Geist and Bricolage Grotesque (`assets/report/fonts/`, SIL OFL). The letterhead carries the real mark, `assets/report/logo.png`, cut from `assets/logo.png` to its disc (the source's soft shadow blurs at 48px).
+- **Renderer:** `preport_html()` (domain/parent-reports.php) rebuilt on one table partial (`preport_table`) and one tag partial (`preport_tag`); `preport_document()` is the page shell. The print button is `assets/report/report.js` — not an inline handler, which the production CSP forbids — and waits for `document.fonts.ready`. Data v2 adds per-line ledger rows, the credit, register tags (excused absences via `member_absence_cover`) and the first name; v1 reports sealed earlier still render from their totals. The summary sentence is server-side (`preport_headline($r, true)` bolds the balance) and names the child rather than using a pronoun.
+- **Email:** `preport_email_body()` — the sentence and figures inline, plus the button; the handoff scoped the carrier email out, and mail clients cannot load the fonts or layout. Summer School parents (no account) get `api/public/report.php?id=&k=`, `k` an HMAC of the report number under `cookie_secret` (`preport_sig`) — stateless, nothing stored.
+- **Dues PDFs:** `domain/dues-print.php` — `admin.fees.register.doc` (reads `admin_fees_arrears()` itself, so the PDF cannot disagree with "Who owes"; scoped), `admin.fees.statement.doc` (fees, scoped), `member.fees.statement.doc`, `family.statement.doc`. Routes `api/admin/dues-print.php`, `api/member/statement.php`, `api/family/statement.php`. Buttons: Control Room money actions; the family Fees statement (via the design source `family-portal-v3.dc.html` + `tools/dc-compile.js`); the member Fees page. `admin_fees_arrears` rows now carry `displayId`.
+- **Open questions from the handoff, answered by default:** balance row shown at ₦0 ("Nothing to pay"); conduct statuses map active/pending → warn, waived/voided → neutral, anything settled → "Resolved"; excused absences count as absent days in the rate (the rate is days present over programme days).
+
+## 7 Nov 2026 — Request actions say what they do; Guide; welcome and tenure
+
+- **Requests desk, actions in context.** A fine appeal offered "Approve / Decline",
+  and "Approve" read as agreeing with the fine while it did the opposite (it
+  upholds the appeal and lifts the fine). Each request kind now names its two
+  outcomes (`CR_REQ_ACTS` in `cr-tab-members.jsx`): an appeal is "Uphold — lift
+  the fine" / "Keep the fine", leave is "Excuse the absence" / "Refuse the
+  leave", a question is "Answer and close". Upholding asks for the reason in the
+  form, as the server already required (`need_reason`). The drawer now lists the
+  member's **other open requests** with an Open button, because families
+  appealing a fine usually point at a leave request still waiting — and warns
+  that excusing the leave does not lift the fine on its own.
+- **Guide.** The Learn study helper is now Guide, a Socratic companion: it
+  climbs a ladder of hints (what did you try → a nudge question → the rule that
+  applies → a worked example of a *different* problem) and never hands over the
+  answer, never writes the assignment, and praises the strategy rather than the
+  child. Prompt in `member_curriculum_ask` (curriculum.php).
+- **Welcome and tenure.** `member_welcome()` (club-class.php) gives the member's
+  Today a second line read from the record (programme day, streak, first
+  fortnight, else an effort-praising line steady for the day) and how long they
+  have been with NGG, and celebrates a birthday, one week, one month, 100 days,
+  six months, 500/1,000 days and every anniversary for a week. A celebration is
+  put away once and stays away (`mp9.celebrated.<key>` in member state).
+
+## 7 Nov 2026 (later) — Inbox reading pane; Remember-it cards for every Lab topic
+
+- **Inbox.**
+  - The facts box no longer collapses beside a long message: it was a flex child of the scrolling pane.
+  - A family account with no name is shown as "<child>'s family" followed by the address, not by the bare email.
+  - Request items use the drawer's outcome labels and list the member's other open requests.
+  - A request opens at its top, so the subject and facts are in view.
+  - The notification nudge is a strip in the list, not a large card.
+  - Rail labels never wrap: the rail becomes icons below a 1240px workspace.
+  - A narrow pane restacks by its own width (a container query).
+  - `tests/requests-desk.test.js` checks the pane at 1117, 1440 and 900px.
+- **Remember it.** `tools/lab-remember/` now has sibling modules, each loaded through `add(B)`:
+  - `maths_more.py`: 16 cards.
+  - `english_more.py`: 22 cards.
+  - `physics.py`: 32 cards.
+  - Every competency is covered: maths 99, English 80 (EN-001…EN-080), physics 90 (PH-001…PH-090). In total, 106 cards and 318 frames.
+  - The Lab shows the step for any mapped topic. `tests/mathlab-e2e.test.js` walks it in all three journeys.
+### 7 November 2026 — English Lab: taught rules for all foundation topics
+
+On `codex/english-lab-gods`, based on freshly fetched `4b8e9e08` from `claude/finme-dues-training-fees-l54o5j`: expanded taught-rule coverage from 35 to **80 topics**, preserving all **259 existing question forms**. Added 45 rules with explicit Right-or-wrong judgements and reasons; qualified overgeneralised grammar rules and clarified ambiguous examples. The English browser journey now completes the first topic’s new rule lesson. No Learn changes, migrations or existing audio edits.
+
+Baseline: **6,963 backend / 28 client / 104 browser passes, zero failures**. This deliverable: **6,963 / 28 / 105 passes, zero failures**. Browser assertion totals can vary because the randomly selected practice format conditionally adds a typed-keyboard assertion. A scratch check confirmed every rule has 3–6 marked examples, both judgement types and reasons; all 777 captured historical question samples remained identical. No new forms yet, so the new-form 200-seed sweep has zero forms to exercise. Build/browser verification runs in a disposable copy to preserve tracked deployment outputs. The first browser rerun caught the old journey’s assumption that EN-001 had no taught rule; the journey now completes it rather than skipping the teaching gate.
+
+Dictionary access is blocked by the environment allowlist; a saved configuration draft adds Cambridge and Oxford Learner’s Dictionary. No new IPA transcription was introduced. Existing phonetic material has not been independently reverified during this task. New practice, summit content and oral expansion follow in separate commits.
+
+### 7 November 2026 — English Lab: production and reasoning for every foundation topic
+
+Appended **87 forms** through `eng_drill_forms()`: 80 bounded production forms plus seven focused concord, tense, contextual vocabulary, inference, summary, paragraph-order and sound-counting forms. Total: **80 topics, 346 forms, 80 rules**; every topic has at least four forms and a typed or ordering form. The new material uses all five kit builders. Error-spotting rows can now supply a specific explanation for each correct part selected in error; historical rows retain their previous output exactly.
+
+Validation: **6,963 backend / 28 client / 107 browser passes, zero failures**, against the 6,963 / 28 / 104 baseline. The scratch sweep generated **17,400 new-form instances** (200 seeds for each of 87 forms): no duplicate options, missing keys, empty hints, self-marking failures, answer leaks or fixed typed answers. All 777 captured historical samples remained identical. Examiner review checked bounded-answer instructions and context, including distinguishing missing evidence from a false claim. An intermediate browser run had one intermittent failure in the unchanged Maths phone gate; the complete rerun passed. No change to that Maths journey was made. A legacy English assertion was updated from five to six forms for EN-023.
+
+The summit and additional recordings are still to follow. No existing recording was changed. No new IPA transcriptions were added; dictionary verification remains blocked pending the saved domain-access draft.
+
+### 12 November 2026 — Audit: every node suite run, product defects fixed, stale suites brought up to the screens they test
+
+The whole node suite list (140 entries) was run one suite at a time, because the e2e suites each write a throwaway `api/config.php` and cannot overlap. Each failure was traced to a product defect or to a suite that had fallen behind a screen.
+
+**Product defects found by the run, and fixed:**
+
+- **ID Card Studio print could make no PDF.** In `vendor/card-export.js`, `loadScript` resolved as soon as a `<script>` tag for the URL existed, even while it was still downloading. When two cards were drawn at once, or a stale copy of the file asked a moment earlier, the second caller read an undefined `window.jspdf`. The card failed with "reading 'jsPDF'", and "Nothing was printed". The fix keeps one shared promise per script and waits on a tag that is already there.
+- **ID Card Studio: a one-frame "Sheet 3 of 2".** This showed after the last sheet was removed. The sheet index is now clamped in the same update.
+- **Lite mode left inline motion running.** No stylesheet rule outranks an inline declaration without an important-flag, and those flags are not used. Five inline backdrop blurs and two bare inline transitions read Lite's switches now: `var(--lite-blur, blur(Npx))` and `calc(Ns * var(--motion, 1))`. `tests/lite-mode.test.js` scans the source so that a bare one cannot come back.
+- **The lesson editor rewrote eight bundled lessons on open.** An indented sub-point (`  - `) went back out as a top-level `- `. Each list item now keeps its own indent and marker. 612 bodies round-trip unchanged.
+- **Summer School "Apply for this" lost the course.** `/join?program=summer` forwards to the centre's live public sign-up link and now carries `centre` and `track` with it. `selfRegSeed()` takes each value only where the form asks for it and offers it, choosing the course's faculty too. It never overwrites the family's draft.
+- **School results: the member's "Lower the target" went below 85%.** It went down to the child's current score, and the server then refused the plan with `target_too_low`. It now stops at `results_target_floor()`; the server sends `targetMin`. The mentor screen and v9 already held 85.
+- **Palettes lost the first keys typed after opening.** The Summer School portal and the member portal v9 focused the search input on a 30 ms timer. It is now focused in the commit that opens the palette.
+- **Control Room → Centres** says again that a centre's code is the printed ID prefix (on Summer School cards). Before, only the add and edit forms said it.
+- **Mentor v15 class screens said "That didn't work. Try again." for a refusal that retrying cannot fix.** The worked example is `orientation_required` before the Academy is done. `mp15cErr` now falls back to the portal's own messages (`MP15_ERR`), then to the server's `detail`.
+- **The family app had no way to use a code from staff.** The Control Room's instructions ("Open the NGG Family app (/family). Choose 'I have a code from staff'") point at a step the family v3 controller fully implements (`siDeskStep`, `siDeskGo`). The design never drew it, so no guardian could reach it. `family-portal-v3.dc.html` now has the link and the step (email, code, Sign in, "Email me a code instead"), recompiled.
+- **Community v3 dropped the quote of the week.** It led the home feed on the first Community. A `qowEl` slot in `community-v3.dc.html` puts it back under the post box: on the home feed only, never on a filter, a search, a person's posts or a channel.
+- **Timetable quick add had no keyboard focus ring.** The "one field, one box" rule in `styles-app.css` matched `.tt-qa-row`, a bordered input beside its own send button, by shape. It removed the input's ring and drew a halo on a row with no edge. The row is excluded now. focus-ring passes: 551 stops on 11 pages.
+
+**Sign-in (owner, 12 Nov: "the sign in UX is quite terrible… no protections for cases where siblings share one mail… It does not work").** Driven in a browser with real fixtures: siblings on one address with and without passwords, the same password on two, a staff parent on a child's address, a suspended sibling, forgot-password, and the journal gate.
+
+- **The emailed code was "invalid" every time for a child sharing an address with a staff parent, or with a suspended sibling entered first.** `auth_request` keys the code by `auth_email_accounts` (no suspended, no password-only staff), but `auth_resolve_member_id` looked it up on the OLDEST row on the address. Both now resolve the same way. Two `run.php` tests fail without the fix.
+- **Forgot password on a shared address:** the email holds a button per child, not a code, and the screen now says so.
+- **The card was restructured.**
+  - Each step now has ONE primary button, then "or" and the other real way in as a full-width button ("No password? Email me a sign-in code"), then "Got a code from staff? Enter it" on its own line.
+  - The first screen's two loose links are an "Already have a code?" pair: **From my email** and **From staff**.
+  - Secondary links stack one per line; side by side they wrapped into each other.
+  - On an unrecognised device the title is "Sign in", not "Welcome back".
+- The Control Room's let-in instructions name the new labels.
+- **Worked as built, and now confirmed in a browser:** the picker on a shared address by code and by link, a password opening its own account, the same password offering a choice, and the journal gate.
+
+**Suites brought up to the screens they test (no product change):**
+
+- **Bundle split.** Seven fixtures never loaded `app-more`, where the admin screens live: admin-table, community-engagement, members-dash/manage shots, responsive-staff, tournament-shot and promo-ui. Four of them also mounted into `#root`, alongside the app.
+- **Control Room v6 markup.**
+  - status-board was rewritten for Analytics → Status board: the "Status by area" radiogroup, the member record page's "Part of the record", and the centre lead's scoping and hidden money.
+  - summer-editions: the retired `registration`/`qr` ids land in the Summer School portal; `#cr-main`.
+  - programme-separation: the Centres "Runs" column.
+- **v9 and v15 portals.** dashboard-results pins the classic dashboard (`?classic=1`), and its mentor half now drives the v15 School results screen, which had no browser test.
+- **Copy and rules that moved on purpose.**
+  - The journal writer's "My journal".
+  - The Lab nav has Certificates.
+  - The volunteer row button is "Photo & portal access".
+  - The review desk's "Check <name>'s sign-up".
+  - Announcements also default to Community.
+  - Results targets start at 85.
+  - The journal gate offers a password first.
+- **Test races.** These now wait for the thing they read:
+  - kiosk: the previous refusal was still on screen;
+  - community code viewer: the source arrives after the heading;
+  - club announcements: the list reloads after the toast;
+  - club applications: Review must wait for the row reloaded after "Photo added";
+  - focus-ring: measures a stop once the smooth scroll has come to rest, not mid-scroll under the sticky bar;
+  - dashboard-results: the mentor fixture has a completed Academy;
+  - instructor and portal-account: done earlier in this run.
+- **Isolation.**
+  - make-hook has its own cache dir, because the rate-limit buckets of earlier suites counted against it.
+  - roster-import-transport's stand-in window takes the session heartbeat's listeners and timer.
+  - formation-parity loads curriculum.php, where the division table it reads lives.
+  - programme-separation reads the Club seed marker from source.
+  - ids-print needs history back to `79bf2bf`; a shallow clone must deepen first.
+
+Results:
+
+- PHP suite: **7084 / 0**. That includes two new sign-in tests, each shown to fail without the fix.
+- Every node suite that failed in the full pass has since passed on its own (each one starts its own server, so they run one at a time). Where a fix touched a shared screen, the neighbouring suites were re-run too:
+  - ui-smoke 627/0
+  - focus-ring 551 stops
+  - status-board 17/0
+  - summer-editions 36/0
+  - dashboard-results 27/0
+  - mentor-v15 81/0
+  - control-room 59/0
+  - club-portal-v3 53/0
+  - community-v3 62/0
+  - family-ui 52/0
+  - desk-signin 19/0
+  - mfa 51/0
+  - shared-email 10/0
+  - settings-keys 19/0
+  - wisdom-ui 48/0
+  - lite-mode 8/0
+  - ids-print 16/0
+  - card-export 42/0
+- `vendor/VERSIONS.json` records card-export.js's new checksum (build.test 31/0).
+
+### 12 November 2026 — A staff parent can reset their own password from a shared address
+
+Owner: "Please work on it." The background: password sign-in on a shared address already chose the right account, because the password says whose. Reset did not. It chose accounts by the sign-in list (`auth_email_accounts`), which leaves out password-only staff because they are never sent a code. So a staff parent and one child counted as "just the child": the staff member asked to reset their password and was emailed the child's.
+
+`auth_reset_request` now counts every live account on the address, staff included (`auth_reset_accounts`). With more than one, the email has a **Set {name}'s password** link for each, and the staff one is marked "staff account". `auth_reset_confirm` is unchanged: it sets that account's password, revokes its sessions and still asks for the second step. A staff member alone on an address resets exactly as before. The sign-in screen's copy names this case.
+
+Two `run.php` tests (7086 / 0) fail without the change. They check the email, then that the staff link sets the staff password, signs them in with it, and leaves the child's untouched.
+
+### 12 November 2026 — The Labs: focus stays with the learner, and five screen faults
+
+Owner: "Fix the issues with the lab." Every Labs suite was already green: labs-client, study-tools, mathlab-e2e, and the Maths and Physics shots. So the Labs were walked in a browser on the production build at phone width, and every press was checked for where keyboard focus went.
+
+**Focus fell to the page on almost every press.** In each case, the button that was pressed was disabled or removed a moment later:
+
+- Check (disabled while marking);
+- Next question (the same button, disabled on an empty question);
+- See how you did;
+- Practise;
+- the last "Show the next line" in a worked example;
+- the last "Right or wrong?" or "Next line" in Why it works;
+- Hear the difference: its choices, Next and Finish, and the Play button, which disabled itself while playing;
+- Check in Hear and write.
+
+A keyboard or screen-reader learner was sent back to "Skip to content" after every question. Focus now moves to what comes next:
+
+- after Check: Next question;
+- on a new question: its heading;
+- at the end: the result's heading;
+- after the last line or judgement: the answer or the score;
+- in the English rounds: Next, then the new round's Play button, then the score.
+
+The Play button stays focusable while it plays (`aria-disabled`, and a second press is ignored).
+
+`tests/labs-focus.test.js` (new; in `test:all`, and `npm run test:labsfocus`) walks a lesson and its practice in each Lab, an English rule lesson and a sound lesson, pressing what a child presses. It fails on any press that leaves focus on nothing, and pins where focus goes. Against the previous code it fails 11 of 12 checks; it now passes 14 / 0.
+
+**Also fixed:**
+
+- **A practice paper handed in early** said "You finished it. Keep going!" after 1 of 40 questions. It now says "Handed in after 1 of 40". Time running out is not counted as handing in early.
+- **"Time on task"** reads seconds under a minute: two seconds no longer reads "1 min".
+- **On a phone, the Lab's tabs were six bare icons.** Each now has its word under it (Home, Map, Courses, Certificates, Progress, Exams).
+- **The map's stats strip cut the level to "Appre…".** On narrow screens the level gets the room the three numbers do not use.
+- **"Hear the difference" showed 1 of 8 in the green "well done" box.** Under 6 it is the "keep going" box.
+- **A marked answer box looked live.** It now looks settled, its text kept at full contrast, and the − and . keys are not drawn once they cannot act (the daily problem's "Over for today").
+
+Checked and NOT faults: the start-up splash in the e2e screenshots is its 0.5 s fade caught mid-way, and the Explore step's Continue drawn over the sliders is an artefact of a full-page screenshot of a sticky bar. The daily problem shown (AAABBC, no two identical letters together) was brute-forced: 10, as the Lab says.
+
+### 13 November 2026 — Labs stop repeating themselves; registration and onboarding audit
+
+**Repetition (owner: "Fix the repetition issue").** The Labs prevented a repeat inside one session but not across sessions. A member starting an English topic again met, on average, 61% of the questions they had just seen (63% with identical wording). 35 English topics repeated six to eight of eight. Physics repeated 21% and Maths 11%.
+
+- **Memory.** `mlb_recent_seen($mid)` in `domain/mathslab.php` reads the member's last `MLB_RECENT_SESSIONS` (8) sessions in this Lab from `mlab_sessions.items`. `mlb_pick_fresh()` tries three tiers in order: avoid those eight sessions, then the last `MLB_RECENT_NEAR` (2), then only this session. A session is never shortened to avoid a repeat. The check, practice, mix, quick, review, boss and mini modes use it. The climb walks a topic in order, so it does not. The timed paper (`mlb_exam_pick`) rerolls a recent paper signature, except on its last try.
+- **Content.** `domain/englishlab-more.php` (new, in the bootstrap list after `englishlab-drill`) adds two forms to each of 21 English topics, merged last in `eng_forms()` so earlier form order is unchanged. Every English topic now has at least 24 distinct questions, and the validator reports 0 problems.
+- **Measured after:** Maths 0%, Physics 0%, English 4%. No topic repeats six or more of eight, no session is short, and no session repeats inside itself. `run.php` holds the promise for three topics in three Labs, for a thin topic, and for per-member and per-Lab isolation. A mutation check confirmed these tests fail without the memory.
+
+**Registration and onboarding audit (owner: "Audit the registration and onboarding process").** Driven end to end in a browser: Club application, staff acceptance, both emails read from the mail sink, the welcome link opened on a phone, a password set, and the dashboard reached.
+
+- **The welcome link left the new member on the public home page** after they set a password. `confirmReset` in `auth.jsx` now goes to the dashboard when a reset token signs somebody in from `/`.
+- **The welcome email** (`admin_application_convert`):
+  - It gave the internal record id (`NGG-2026-…`), where the card and every later screen show the printed number (`026-…`). It now gives the printed number.
+  - It promised "start details shortly", which never came as such. It now names the centre and start date, and lists what happens next: set a password, pay the joining invoice, and the NGG Family app at /family for parents.
+  - It now goes first. The invoice follows it, because the welcome is what introduces the invoice.
+- **The invoice email called itself "Welcome to NGG — one step left"** and said again that the place was confirmed, so the family got two welcomes. It is "Joining invoice for <child>" now.
+- **Application answers were lost to staff.** The vision, interests, areas of influence, where they heard of NGG, and the second guardian have no column on `members`. They stayed on the accepted application, and nothing linked the member to it. `admin.members.record` now returns `application` from `applications.convertedMemberId` (read-only). The record shows it under Overview → *In their own words* and Family & mentor → *Second parent or guardian*.
+- **Summer School ID email** said "Student ID". It now says "Participant number" (§5 vocabulary).
+- **Checked and fine:**
+  - The profile drive asks nothing a Club application already answered: `profile_missing` is empty.
+  - The start card shows the photo as done.
+  - "Link a parent" stays, by design: a parent's email alone never links a child.
+- **Not changed, and why:** applying sends three emails (the inbox notice to staff, the programme address, the family's acknowledgement), each to a different reader. Acceptance sends two, and they are now distinct.
+- **Results:** `php api/tests/run.php` 7097 passed, 0 failed. Node suites, run one at a time, all pass: club-apply, membership-pay (36), mfa, shared-email, desk-signin, status-board, labs-client, labs-focus, mathlab-e2e (113), study-tools, ui-smoke (627) and forms-selfreg-ui.
+
+## 17 Nov 2026 — Maths Lab: the length tell (Labs audit round 9)
+
+The third Lab after English (round 7) and Physics (round 8). 57 Maths forms let a guesser win by picking the
+longest option; all rewritten (wrong-option text only, plus six deliberate right-answer rewordings), and the
+"Why is line k true?" generator evens its option lengths deterministically. Details, numbers and the saved-session
+check in `docs/LABS-AUDIT.md` round 9. PHP suite 7166 / 0 (baseline 7161 / 0; five new checks).
+
+## 17 Nov 2026 — Branch audit: two branches brought in
+
+Owner: "Check all recent branches." Every remote branch updated since late October was compared with this one.
+
+- **`claude/magical-fermi-d97fqw`** (16 Nov), built on this branch, 6 commits not merged here: the standard exam
+  in every Lab, pay ahead by the term, course/division matching fixes. **Merged** (only generated `dist/`
+  conflicted; rebuilt). Its browser suites had never been run: `mathlab-e2e` failed 6 checks that pinned the old
+  card count on the Exams pages; they now pin "the Lab's own papers plus the Standard exam, no other Lab's"
+  (122 / 0). Its HANDOFF-NEXT-AGENT.md (the standard exam, in progress) is now this branch's.
+- **`claude/stoic-hamilton-1f18hh`** (14 Nov) is a separate history frozen at 31 Oct — merging it would delete
+  ~100,000 lines — with 8 commits on top: the assignments audit of 2 November. **Ported** as a patch: the daily
+  due-tomorrow/overdue reminder, `assignment_notices` (re-publish tells only the untold), a lesson's homework
+  issued once (`assignments.autoKey`), centre scope however typed, MySQL widths, the merge policy, the classic
+  dashboard's hand-in panel. Its migrations 216/217 collided with this branch's, so they are **234 and 235**
+  here (target 235; MySQL mirror and `NGG_MYSQL_ROW_FIXUPS` comment renumbered; the audit doc says 234/235).
+- Older branches (vibrant-cray, community-audit, gate-lookup, codex/english-lab-gods, the August audits): their
+  work is already here.
+
+Results: PHP 7239 / 0 (+28 ported checks); assign-desk 34 / 0; mathlab-e2e 122 / 0; build.test 31 / 0;
+labs-client 28 / 0.
+
+## 17 Nov 2026 — Labs standard exam: blueprint, exam hall, report (handoff TODO 1–3)
+
+Continuing the magical-fermi handoff.
+- **1 · Blueprint and difficulty** (`3f102326`): `mlb_exam_quota` gives each strand its share (Maths: the
+  syllabus's sections; elsewhere an even share), `MLB_EXAM_MIX` 20/45/35 by a topic's rank inside its
+  strand, short cells made up from the harder side. Measured: Maths 24/42/34, Physics 16/48/36; English is
+  80 questions on 80 topics, so its mix cannot be steered. No exam body publishes per-topic counts (searched);
+  the weights are the syllabus's and the code says so.
+- **2 · Exam hall** (`9cdd6b28`): `MlbExamHall` — navigator, flags, answers changed or cleared until
+  hand-in, a hand-in that names unanswered/flagged, A–E / arrows / F. Server: exam-mode answers replace
+  earlier ones and an empty answer clears; other modes stay one-shot; nothing marked is returned mid-paper.
+- **3 · Report** (`63e5f88e`): `mlb_exam_insights` — what to study (weak areas' missed topics as lesson
+  links), pace, last paper, predicted grade (standard exam, last three, called an estimate).
+- **Still open:** TODO 4, the licence-gated slot for real past questions (stays off until a licence is
+  recorded). Not started.
+- Results: PHP 7251/0; mathlab-e2e 135/0 (desktop and phone); labs-focus 14/0 (its copied exam block
+  was still pinning the pre-merge card count, now re-pinned).
+
+Also: `docs/CODEX-TEST-BRIEF.md` — standing instructions for a Codex session that runs and broadens the
+suites continuously on `codex/continuous-tests` and logs product defects in `docs/TEST-DEFECTS.md`
+instead of fixing them.
+
+## 17 Nov 2026 — The NGG shop: the pages (branch `claude/ngg-shop-pages`)
+
+Owner, 17 Nov 2026: "Create a shop for NGG. To sell souvenirs and mercs". The server came in `d0f498fa`
+(domain/shop.php, migration 237); this branch adds the pages and changes the server only where noted.
+- **`/shop`** (`page-shop.jsx`, ROUTES `shop`, indexable): catalogue, category filter in the URL, cart kept in
+  localStorage, checkout, and the server's quote (items, delivery, Paystack's charge, total) shown before Pay.
+  Hands off only to `checkout.paystack.com` (`nggPaystackUrlOk`).
+- **`/shop/order/<token>`** (ROUTES `shop-order`, noindex, not addressable; `pageFromPath` and `spa.php` both
+  know it): the return page. It has the server confirm the payment with Paystack, and shows the order number
+  and what happens next.
+- **Control Room → Shop** (`cr-tab-shop.jsx`, one entry in `CR_PAGES`, People group): Orders (`fees`),
+  Products (`content`), Settings (`fees`). The bulk steps use the v2 table bulk, not `runAdminAction`: the
+  latter answers through the v1 toast and dialog, which the v2 shell does not draw. Each order still gets its
+  own verdict from the server, and a partial run is reported as partial.
+- Server changes, each with a check: checkout terms carry `maxLines`/`maxQty`; admin ops carry `bounds`/`max`
+  (`SHOP_STOCK_MAX` and `SHOP_DELIVERY_FEE_MAX` are now named constants); the buyer email's lines table has no
+  inline style; spa.php serves an order link as its own noindex page.
+- `tests/shop.test.js` (in `test:all`) mocks Paystack through the existing `$GLOBALS['__paystack_mock']` seam,
+  loaded with `php -d auto_prepend_file`.
+- **dist/ was not rebuilt here.** esbuild was not installed in the environment. Run `node build.js` and commit
+  dist/ before deploying.
+
+## 17 Nov 2026 — Shop upgrade researched, then stopped for a handoff
+
+The owner asked for a massive upgrade of the shop management in NGG and in Africa GATES, with research.
+Africa GATES was attached to this session and its latest branch (`claude/ai-assistance-judges-features-1ka4oz`)
+cloned. Two pieces of work were completed:
+- **Research:** shop management for a small volunteer team — inventory ledger, fulfilment, Paystack
+  refunds, POS, reports, Nigeria-specific points, and a "do not build" list.
+- **Audit:** of the Africa GATES shop.
+
+The owner then said: "Create a handoff for a new agent to continue. Stop!" No upgrade code was written in
+either repository. The Africa GATES worker was stopped before it committed anything, and its branch was
+never pushed.
+
+Everything needed to continue is in two places:
+- `docs/SHOP-MANAGEMENT-PLAN.md`: the research, NGG's build order, the Africa GATES audit and build order,
+  and the environment notes.
+- `HANDOFF-NEXT-AGENT.md`: every open thread, including online membership (the owner's new pricing:
+  no yearly fee, $10 with a mentor, $5 a course with an instructor) and the Labs exam licence slot.
+
+## 18 Nov 2026 — Outstanding balances as images, PDF and CSV
+
+The owner asked to download fines and dues "like this" (three phone screenshots of an "Outstanding balances"
+sheet), as images, PDF and CSV.
+- **Money → Dues & arrears → Download balances** (`crMoBalances` in `cr-tab-money.jsx`): a form picks the format
+  (Images, PDF, CSV) and, with more than one centre owing, a centre. It fetches the whole arrears list
+  (`admin.fees.arrears`, limit 1000), not the drawn page.
+- One drawing, `crBalDraw`, on a canvas in the self-hosted Geist (its latin-ext file carries ₦), feeds both the
+  PNG parts (2×) and the PDF (jsPDF, A4, 3×), so the posted image and the printed page cannot differ. Fifteen
+  rows a part, largest payable first; "Days" is `daysOverdue`; Dues = payable − fines, split in the CSV.
+- `tests/balances-export.test.js` (`npm run test:balances`, in `test:all`): 32 members owing over two centres;
+  checks the three PNGs, the three-page A4 PDF, the CSV rows and sums, the centre filter, and that a centre
+  name is drawn whole (it failed with the first, too-narrow column, and the check was proven against it).
+
+## 2026-11-18 — Shop management upgrade (NGG)
+
+Owner, 17 Nov: *"Upgrade the shop massively … for better and effective management. Research!"* Built from
+`docs/SHOP-MANAGEMENT-PLAN.md` §2, all ten items. Server: `api/_lib/domain/shop-manage.php` (new, in the bootstrap
+list) and `shop.php`; migration **238**; Control Room: `cr-tab-shop.jsx` (eight tabs: Today, Orders, Sell, Stock,
+Products, Codes, Reports, Settings); public: `page-shop.jsx`.
+
+- **Stock ledger** (`shop_stock_moves`): every count change is a reason-coded row with who and when; the count is the
+  running result (tests assert sum of rows = count). The product form writes `correction`/`received`; hand
+  adjustments; stock-take validated whole. Counts may go below nought (table sales are never stalled); the public
+  shop clamps to nought (`shop_stock` vs `shop_stock_raw`). Column names avoid MySQL reserved words
+  (`variant`, `byId`, `openingFloat`).
+- **Low stock**: `lowStock` per product (-1 = the shop default), panel, daily digest (webcron job `shop`).
+- **Refunds** (`shop_refunds`): Paystack `POST /refund` in kobo; pending until Paystack's own `GET /refund/:id` says
+  processed/failed — from the signed `refund.*` webhook (`api/hooks/paystack.php`), "Check now", or the hourly
+  sweep. The body of a webhook is never trusted alone (as with charges). "Paid outside" refunds are processed at
+  once. Cap = what was charged (goods + delivery + the buyer-borne fee); suggestion = goods + delivery. Restock at
+  refund time. `refundState`: '' | due | pending | partial | full. Cancelling a paid order can refund in one step.
+- **Pickup code**: six digits at payment for collections; `Collected` needs it or a reason (override on the
+  timeline). Bulk "Mark completed" became "Mark delivered" (collections are refused per row, by design).
+- **Unpaid orders**: expire after `expireHours` (24) as `cancelKind = 'expired'`; one reminder after 2 h; pay later
+  from the order link (`public.shop.order.pay`, a fresh `NGGS-` reference each time — an older checkout still pays,
+  matched by metadata orderId). A payment arriving for an *expired* order revives it; a *staff*-cancelled one stays
+  cancelled and the money goes to unapplied_payments.
+- **Table sales** (`channel = 'pos'`, `payMethod` cash/transfer/pos) and **cash sessions** (`shop_cash_sessions`;
+  in `CENTRE_NAME_TABLES` and `CAC_CENTRE_NAMED_BY`). Cash needs an open session; closing keeps the difference and
+  needs a reason when not zero.
+- **Reports**: today's numbers; gross / buyer-borne fees / Paystack's fees **as reported** (`gatewayFee`, from
+  verify `fees`) / refunds / net; by product and size, method, channel, day; sell-through; stock value; CSV.
+- **Codes** (`shop_codes`) and **pre-orders** (`preorderUntil`). Order **timeline** (`shop_order_events`) replaces
+  appending to `note`; old notes still show. **Exchanges** split a line at the price charged. The orders list is
+  paged on the server with a date range and channel filter.
+- Buyer-facing label "Paystack's charge — not an NGG fee" renamed **"Payment processing fee — Charged by our payment
+  provider"** (shop, membership invoice page, receipt; provider-neutral, as more providers are coming), at the owner's request.
+
+Tests: PHP suite 7330/0 (baseline 7283) — 47 new `shop ledger/low stock/codes/pickup/refunds/unpaid/pre-order/
+table/exchange/order/lists/report/export/wiring` checks; `tests/shop.test.js` extended to refunds, the till,
+sessions, stock-take, codes and reports. HawkScan not run (no `HAWK_API_KEY` here).
+
+Not built (the plan's "do not build" list, and items outside §2): delivery zones, member price, bundles, VAT line.
+Unconfirmed with Paystack: whether bank-transfer/USSD payments refund automatically — a failed refund says so and
+staff pay it back another way.
+
+## 18 Nov 2026 — Photo quality gate; the Membership Agreement signed online
+
+Owner: "NGG registration and onboarding is flawed. Research. We do not take low quality images!", then "Go,
+build the photo gate … photos are also served by S3-compatible storage … add this MoU … parents must read and
+do a very short not-frustrating quiz … refine the MoU, make it standard and professional … merge it with the
+consent features … a copy would always be emailed … whatever clashes between the MoU and website, let the
+website win."
+
+- **Photo gate** (`domain/photo-quality.php`, `photoQa*` in components.jsx; `docs/PHOTO_QUALITY.md`). The apply
+  form used to warn about blur, measured on a 90 × 120 thumbnail, and enlarged a 320 px photo to 600 × 800. Now
+  every problem is a refusal, measured at full size, in the browser and again on the server wherever the photo
+  lives (inline, local store, S3-compatible bucket, Cloudinary). The PHP suite turns the gate off as a fixture
+  for the suites that post placeholder photos, and proves it in its own section. `tests/_photo.js` draws a
+  portrait-like test photo for the browser suites.
+- **Membership Agreement** (`domain/mou.php`, migration 239, `page-mou.jsx` in the signed-in bundle, Members →
+  Agreements in `cr-tab-registration.jsx`). The paper MoU rewritten in plain English (13 clauses; obvious
+  errors corrected; "Talent management" appeared twice and is once). Money is read from the fee settings and
+  frozen (`termsJson`); early termination follows the website's training-place write-down, with the handbook's
+  three months' notice and ₦30,000 inconvenience fee. The handbook's "₦300,000 per remaining year, inflation
+  adjusted" is NOT used: the website's training figure and basis win (owner's rule). Signatures are PNG data URLs
+  on the row; links are stored as hashes. `tests/mou-sign.test.js` (19 checks) and 25 PHP checks.
+- Migration numbering: a parallel session's shop management took 238 on the same branch; the MoU is 239.
+
+## 18 Nov 2026 — Receipts drawn on the server (PDF and PNG)
+
+Owner: "Make receipts downloadable as PDF and image with server drawing instead of browser."
+- `domain/receipt-draw.php`: ONE GD drawing of the frozen receipt (doc_data / doc_org_for — the same data as
+  doc_render_receipt) at 2× A4. The PNG is that drawing cropped to the receipt; the PDF is the same drawing on an
+  A4 page, written by a ~40-line PDF 1.4 writer (catalog, page, DCTDecode image, UTF-16 metadata, xref). No
+  library, no headless browser.
+- Font: Inter (OFL, the site's body font), in `api/_lib/fonts` (blocked from the web by api/.htaccess). The
+  vendored Liberation Sans had neither ₦ nor ẹ/ọ/ṣ. Text is NFC-normalised; a tone mark with no precomposed letter
+  (ọ̀) is placed over its letter, because GD does not shape text.
+- Routes: `document.php?t=…&as=pdf|png` and `receipt.php?t=…&as=pdf|png` (the email link). Buttons on the receipt
+  page, the payment page, the receipt email and Money → Membership payments.
+- Tests: 7 PHP checks; `tests/receipt-download.test.js` (7, through the routes).
+
+## 18 Nov 2026 — Low-end performance: three bundles, slim public CSS, lazy libraries
+
+Owner: "fix the NGG site constantly lagging … must work perfectly on low-end devices … too heavy … Research! How
+does Canva do? How do games do it?" Research and the numbers are in `docs/PERFORMANCE.md`.
+- A third bundle, `app-study` (Labs, tools, timetable, Learn, chess engine, lesson blocks): build.js STUDY,
+  app.jsx NGG_STUDY_ROUTES + nggNeedStudy; the signed-in bundle loads it too. bundle-split.test.js extended.
+- `tools/css-split.js`: public pages get the rules their sources use; the full styles-app.css is swapped in by
+  nggMoreCss() with the signed-in bundle. Phosphor CSS trimmed to the icons named in source.
+- TanStack Table and jsQR load on demand; the 1080 px logo is now 512 px (9.5 KB), `logo-1080.png` kept for print;
+  the service worker precaches the slim sheet; Lite mode adds content-visibility on sections.
+- Home page on an emulated low-end phone: 24.4 s → 16.4 s ready, 4.87 → 3.0 MB.
+
+## 2026-11-18 — Dead code removed, and kept out
+
+Owner: "Remove everything that is irrelevant", then "Please create a test for that".
+
+- `tools/dead-code.js` reads every shipped file's top-level declarations with the vendored Babel parser
+  and flags any name that appears nowhere else in the product (code, PHP, HTML, CSS, tests; docs do not
+  count). It also flags self-hosted font files that nothing names. `node tools/dead-code.js --prune`
+  removes what it finds, re-parsing each file before writing.
+- Removed: ~1,000 lines of retired Control Room panels in `page-admin.jsx` (AdminPhotos, AdminRequests,
+  AdminStaff, AdminApprovals, AdminBehaviour, AdminAttendanceDuty, AdminContact, AdminStatus,
+  AdminComments, AdminNewsletter, AdminEvents, CheckinDesks and their helpers), 22 smaller orphans in
+  other files, and 7 unused report fonts.
+- `tests/dead-code.test.js` (`npm run test:deadcode`, in `test:all`) fails the build when dead code or an
+  orphan font comes back.
+- Kept on purpose, because only a test still uses them: AdminAssessment, AdminTournaments,
+  idsCardsInRange, idsStock. Removing them means deleting their tests too, so that is the owner's call.
+
+## 2026-11-18 — NGG entry steps, the resumption day, follow-ups, the paper MoU
+
+Owner's paper card *NGG ENTRY STEPS* became the registration checklist's structure (docs/ENTRY-STEPS.md):
+
+- Items are grouped by step (`RCL_STEPS`: orientation, payment, documents, online, ID card). Migration 240 adds
+  `reg_checklist_items.step` and three default items: Orientation attended, File handed in, Latest school report card.
+- New automatic item **School timetable on the site** (member_timetables, lessons on ≥3 weekdays).
+- **Resumption = completion.** `reg_checklists.resumedOn` is written the day the last item is done, once; the family,
+  member and supervisor are told. Not the day the member was accepted.
+- **Follow-ups.** Family reminders on day 1/3/7 then weekly, phrased as what to bring and where; a follow-up log
+  (`reg_checklist_followups`) with a required next date; supervisor told when one falls due; centre staff told when a
+  registration stalls 14 days. List filter *Needs a follow-up*.
+- **The MoU is printed, signed in ink and brought to the centre.** `admin.mou.paper` records the checked copy and a
+  readable photograph of the signed page (≥1600 × 1000, read from the file); countersign is refused until then
+  (`paper_first`); the checklist item needs both. A paper-only family is supported (`signedVia = 'paper'`).
+  `NGGApi.uploadDocumentPhoto` keeps the photo at 2000px even without a cloud (the headshot fallback is 1000px).
+
+## 2026-11-19 — Personal timetable first ("My week"); the agreement as a standard document
+
+- Owner: "The timetable is also pretty complicated for kids … Personal timetable first!" New guided flow
+  `src/modules/timetable/tt-myweek.jsx` (STUDY bundle): school as one block, the child's own things by tapping,
+  their NGG sessions pre-ticked, a day-by-day check with overlaps in words. It writes the maker's own document
+  (member_timetables) and replaces only what it made (ids `mw…`) and the NGG sessions. `TimetableMakerPage` routes:
+  ?easy=1 → My week; ?full=1, links and a browser copy → the maker; a signed-in member with nothing saved → My week.
+  The first-visit check is read on the first render (the router rewrites /timetable/me before the maker mounts).
+  Tests: tests/timetable-myweek.test.js (`npm run test:myweek`, in test:all).
+- The registration item became **Personal timetable on the site**: school on ≥3 weekdays AND one thing of the
+  child's own (study/activity, not an NGG session) — `rcl_timetable_own`.
+- The Membership Agreement prints as a standard agreement (assets/report/mou.css; `mou_execution_html`).
+- Known, not caused here: six PHP checks (rulebook ×4, labs quick check, maths lab mini review) fail when the suite
+  runs after midnight Lagos time (UTC 23:00–24:00); they fail on the committed code too.
+
+## 2026-11-19 — WhatsApp replies that act (registration)
+
+Owner: "Make + Kapso for WhatsApp onboarding … people could also respond … instead of relying on humans". Built on
+the existing Kapso integration (domain/kapso.php), not through Make: the site already decides who to remind and when.
+- `kapso_send_buttons`: interactive reply buttons in the 24-hour window; outside it the optional `reply_template`
+  (quick replies carrying `rcl:<memberId>:sat|next|help`), else the plain template with "Reply 1, 2 or 3".
+- `rcl_wa_remind` sends each family reminder stage on WhatsApp too (claimed once per stage per number).
+- `rcl_wa_inbound` (called by `kapso_receive` before the inbox): dates → follow-up + next date; help → staff + helper;
+  photo → kept via `photo_store_put` and recorded as a `family_sent` submission; STOP/START → `whatsapp_optout`
+  (migration 241). A button for a child is honoured only from a number that child's reminder went to.
+- Tests: PHP "whatsapp ·" (13), each core rule proven to fail when removed.

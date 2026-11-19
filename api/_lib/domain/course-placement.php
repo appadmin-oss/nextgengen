@@ -27,11 +27,16 @@ const COURSES_STATUSES = ['all', 'unplaced', 'flagged', 'none', 'placed'];
 
 /** What a proposal depends on: the record's words and the course list. */
 function members_courses_inputs(array $m, string $catalogueSig): string {
-    return sha1(json_encode([(string)($m['track'] ?? ''), (string)($m['disciplines'] ?? ''), (string)($m['division'] ?? ''), $catalogueSig]));
+    /* 'p3': the inference rule itself (one course, not a division's worth — 7 Nov 2026; a division alone
+       proposes its major — 14 Nov 2026). A changed RULE must
+       recompute every stored proposal just as changed inputs do, or the old wall of courses stays stored. */
+    return sha1(json_encode(['p3', (string)($m['track'] ?? ''), (string)($m['disciplines'] ?? ''), (string)($m['division'] ?? ''), $catalogueSig]));
 }
 
 function members_courses_catalogue_sig(): string {
-    return sha1(json_encode([curriculum_courses(), function_exists('club_catalogue') ? club_catalogue() : []]));
+    // The majors too: changing a division's major re-proposes everyone who was placed on it by default.
+    return sha1(json_encode([curriculum_courses(), function_exists('club_catalogue') ? club_catalogue() : [],
+        function_exists('club_divisions') ? array_column(club_divisions(), 'major', 'name') : []]));
 }
 
 /**
@@ -55,7 +60,7 @@ function members_courses_backfill(): int {
             $ctx ??= curriculum_course_ctx();
             $p = curriculum_member_courses_infer($m, $ctx);
             db_update('members', ['coursesProposed' => $p['courses'] ? json_encode($p['courses'], JSON_UNESCAPED_UNICODE) : '',
-                'coursesFlag' => $p['flag'], 'coursesReason' => json_encode(['from' => $p['from'], 'dropped' => $p['dropped']], JSON_UNESCAPED_UNICODE),
+                'coursesFlag' => $p['flag'], 'coursesReason' => json_encode(['from' => $p['from'], 'dropped' => $p['dropped'], 'alternatives' => $p['alternatives'] ?? []], JSON_UNESCAPED_UNICODE),
                 'coursesInputs' => $in], ['memberId' => (string)$m['memberId']]);
             $n++;
         }
@@ -71,7 +76,7 @@ function member_courses_state(array $m): array {
     $prop = is_array($prop) ? array_values(array_map('strval', $prop)) : [];
     $why = json_decode((string)($m['coursesReason'] ?? ''), true) ?: [];
     return ['status' => $prop ? 'unplaced' : 'none', 'courses' => $prop, 'flag' => (string)($m['coursesFlag'] ?? ''),
-            'from' => (string)($why['from'] ?? ''), 'dropped' => (array)($why['dropped'] ?? []), 'confirmedAt' => ''];
+            'from' => (string)($why['from'] ?? ''), 'dropped' => (array)($why['dropped'] ?? []), 'alternatives' => (array)($why['alternatives'] ?? []), 'confirmedAt' => ''];
 }
 
 /** The WHERE for a placement status (names only; values never reach SQL text). */

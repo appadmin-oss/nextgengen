@@ -20,7 +20,6 @@ const CM3_REACT_LIST = Object.keys(CM3_REACT_NAMES);
 const CM3_TONES = ["#f2c98a", "#b9d5c0", "#c8d1f2", "#f2c4d3", "#d9c9f2", "#f2d8b5", "#bfe0e6", "#e6d7c3"];
 const CM3_KIND = { question: ["Question", "ph ph-question", "#fdf1d6", "#6b4b00"], work: ["Show my work", "ph ph-paint-brush-broad", "#e5efe7", "#1d4f2a"], poll: ["Poll", "ph ph-chart-bar", "#eceefb", "#2a3f9e"], announce: ["Announcement", "ph ph-megaphone", "#0b0b0c", "#ffffff"], homework: ["Homework", "ph ph-backpack", "#fbe7ee", "#7d2347"] };
 const CM3_FEED_FILTER = { all: "all", unread: "unread", mentions: "mentions", questions: "questions", saved: "bookmarks", mine: "mine" };
-const CM3_VIDEO_EXT = /\.(mp4|mov|webm|m4v)$/i;
 
 function cm3Tone(key) { let h = 0; for (const c of String(key || "")) h = (h * 31 + c.codePointAt(0)) >>> 0; return CM3_TONES[h % CM3_TONES.length]; }
 function cm3Ini(name) { return String(name || "?").split(/\s+/).filter(Boolean).map(x => x[0]).slice(0, 2).join("").toUpperCase() || "?"; }
@@ -1019,6 +1018,10 @@ class Cm3App extends React.Component {
       onFiles, fileChips, files, filesEmpty: !files.length,
       onPeople: s.view === "channel" && s.chTab === "people", people,
       onJournal: s.view === "journal", journalEl: s.view === "journal" && typeof CmJournalMine === "function" ? React.createElement(Cm3Journal, { auth: this.props.auth, onWrite: seed => this.setState({ writing: seed }) }) : null,
+      /* The quote of the week leads the home feed, as it did on the first Community (page-club.jsx):
+         the same saying the home page shows, as a card inside the feed. Not on a filter, a search, a
+         person's posts or a channel, where it would push what was asked for down the page. */
+      qowEl: s.view === "home" && s.filter === "all" && !s.q.trim() && !s.byAuthor && typeof QuoteOfWeek === "function" ? React.createElement(QuoteOfWeek, { variant: "community" }) : null,
       offlineEl: s.offline ? React.createElement("p", { className: "cm3x-offline", role: "status" }, "You’re offline. What you’re writing is kept as a draft on this device — press Post again once you’re back online.") : null,
       /* The design's one full-width panel slot: the Arcade, and the support
          desk (support-desk.jsx) — the same cases as My NGG, opened from here. */

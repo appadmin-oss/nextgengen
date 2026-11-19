@@ -32,7 +32,7 @@ const MP9_NEED = {
 const MP9_LOADERS = {
   today: () => NGGApi.member.today(), dash: () => NGGApi.member.dashboard(), mine: () => NGGApi.member.pod.read("mine"),
   chat: () => NGGApi.member.chat(), notifs: () => NGGApi.member.notifications(), state: () => NGGApi.member.stateGet(MP9_STATE_KEYS),
-  form: () => NGGApi.public.formation("member"), courage: () => NGGApi.member.courage(), mom: () => NGGApi.member.momentum(),
+  form: self => NGGApi.public.formation("member", { centre: (self && self.me && self.me().centre) || "" }), courage: () => NGGApi.member.courage(), mom: () => NGGApi.member.momentum(),
   jm: () => NGGApi.member.journalMine(0), res: () => NGGApi.member.results(""), comp: () => NGGApi.member.companion(),
   cur: () => NGGApi.member.curriculum(), tt: () => NGGApi.member.timetable(), opps: () => NGGApi.member.opps(),
   feed: () => NGGApi.member.community.feed("all", "latest", 0), rec: () => NGGApi.member.records(), circle: () => NGGApi.member.circle(),
@@ -250,7 +250,7 @@ class Mp9Portal extends React.Component {
         const row = b.parentElement; if (row && row.scrollWidth > row.clientWidth) row.scrollLeft = Math.max(0, b.offsetLeft - (row.clientWidth - b.offsetWidth) / 2); });
     }
     this.markArea();
-    if (this.state.pal && !ps.pal) setTimeout(() => this.palRef.current && this.palRef.current.focus(), 30);
+    if (this.state.pal && !ps.pal && this.palRef.current) this.palRef.current.focus();   // now, not on a timer: keys typed straight after opening were lost
     if (ps.sheet && !this.state.sheet && this._sheetFrom) { const el = this._sheetFrom; this._sheetFrom = null; setTimeout(() => { try { el.focus(); } catch (_) {} }, 0); }
   }
   componentWillUnmount() {
@@ -265,7 +265,7 @@ class Mp9Portal extends React.Component {
   load(key) {
     const fn = MP9_LOADERS[key]; if (!fn) return Promise.resolve(null);
     this.setState(s => ({ ld: { ...s.ld, [key]: true }, er: { ...s.er, [key]: null } }));
-    return fn().then(r => { this.setState(s => ({ d: { ...s.d, [key]: r }, ld: { ...s.ld, [key]: false } })); return r; })
+    return fn(this).then(r => { this.setState(s => ({ d: { ...s.d, [key]: r }, ld: { ...s.ld, [key]: false } })); return r; })
       .catch(e => { this.setState(s => ({ ld: { ...s.ld, [key]: false }, er: { ...s.er, [key]: e } })); return null; });
   }
   refresh(keys) { (keys || []).forEach(k => this.load(k)); }
@@ -287,7 +287,7 @@ class Mp9Portal extends React.Component {
   /* ── Navigation (the address is the screen) ───────────────────────────── */
   go(scr, extra) {
     // Study tools are their own app (/study), as the Anchor Journal is.
-    if (scr === "tools") { location.href = "/study"; return; }
+    if (scr === "tools") { location.href = "/study/labs"; return; }
     const st = this.state;
     const path = "/dashboard" + (scr === "today" ? "" : "/" + (MP9_PATHS[scr] || scr));
     try { if (location.pathname !== path) history.pushState({ page: "dashboard" }, "", path); } catch (_) {}
@@ -419,10 +419,34 @@ class Mp9Portal extends React.Component {
   /* ── Today ───────────────────────────────────────────────────────────── */
   todayVals(go) {
     const t = this.dd("today") || {}, a = t.account, mf = this.mentorInfo().first;
-    const todo = (t.todo || []).map((x, i) => {
+    /* What NGG has announced, at the top of Today until it is read — a quick message, a club
+       announcement or an official notice from the last fortnight — not only a dot on the bell.
+       Reading it here marks it read, so it leaves Today the way it leaves the bell. */
+    const s0 = this.state, since = Date.now() - 14 * 86400000;
+    const news = ((this.dd("notifs") || {}).notifications || [])
+      .filter(n => (n.kind === "announcement" || n.kind === "notice") && !(s0.goneIds || {})[n.notifId] && !mp9NotifRead(n, s0) && new Date(n.createdAt).getTime() >= since)
+      .slice(0, 3).map(n => {
+        const a = n.action || {}, notice = a.page === "notice" && a.ref;
+        return { icon: "ph ph-megaphone", t: n.title || "From NGG", s: String(n.body || "").slice(0, 140) + (String(n.body || "").length > 140 ? "…" : ""), cta: notice ? "Read the notice" : "Read",
+          go: () => {
+            this.setState(st => ({ readIds: { ...(st.readIds || {}), [n.notifId]: 1 } }));
+            NGGApi.member.markRead(n.notifId, false).catch(() => {});
+            if (notice) location.assign("/notice/" + encodeURIComponent(a.ref)); else this.setState({ notif: true });
+          }, tone: "info" };
+      });
+    const todo = news.concat(t.todo || []).map((x, i) => {
+      if (x.go) return { icon: x.icon, t: x.t, s: x.s, cta: x.cta, go: x.go, fg: MP9_TONE[x.tone] || "#4a4a50", bt: i ? "1px solid #f0efea" : "0" };
       const scr = MP9_ROUTE[x.route] || (/results/.test(x.route) ? "results" : /money|account/.test(x.route) ? "money" : /learn/.test(x.route) ? "learn" : /mentor/.test(x.route) ? "mentor" : "today");
       return { icon: "ph ph-" + x.icon, t: x.title, s: x.subtitle, cta: x.cta, go: go(scr), fg: MP9_TONE[x.tone] || "#4a4a50", bt: i ? "1px solid #f0efea" : "0" };
     });
+    // To do and the Getting-started list must not disagree: "all caught up" under a list of open
+    // steps is the contradiction children reported. With nothing else to do, the open steps are it.
+    if (!todo.length && typeof this.startSteps === "function" && !this.startCardShown()) {
+      const open = this.startSteps().filter(x => !x.done && !x.wait);
+      if (open.length) { const nx = open[0];
+        todo.push({ icon: "ph ph-flag-banner", t: "Finish getting started", s: open.length === 1 ? nx.t : nx.t + " · " + (open.length - 1) + " more after that", cta: nx.cta,
+          go: nx.href ? () => { location.href = nx.href; } : nx.go, fg: "#1d6b30", bt: "0" }); }
+    }
     const ck = t.checkin || {};
     const stage = this.state.wbStage || (ck.done ? "done" : "ask");
     const moodsDef = [["good", "Good", "ph ph-smiley", "#1d6b30"], ["okay", "Okay", "ph ph-smiley-meh", "#4a4a50"], ["low", "Struggling", "ph ph-smiley-sad", "#7a5600"], ["help", "I need help", "ph ph-hand", "#b0361c"]];
@@ -446,6 +470,7 @@ class Mp9Portal extends React.Component {
     }) : [];
     return {
       todo, todoN: todo.length ? todo.length + (todo.length === 1 ? " thing" : " things") + " to do" : "", hasTodo: todo.length > 0, noTodo: todo.length === 0,
+      noTodoT: this.startCardShown && this.startCardShown() ? "Nothing else set for you this week. Finish getting started above." : "You’re all caught up for this week.",
       moods, wbAsk: stage === "ask", wbFollow: stage === "follow", wbDone: stage === "done", wbDoneText: doneText,
       wbYes: () => { this.setState({ wbStage: "done", wbHelp: true }); save("Need help"); }, wbNo: () => this.setState({ wbStage: "done", wbHelp: false }),
       wbReset: () => this.setState({ wbStage: "ask", mood: null }),
@@ -461,11 +486,14 @@ class Mp9Portal extends React.Component {
   }
   accVals() {
     const t = this.dd("today") || {}, a = t.account;
-    if (!a) return { balance: mp9Naira(0), owes: false, clear: true, acc: { balFg: "#1d6b30", pillBg: "#e9f6ec", pill: "Nothing to pay", pillIcon: "ph-fill ph-check-circle",
+    if (!a) return { balance: mp9Naira(0), owes: false, clear: true, todayAcc: false, acc: { balFg: "#1d6b30", pillBg: "#e9f6ec", pill: "Nothing to pay", pillIcon: "ph-fill ph-check-circle",
       stats: [{ k: "Account", v: "Nothing charged", s: "Your centre hasn’t set dues", fg: "#0b0b0c" }, { k: "Training fee", v: "Covered", s: "Covered while you serve", fg: "#0b0b0c" }],
       covered: "NGG covers your training place while you serve. You only pay monthly dues and any fines — unless you leave before your MOU is complete, when the rest of the training fee is yours to pay." } };
     const owes = a.payable > 0;
-    return { balance: mp9Naira(a.payable), owes, clear: !owes, acc: {
+    // A child's Today is not a statement. The account card appears there only when something is
+    // actually owed (dues, fines or a training fee); otherwise it lives under Money, one tap away.
+    const todayAcc = owes || a.trainingOwed > 0 || a.fines > 0;
+    return { balance: mp9Naira(a.payable), owes, clear: !owes, todayAcc, acc: {
       balFg: owes ? "#b0361c" : "#1d6b30", pillBg: owes ? "#fdeeea" : "#e9f6ec", pill: owes ? (a.next ? "Due " + mp9Date(a.next.on, { weekday: "short", day: "numeric", month: "short" }) : "To pay now") : "All paid up", pillIcon: owes ? "ph-fill ph-clock" : "ph-fill ph-check-circle",
       stats: [
         a.trainingOwed > 0
@@ -507,8 +535,6 @@ class Mp9Portal extends React.Component {
       support: ((this.dd("chat") || {}).supporting || []).map(x => ({ name: x.name, focus: x.focus, until: x.until ? " · until " + mp9Date(x.until, { day: "numeric", month: "short" }) : "" })),
       hasSupport: ((this.dd("chat") || {}).supporting || []).length > 0,
       notChat: tab !== "chat", openCls: quiet ? "is-closed" : "is-open",
-      sideLinks: [["sess", "Prepare for Saturday", "ph ph-calendar-check", tsent ? 0 : 1], ["steps", "Next steps", "ph ph-list-checks", left], ["fb", "How it’s going", "ph ph-heart", mine.relAsked && !mine.relDone ? 1 : 0]]
-        .map(([k, l, icon, n]) => ({ l, icon, n: String(n), hasN: n > 0, go: () => set({ mvTab: k }) })),
       tChat: tab === "chat", tSess: tab === "sess", tSteps: tab === "steps", tFb: tab === "fb",
       replyT: M.has ? mf + " usually replies within a day" : "Your centre will match you with a mentor", openT: quiet ? "Closed · opens 8am" : "Open until 8pm", openBg: quiet ? "#f4f4f2" : "#e9f6ec", openFg: quiet ? "#6b6b72" : "#1d6b30",
       cd: sat ? (ms <= 0 ? "today" : "in " + (dd > 0 ? dd + (dd === 1 ? " day " : " days ") : "") + hh + (hh === 1 ? " hour" : " hours")) : "", hasCd: !!sat, prepL: tsent ? "Prepared" : "Prepare", goPrep: () => set({ mvTab: "sess" }),
@@ -854,7 +880,7 @@ class Mp9Portal extends React.Component {
     const dayL = ms => new Date(ms).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
     const capA = st.absenceLimit || 3, capL = st.latenessCap || 3;
     const T = {
-      warned: { tag: "WARNING", icon: "ph-fill ph-warning", bg: "#fdf6e3", bd: "#f1e3b8", fg: "#5c4100", title: "One more absence puts you on the Dormant Track", body: (st.reason || "You missed a Saturday without telling us.") + " Be at the centre by " + (st.lateRedline || "08:30") + " this Saturday, or tell us before Friday 6pm if you can’t come.", cdL: "Next check-in closes in", cd: fmt(nextSat - now), cdS: dayL(nextSat) + ", " + (st.lateRedline || "08:30"), lv: 1 },
+      warned: { tag: "WARNING", icon: "ph-fill ph-warning", bg: "#fdf6e3", bd: "#f1e3b8", fg: "#5c4100", title: "One more absence puts you on the Dormant Track", body: (st.reason || "You missed a Saturday without telling us.") + " Be at the centre by " + (st.lateRedline || "08:30") + " this Saturday, or tell us at least 24 hours before if you can’t come.", cdL: "Next check-in closes in", cd: fmt(nextSat - now), cdS: dayL(nextSat) + ", " + (st.lateRedline || "08:30"), lv: 1 },
       dormant: { tag: "DORMANT TRACK", icon: "ph-fill ph-pause-circle", bg: "#fff1e6", bd: "#f7cfae", fg: "#7a3200", title: "You’re on the Dormant Track", body: (st.reason || "Absences this term.") + " Awards and leadership roles are paused. Come on time for the next Saturdays to clear it.", cdL: "Next Saturday starts in", cd: fmt(nextSat - now), cdS: dayL(nextSat), lv: 2 },
       suspended: { tag: "SUSPENDED", icon: "ph-fill ph-prohibit", bg: "#fdeeea", bd: "#f3cfc5", fg: "#7a2410", title: "Suspended", body: (st.reason || "After repeated late arrivals.") + " You can’t check in or join sessions until the suspension ends. Finish the steps below so you’re ready to come straight back.", cdL: "Suspension ends in", cd: fmt(until - now, true), cdS: dayL(until), lv: 2, role: "alert" },
       evicted: { tag: "PLACE WITHDRAWN", icon: "ph-fill ph-x-circle", bg: "#0b0b0c", bd: "#2b2b30", fg: "#ffffff", title: "Your place was withdrawn", body: (st.reason || "After repeated absences.") + " You can ask the Governing Council to reinstate you. Your mentor and family have been told, and your records are kept.", cdL: "Review request open until", cd: st.until ? mp9Date(st.until, { day: "numeric", month: "long" }) : "–", cdS: "Then the place is offered to the waiting list", lv: 3, role: "alert" },
@@ -873,7 +899,7 @@ class Mp9Portal extends React.Component {
       stepsH: ev ? "To ask for reinstatement" : susp ? "To come back on time" : "To clear this",
       steps: (ev ? [["ph ph-file-text", "Write to the Governing Council", "Say what happened and what will change. Your mentor can help.", "Write the letter", raise("appeal", "Reinstatement")], ["ph ph-users", "Family meeting", "The coordinator will call your parents to book it.", "", null]]
         : susp ? [].concat(st.finesOwed ? [["ph-fill ph-warning-circle", "Pay the " + mp9Naira(st.finesOwed) + " fine", "Fines are paid by your parent or guardian. Think it’s wrong? You can appeal it.", "Ask my parent to pay", go("money")]] : []).concat([["ph ph-handshake", "Talk to your mentor", "Make a plan to arrive on time", "Message", go("mentor")], ["ph ph-alarm", "Set a Saturday alarm", "We also send a reminder Friday evening and Saturday morning", "", null]])
-        : [["ph ph-map-pin", "Be at the centre by " + (st.lateRedline || "08:30") + " Saturday", "Reminders go out Friday evening and Saturday morning", "", null], ["ph ph-calendar-x", "Can’t come? Tell us before Friday 6pm", "An excused absence doesn’t count", "Tell us", raise("leave", "")], ["ph ph-handshake", "Talk to your mentor", "If something is making Saturdays hard, they can help", "Message", go("mentor")]])
+        : [["ph ph-map-pin", "Be at the centre by " + (st.lateRedline || "08:30") + " Saturday", "Reminders go out Friday evening and Saturday morning", "", null], ["ph ph-calendar-x", "Can’t come? Tell us at least 24 hours before", "Later than that is only approved for an emergency", "Tell us", raise("leave", "")], ["ph ph-handshake", "Talk to your mentor", "If something is making Saturdays hard, they can help", "Message", go("mentor")]])
         .map(([icon, t2, s2, goL, fn]) => ({ icon, t: t2, s: s2, goL, go: fn, hasGo: !!fn, fg: icon.includes("warning") ? "#b0361c" : "#4a4a50" })),
       appeal: raise("appeal", "Review my standing") };
   }

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="ngg-build" content="3469c63c33"/>
+<meta name="ngg-build" content="422849edb5"/>
 <meta charset="utf-8"/>
 <!-- Resolve every relative asset from the site root so deep clean-URL paths
      (e.g. /q/<token>, /s/<handle>) still load app.jsx / styles.css correctly. -->
@@ -73,7 +73,7 @@
      did not whitelist either pays for them or waits for a timeout.
      See docs/ZERO-RATING.md for the inventory an operator is handed. -->
 <!-- Phosphor icons (self-hosted, CSP-safe, offline) — used by the transparency status boards. -->
-<link rel="stylesheet" href="/vendor/phosphor/phosphor.css"/>
+<link rel="stylesheet" href="/phosphor-used.b694d33560.css"/>
 <!-- Self-hosted Space Grotesk / Space Mono (+ Bricolage) for the Anchor Circle portal — CSP-safe, works offline. -->
 <link rel="stylesheet" href="/assets/fonts/fonts.css"/>
 
@@ -81,8 +81,8 @@
 <link rel="preload" as="image" href="assets/logo.png"/>
 <link rel="preload" as="font" type="font/woff2" href="/assets/fonts/sora-latin-variable.woff2" crossorigin/>
 
-<link rel="stylesheet" href="styles.2616d251cf.css"/>
-<link rel="stylesheet" href="styles-app.67d26467f9.css"/>
+<link rel="stylesheet" href="styles.f4fb558cb8.css"/>
+<link rel="stylesheet" href="styles-app-public.74238a9606.css" id="ngg-app-css"/>
 
 <style>
   /* Pre-React loading shim — avoids blank-flash on first paint over slow shared hosting */
@@ -111,6 +111,9 @@
     r.setAttribute("data-motion", a.motion ? "reduce" : "auto");
     r.setAttribute("data-font", a.readable ? "readable" : "default");
     r.setAttribute("data-links", a.underline ? "underline" : "default");
+    /* Lite: chosen (true/false), or automatic on a low-end phone (components.jsx nggLiteAuto — keep in step). */
+    var n = navigator, c = n.connection || {}, auto = (n.deviceMemory && n.deviceMemory <= 2) || (n.hardwareConcurrency && n.hardwareConcurrency <= 2) || !!c.saveData || /(^|-)(2g|3g)$/.test(c.effectiveType || "");
+    r.setAttribute("data-lite", (a.lite === true || (a.lite == null && auto)) ? "on" : "off");
   } catch (e) {}
 </script>
 </head>
@@ -125,17 +128,15 @@
 
 <script src="vendor/react.production.min.js"></script>
 <script src="vendor/react-dom.production.min.js"></script>
-<link rel="preload" as="script" href="app.eca06c6ba5.min.js"/>
+<link rel="preload" as="script" href="app.07965b56d5.min.js"/>
+<meta name="ngg-more" content="/app-more.7ae15d545e.min.js"/>
+<meta name="ngg-more-css" content="/styles-app.da53bffdf1.css"/>
+<meta name="ngg-study" content="/app-study.d0f910e056.min.js"/>
 <script defer src="data.ec97c65376.js"></script>
-<script defer src="photos.5db77ca07f.js"></script>
-<script defer src="api-client.5cb2152073.js"></script>
+<script defer src="photos.36b0b4ea72.js"></script>
+<script defer src="api-client.b14a9e4595.js"></script>
 <script defer src="outbox.042a8c9122.js"></script>
-<script defer src="app.eca06c6ba5.min.js"></script>
-<script src="vendor/tanstack-table.min.js"></script>
-<!-- QR decoder for the camera-first check-in kiosk (window.jsQR). Plain vendor
-     script, so the prod build keeps it (only Babel + JSX tags are stripped). -->
-<script src="vendor/jsQR.min.js" defer></script>
-
+<script defer src="app.07965b56d5.min.js"></script>
 <!-- The Learn app (/learn): the curriculum as its own place, not a sheet. -->
 <script>
   // Fade out boot screen after React mounts

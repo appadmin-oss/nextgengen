@@ -263,6 +263,8 @@ function member_study_drill_start(array $p): array {
     if (!in_array($exam, ['waec', 'neco', 'utme', 'jamb', 'school', ''], true)) $exam = '';
     if ($exam === 'jamb') $exam = 'utme';
 
+    // What a child types as a "topic" can be a disclosure; it is answered with people, never sent to a model.
+    if ($sg = safeguard_check($topic, db_row('SELECT * FROM members WHERE memberId = ?', [$mid]), 'the practice drill')) return ['ok' => true, 'safeguarding' => true, 'told' => $sg['told'], 'message' => $sg['reply'], 'questions' => []];
     [$qs, $source] = drill_questions($subject, $topic, $level, $exam);
     if (!$qs) return ['ok' => false, 'error' => 'no_questions',
         'message' => 'Nobody can write you questions right now. Your flashcards for this subject still work, and your instructor can set you work.'];

@@ -509,7 +509,10 @@ Managed by `api/_lib/domain/curriculum.php`.
 `checkId`, `unitId`, `kind` (`mcq, short, task`), `prompt`, `options` (JSON array), `answer` (MCQ: option index), `rubric`, `points`, `position`, `source` (`manual`/`ai`).
 
 ### `curriculum_progress`
-One row per (`unitId`, `memberId`), UNIQUE. `status` `started` \| `attempted` (below the pass mark) \| `submitted` (written answers awaiting a marker) \| `completed`; `unitVersion`, `score`, `maxScore`, `bestPct`, `attempts`, `answers` / `marks` (JSON keyed by checkId), `feedback`, `pending` (written answers awaiting a marker), `markedBy`, `startedAt`, `completedAt`. Moved on a member merge (`MOVE_UNIQUE`).
+One row per (`unitId`, `memberId`), UNIQUE. `status` `started` \| `attempted` (below the pass mark) \| `submitted` (written answers awaiting a marker) \| `completed`; `unitVersion`, `score`, `maxScore`, `bestPct`, `attempts`, `answers` / `marks` (JSON keyed by checkId), `feedback`, `pending` (written answers awaiting a marker), `markedBy`, `startedAt`, `completedAt`, `reviewedAt` (migration 226 — when the questions were last answered from memory, two or more days after the lesson was opened; empty until then — `curriculum_recalled()`). Moved on a member merge (`MOVE_UNIQUE`).
+
+## `conduct_rules` — written rules (migration 225 columns)
+`ruleId`, `reason` (a rulebook kind it prices, or empty for a rule of its own), `name`, `whenText`, `amount` (₦), `capTerm` (₦ a term, 0 = none), `active`, and since 225: `jumps` (frog jumps per breach, 0–200), `escalateAfter` (every Nth breach in a term, 0 = never), `escalateTo` (`''` \| `suspension` \| `review`), `suspendDays` (1–365, default 7), `reentryFee` (₦ to return from that suspension). A breach is an `infractions` row with `kind = 'rule:<ruleId>'`; its sanctions use the rule tier ranges in `domain/policy.php`.
 
 ## `member_assessments` (migration 127)
 The companion's weekly check-in (`api/_lib/domain/companion.php`). One row per (`memberId`, `period`) — `period` is the week's Monday. `rating` `on_track` | `watch` | `at_risk` (rules); `reasons`, `metrics`, `strengths`, `focus` are JSON; `summary` text; `source` `ai` | `rules`; `mailedAt`. Moved on a member merge (`MOVE_UNIQUE`).
@@ -630,3 +633,10 @@ Official notices and announcements (`domain/notices.php`).
   `readAt`, `ackAt`, `ackName`. Unique on (`noticeId`, `readerKey`).
 - `notice_mail` — the email queue: one row per address per notice, `status`
   `queued` | `sent` | `failed` (after 3 attempts) | `cancelled` (withdrawn).
+
+## `documents` — certificates' source keys (migration 224 table)
+One row per issued document (`domain/documents.php`); `sourceKey` is UNIQUE and makes issuing idempotent. Certificates (`kind = 'certificate'`):
+- `ml:<memberId>:<level>:pass|distinction` — the retired Math Lab ladder's level certificates (`NGG-ML-LL-YYYY-#####`), kept for verification.
+- `mlbs:<memberId>:<stage>` — a Maths Lab **stage** certificate (`NGG-MLS-YYYY-#####`); `data.program = 'mathslab'`, `data.scope = 'stage'`, `stage`, `stageTitle`, `strand`, `topics`, `bossPct` (null when not issued by the boss session), `course`.
+- `mlb:<memberId>:<courseId>` — a Maths Lab **course** certificate (`NGG-MLC-YYYY-#####`); `data.program = 'mathslab'`, `courseId`, `course`, `promise`, `stages`, `topics`, `hours`.
+Serial series in `doc_serials`: `ML-YYYY`, `MLS-YYYY`, `MLC-YYYY`.

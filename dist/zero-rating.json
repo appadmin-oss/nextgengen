@@ -1,15 +1,15 @@
 {
-  "measuredAt": "2026-10-27",
+  "measuredAt": "2026-11-11",
   "hostsReached": [],
-  "firstVisitBytes": 2450810,
-  "repeatVisitBytes": 6207,
-  "requests": 32,
+  "firstVisitBytes": 1541897,
+  "repeatVisitBytes": 6998,
+  "requests": 33,
   "byKind": {
-    "document": 3921,
-    "script": 1650501,
-    "style": 380118,
+    "document": 4160,
+    "script": 814091,
+    "style": 306585,
     "image": 97215,
     "font": 312848,
-    "other": 6207
+    "other": 6998
   }
 }

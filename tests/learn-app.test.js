@@ -146,7 +146,9 @@ function cleanup() {
     chk('…and says how far through they are', /0 of 2 lessons done/.test(await P.innerText('.lrn-prog')));
     const wk = await P.innerText('.lrn-main');
     chk('the week greets them by name and says what to start with', /Ada/.test(wk) && /Start with Finding middle C/.test(wk));
-    chk('…with their next class beside it: their course, Saturday at 11, the room — never another course', /Your (next class|class is on now)/i.test(wk) && /Piano/.test(await P.innerText('.lrn-next')) && /11am/.test(await P.innerText('.lrn-next')) && /Music room/.test(await P.innerText('.lrn-next')) && !/Coding/.test(await P.innerText('.lrn-next')));
+    chk('…with their next class beside it: their course, Saturday at 11, the room — never another course', /Your (next class|class is on now)/i.test(wk) && /Piano/.test(await P.innerText('.lrn-next')) /* During the class itself (a Saturday between 11 and 12:30) the card says "on now, until 12:30pm" instead
+       of the start time — both are right; the suite must pass whatever hour it runs at. */
+      && /11am|On now, until 12:30pm/i.test(await P.innerText('.lrn-next')) && /Music room/.test(await P.innerText('.lrn-next')) && !/Coding/.test(await P.innerText('.lrn-next')));
     chk('…and each course\'s standing', /Piano/.test(await P.innerText('.lrn-bars')) && /0%/.test(await P.innerText('.lrn-bars')));
 
     await P.click('.lrn-rail-item:has-text("Timetable")');
@@ -247,6 +249,10 @@ function cleanup() {
     chk('the next lesson is one press away', /The C major scale/.test(await K.innerText('.lrn-pager-a.is-next')));
     await K.click('.lrn-pager-a.is-next');
     await K.waitForFunction(() => location.pathname === '/learn/lesson/LRN-U2');
+    /* The address changes before the next lesson's data arrives; wait for the lesson itself rather than
+       reading the old title in the gap (a fixed read raced the round trip once the lesson also asks for
+       its session exam). */
+    await K.waitForFunction(() => { const t = document.querySelector('.lrn-lesson-title'); return t && /The C major scale/.test(t.innerText); }, null, { timeout: 15000 }).catch(() => {});
     chk('…and moving on changes the address, so Back still works', /The C major scale/.test(await K.innerText('.lrn-lesson-title')));
 
     await K.click('.lrn-rail-item:has-text("Notes")');
@@ -293,9 +299,16 @@ function cleanup() {
     await M.waitForSelector('.lrn-week', { timeout: 60000 });
     const bar = await M.evaluate(() => { const r = document.querySelector('.lrn-rail').getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(r.height), w: Math.round(r.width) }; });
     chk('the phone gets a bottom bar, not a rail squeezed sideways', bar.w > 300 && bar.top > 400);
-    const tap = await M.evaluate(() => Math.min.apply(null, [...document.querySelectorAll('.lrn-rail-item')].map(e => Math.round(e.getBoundingClientRect().height))));
+    // The targets SHOWN on the phone: the bar's four places and "More" (the rest open from More, LearnNav).
+    const tap = await M.evaluate(() => Math.min.apply(null, [...document.querySelectorAll('.lrn-rail-item')].filter(e => e.offsetParent !== null).map(e => Math.round(e.getBoundingClientRect().height))));
+    chk('the phone bar is four places and More — nothing squeezed or clipped', await M.evaluate(() => [...document.querySelectorAll('.lrn-rail-item')].filter(e => e.offsetParent !== null).length) === 5);
     chk('…and every target is a real one (' + tap + 'px)', tap >= 44);
     chk('nothing scrolls sideways', await M.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    await M.click('.lrn-rail-more');
+    const moreTxt = await M.innerText('#lrn-more').catch(() => '');
+    chk('…and "More" opens the rest: Timetable, School and Notes', /Timetable/.test(moreTxt) && /School/.test(moreTxt) && /Notes/.test(moreTxt));
+    await M.keyboard.press('Escape');
+    chk('…which Escape closes, with focus back on More', await M.locator('#lrn-more').count() === 0 && await M.evaluate(() => document.activeElement && document.activeElement.classList.contains('lrn-rail-more')));
     await M.context().close();
 
     /* ── Studying for school ───────────────────────────────────────────
@@ -314,6 +327,7 @@ function cleanup() {
       && /0 of 3 this week/i.test(await S.innerText('.lrn-plan')));
     await S.click('.lrn-plan');
     await S.waitForFunction(() => location.pathname === '/learn/plan/GI-LRN');
+    await S.waitForSelector('.lrn-plan-go', { timeout: 15000 }).catch(() => {});   // the subject's data, not the gap before it
     chk('a subject has its own address too — the drill is not an overlay either',
       !!(await S.$('.lrn-plan-go')) && /Past questions/.test(await S.innerText('.lrn-main')));
     /* No AI is configured in this suite, so starting one must REFUSE in
@@ -379,6 +393,76 @@ function cleanup() {
     await W.context().close();
     await S.context().close();
     await P.context().close();
+
+    /* The session exam (src/modules/learn/lrn-exam.jsx; owner, 7 Nov 2026: "turn on the per session exam
+       by default … a standard honourable exam"). Last week's lesson, opened a week ago and never recalled,
+       is examined before this week's: rules first, an honour pledge, one question at a time, a report. */
+    console.log('the session exam');
+    php(`db_exec("DELETE FROM curriculum_sittings WHERE memberId = 'NGG-LRN-M1'");`
+      + `db_exec("DELETE FROM curriculum_progress WHERE memberId = 'NGG-LRN-M1' AND unitId = 'LRN-U1'");`
+      + `db_insert('curriculum_progress', ['unitId'=>'LRN-U1','memberId'=>'NGG-LRN-M1','status'=>'attempted','startedAt'=>gmdate('Y-m-d\\TH:i:s\\Z', time() - 7 * 86400),'updatedAt'=>now_iso()]);`, ['bootstrap']);
+    const X = await open('/learn/lesson/LRN-U2');
+    await X.waitForSelector('.lx-intro', { timeout: 60000 }).catch(() => {});
+    const intro = await X.innerText('.lx-intro').catch(() => '');
+    chk('exam: the lesson opens on the session exam, stating the questions, the time, the pass mark and the bands first',
+      /Questions/.test(intro) && /Time/.test(intro) && /Pass mark/.test(intro) && /Distinction/.test(intro) && await X.locator('.lrn-sec-h:has-text("The lesson")').count() === 0);
+    chk('exam: it cannot start until the honour pledge is made', await X.locator('.lx-intro .lrn-btn:not(.is-ghost)').isDisabled());
+    await X.locator('.lx-pledge input').check();
+    await X.locator('.lx-intro .lrn-btn:not(.is-ghost)').click();
+    await X.waitForSelector('.lx-sit', { timeout: 15000 });
+    chk('exam: the paper is locked — the rules say so, and the candidate\'s name is watermarked across it',
+      /Pasting into answers and copying the questions are switched off/.test(intro) && /NGG-LRN-M1|Learn/.test(await X.innerText('.lx-mark').catch(() => '')) && await X.locator('.lx-locked').count() === 1);
+    chk('exam: one question at a time, with the clock and "how sure are you?"',
+      await X.locator('.lx-q').count() === 1 && /\d+:\d\d/.test(await X.innerText('.lx-clock')) && await X.locator('.lx-conf .lx-chip').count() === 3);
+    await X.locator('.lx-opt', { hasText: /^\s*[A-H]?\s*7\s*$/ }).first().click();
+    await X.locator('.lx-chip', { hasText: 'Sure' }).click();
+    await X.locator('.lx-nav .lrn-btn:not(.is-ghost)').click();
+    await X.waitForSelector('.lx-review', { timeout: 10000 });
+    chk('exam: a review screen before handing in says what is answered', /1 of 1 answered/.test(await X.innerText('.lx-review')));
+    await X.locator('.lx-review .lrn-btn:not(.is-ghost)').click();
+    await X.waitForSelector('.lx-result', { timeout: 60000 });
+    const rep = await X.innerText('.lx-result');
+    chk('exam: the report gives the band, the score and that it was sat on their honour', /Outstanding/.test(rep) && /100%/.test(rep) && /sat on your honour/.test(rep));
+    chk('exam: …and the sitting is recorded, marked, with the pledge',
+      php(`$s = db_row("SELECT status, integrity FROM curriculum_sittings WHERE memberId = 'NGG-LRN-M1' ORDER BY id DESC LIMIT 1"); echo $s['status'] . '|' . (json_decode($s['integrity'], true)['pledgedAt'] ?? '' ? 'pledged' : '');`, ['bootstrap']) === 'marked|pledged');
+    await X.locator('.lx-result .lrn-btn', { hasText: /Start today/ }).click();
+    await X.waitForSelector('.lrn-sec-h:has-text("The lesson")', { timeout: 10000 }).catch(() => {});
+    chk('exam: then today\'s lesson opens', await X.locator('.lrn-sec-h:has-text("The lesson")').count() === 1);
+    await X.screenshot({ path: require('path').join(require('os').tmpdir(), 'learn-exam-done.png'), fullPage: true }).catch(() => {});
+    await X.context().close();
+
+    console.log('the lesson in steps');
+    {
+      /* A real lesson from the shipped Foundation course (the seed file, not text written to suit the test).
+         Added HERE, after the home screen's counts were checked, so "0 of 2 lessons" still means the Piano pair. */
+      php(`$L = array_values(array_filter(curriculum_seed_files()['curriculum-tech-foundations-2026']['lessons'], fn($x) => $x['course'] === 'Artificial Intelligence'))[1];`
+        + `db_insert('curriculum_units', ['unitId'=>'LRN-U9','course'=>'','level'=>'Year 1 · Foundation','week'=>1,'position'=>9,'title'=>$L['title'],'summary'=>$L['summary'],'status'=>'published','passMark'=>50,'version'=>1,'objectives'=>json_encode($L['objectives']),'body'=>$L['body'],'durationMins'=>45,'createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`, ['bootstrap']);
+      const S = await open('/learn/lesson/LRN-U9', 390);
+      await S.waitForSelector('.lrn-lesson', { timeout: 60000 });
+      const skip9 = await S.$('.lrn-lesson button:has-text("Skip")'); if (skip9) await skip9.click();
+      await S.waitForSelector('.lrn-step-h', { timeout: 30000 });
+      const total = Number(await S.getAttribute('.lrn-step-progress', 'aria-valuemax'));
+      const heads = [];
+      for (let k = 0; k < total; k++) {
+        heads.push(await S.innerText('.lrn-step-h'));
+        if (k < total - 1) { await S.click('.lrn-step-nav .lrn-btn:not(.is-ghost)'); await S.waitForFunction(n => document.querySelector('.lrn-step-progress').getAttribute('aria-valuenow') === String(n), k + 2); }
+      }
+      const wordsAt = heads.findIndex(h => /Words you’ll meet/.test(h)), understandAt = heads.findIndex(h => /^Understand it/.test(h));
+      chk('lesson in steps: a long Foundation lesson is shown one step at a time, with progress (' + total + ' steps)', total >= 5 && /Step \d+ of \d+/.test(await S.innerText('.lrn-step-count')));
+      chk('lesson in steps: the key words come BEFORE the explanation that uses them', wordsAt >= 0 && understandAt > wordsAt, heads.join(' | '));
+      chk('lesson in steps: the long explanation is cut into pieces, and further reading is last and optional',
+        heads.filter(h => /^Understand it \(\d of \d\)/.test(h)).length >= 2 && /Going further \(optional\)/.test(heads[heads.length - 1]));
+      chk('lesson in steps: Next moves focus to the new step\'s heading (keyboard and screen readers)', await S.evaluate(() => !!document.activeElement && document.activeElement.classList.contains('lrn-step-h')));
+      chk('lesson in steps: the last step says the lesson is read and the questions are below', /read the whole lesson/i.test(await S.innerText('.lrn-step-done')));
+      await S.click('.lrn-step-whole');
+      chk('lesson in steps: "Whole lesson on one page" shows it all at once', (await S.$$('.lrn-step-h')).length === 0 && /Key words/.test(await S.innerText('.lrn-lesson')) && /Understand it/.test(await S.innerText('.lrn-lesson')));
+      await S.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(S);
+      const skip9b = await S.$('.lrn-lesson button:has-text("Skip")'); if (skip9b) await skip9b.click();
+      await S.waitForSelector('.lrn-step-whole', { timeout: 30000 });
+      chk('lesson in steps: …and that choice is remembered', await S.getAttribute('.lrn-step-whole', 'aria-pressed') === 'true');
+      await S.screenshot({ path: require('path').join(require('os').tmpdir(), 'learn-steps.png'), fullPage: true }).catch(() => {});
+      await S.context().close();
+    }
 
     chk('no page errors anywhere in the app', errs.length === 0);
     if (errs.length) console.error(errs.slice(0, 5).join('\n'));

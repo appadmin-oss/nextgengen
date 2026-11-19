@@ -911,7 +911,8 @@ async function openPage(browser, width, height, media) {
       ok('private is preselected — the default nobody would have chosen otherwise',
          await page.evaluate(() => {
            const on = document.querySelector('.cm-jw-vis-row.is-on');
-           return !!on && /Only me/.test(on.innerText) && /Nobody is notified/.test(on.innerText);
+           // "My journal" since mentors read the child's whole journal (e6e127d3): still nobody is notified.
+           return !!on && /My journal/.test(on.innerText) && /nobody is notified/i.test(on.innerText);
          }));
       ok('…and it is three radios, because "who can read this" has three answers',
          await page.evaluate(() =>

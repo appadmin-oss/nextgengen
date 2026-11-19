@@ -39,6 +39,9 @@ Consequences you must respect:
   order because of hoisting.
 - Vendors (Fabric, jsPDF, TanStack Table, Babel) live in `vendor/` and are
   loaded on demand by `loadVendor`. Do not add an npm runtime dependency.
+- **Three production bundles** (docs/PERFORMANCE.md): public (`app`), `app-study` (build.js `STUDY`; routes in
+  `NGG_STUDY_ROUTES`) and `app-more` (build.js `MORE`; `NGG_MORE_ROUTES`). A new heavy, single-purpose area goes
+  in one of the lazy ones, never the public bundle; `tests/bundle-split.test.js` holds the line.
 - **First paint in dev is slow** — Babel compiles ~21 files. Browser tests
   need a generous boot budget; use `waitForBoot` from `tests/_serve.js`
   (60s), never a fixed sleep.
@@ -117,7 +120,7 @@ SQLite, **auto-migrated at runtime** from a contiguous ladder in
 Adding a migration is three edits, all required:
 
 1. Append `N => "…"` to `$migrations` — contiguous, never renumbered.
-2. Bump `NGG_SCHEMA_TARGET` to `N` (currently **217**).
+2. Bump `NGG_SCHEMA_TARGET` to `N` (currently **241**).
 3. Mirror the DDL into `db/schema-mysql.sql`, ending with
    `INSERT INTO schema_version (version) VALUES (N) ON DUPLICATE KEY UPDATE version = version;`
 
@@ -616,5 +619,7 @@ one reintroduces the failure.
 - `docs/PRINT-SPEC.md` — what the studios hand a print shop.
 - `docs/POLICY.md` — programme policy: conduct thresholds, fines, attendance.
 - `docs/FORMS.md` — the intake form builder's cascade and conditional logic.
+- `docs/MATH-LAB-PLAN.md` — the approved plan for Math Lab → The Mathematics
+  Clinic (owner decisions in §17). Read it before touching `mathlab.php`.
 - `docs/HANDOFF.md` — a historical change record. **Append, never rewrite**;
   it is the log of why things are the way they are.

@@ -171,7 +171,7 @@ function CrList({ b, phone }) {
 
 /* ── note ── */
 function CrNote({ b, phone }) {
-  const cls = "cr-note" + (b.tone ? " is-toned cr-t-" + crTone(b.tone) : "") + (b.quote ? " is-quote" : "");
+  const cls = "cr-note" + (b.tone ? " is-toned cr-t-" + crTone(b.tone) : "") + (b.quote ? " is-quote" : "") + (b.cls ? " " + b.cls : "");
   return (
     <div className={cls} style={phone ? { borderRadius: 16, padding: 14 } : undefined}>
       <CrIcon n={b.icon || "info"}/>

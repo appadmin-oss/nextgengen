@@ -140,65 +140,6 @@ function AdminAccounts() {
   );
 }
 
-function AdminAttendanceDuty() {
-  const [date, setDate] = React.useState(() => new Date().toISOString().slice(0, 10));
-  const [data, setData] = React.useState(null);
-  const [err, setErr] = React.useState("");
-  const [busy, setBusy] = React.useState("");
-  const load = (d) => { setErr(""); return NGGApi.admin.attendance.admin(d || date).then(setData).catch(e => setErr(e.code || e.message || "load_failed")); };
-  React.useEffect(() => { setData(null); load(date); /* eslint-disable-next-line */ }, [date]);
-  const vols = (data && data.volunteers) || [];
-  const setTaker = async (centre, volunteerId) => { if (!volunteerId) return; setBusy(centre); try { const r = await NGGApi.admin.attendance.set(date, centre, volunteerId); setData(r); toast.success("Duty updated"); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
-  const closeRoll = async (centre, volunteerId) => {
-    if (!(await dialog.confirm({ title: "Close the roll for " + centre + "?", body: "This finalises today's attendance for " + centre + " and awards the duty volunteer their service points. It can't be reopened here.", cta: "Close roll" }))) return;
-    setBusy(centre); try { const r = await NGGApi.admin.attendance.complete(date, centre, volunteerId); toast.success(r.message || "Roll closed"); await load(date); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); }
-  };
-  const [board, setBoard] = React.useState(null);
-  const loadBoard = () => NGGApi.admin.attendance.leaderboard().then(r => setBoard(r.leaderboard || [])).catch(() => setBoard([]));
-  React.useEffect(() => { loadBoard(); }, []);
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Attendance duty</h2>
-        <input type="date" className="admin-input" value={date} onChange={e => setDate(e.target.value)} style={{ maxWidth: 180 }} aria-label="Duty date"/>
-      </div>
-      <p className="admin-hint">One volunteer per centre is on the roll each day — auto-rotated across active volunteers; override any pick. Closing the roll awards points toward levels + awards (emailed and shown on the volunteer's digital ID).{data ? " " + data.pool + " volunteers in rotation." : ""}</p>
-      {err ? <ErrorState code={err} onRetry={() => load(date)}/> :
-        !data ? <div className="dash-spinner"/> :
-        (data.duties || []).length === 0 ? <EmptyState title="No centres in rotation yet" message="Enrol summer students to a centre, and register volunteers, to start the daily rotation."/> :
-        <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Centre</th><th>On duty</th><th>Source</th><th>Status</th><th>Override</th><th></th></tr></thead>
-          <tbody>
-            {data.duties.map(d => (
-              <tr key={d.centre}>
-                <td className="admin-cell-name">{d.centre}</td>
-                <td>{d.volunteer ? d.volunteer.fullName : "—"}</td>
-                <td><span className="chip" style={{ fontSize: 10 }}>{d.source}</span></td>
-                <td>{d.completedAt ? <span className="chip chip-lime" style={{ fontSize: 10 }}>closed · {d.takenCount} present</span> : <span className="mono" style={{ color: "var(--ink-400)", fontSize: 12 }}>open</span>}</td>
-                <td>
-                  <select className="admin-select" value={d.volunteerId} disabled={busy === d.centre} onChange={e => setTaker(d.centre, e.target.value)} aria-label={"Attendance taker for " + d.centre}>
-                    {vols.map(v => <option key={v.volunteerId} value={v.volunteerId}>{v.fullName} · {v.role}</option>)}
-                  </select>
-                </td>
-                <td>{!d.completedAt && <button className="btn btn-ghost btn-sm" disabled={busy === d.centre} onClick={() => closeRoll(d.centre, d.volunteerId)}>Close roll</button>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div>
-      }
-      <div className="admin-fields-h" style={{ marginTop: 22, fontWeight: 700 }}>Service leaderboard</div>
-      <p className="admin-hint">Volunteers ranked by attendance-duty service points — recognise your most reliable stewards.</p>
-      {board === null ? <div className="dash-spinner"/> :
-        board.length === 0 ? <div className="admin-empty">No points logged yet.</div> :
-        <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th className="admin-num">#</th><th>Volunteer</th><th className="admin-num">Level</th><th className="admin-num">Streak</th><th className="admin-num">Points</th></tr></thead>
-          <tbody>{board.map(v => (
-            <tr key={v.volunteerId}><td className="mono admin-num">{v.rank}</td><td>{v.fullName} <span className="chip" style={{ fontSize: 10 }}>{v.role}</span></td><td className="admin-num">L{v.level} · {v.levelName}</td><td className="admin-num">{v.streak}d</td><td className="admin-num"><b>{fmtNum(v.points)}</b></td></tr>
-          ))}</tbody>
-        </table></div>}
-    </div>
-  );
-}
 
 // ============================================================================
 // Team engagement — volunteers / instructors / mentors (M&E · audit cap)
@@ -1812,7 +1753,6 @@ function AdminMemberBulkForm({ form, centreOpts, onClose, onDone }) {
  * applies to them) or rejects with a reason; the club admin sees their own
  * requests and may withdraw one nobody has decided yet.
  */
-const APPROVAL_STATUS_LABEL = { pending: "Waiting", approved: "Approved", rejected: "Rejected", failed: "Approved — refused when run", withdrawn: "Withdrawn", running: "Running" };
 
 /* ── The NGG Club curriculum ─────────────────────────────────────────────────
  *
@@ -2016,7 +1956,7 @@ const CUR_EMPTY_CHECK = { kind: "task", prompt: "", options: ["", ""], answer: "
    — or whenever the AI is unsure, or the answer raises a safeguarding worry. */
 const CUR_CHECK_KIND_OPTS = [["mcq", "Multiple choice"], ["short", "Written answer"], ["essay", "Essay / extended writing"],
   ["reflection", "Reflection"], ["project", "Project write-up"], ["code", "Code"], ["task", "Practical task"],
-  ["watch", "Watch a video and tell me"]];
+  ["watch", "Watch a video and tell me"], ["order", "Put the steps in order"], ["evidence", "Outside exercise (a link)"]];
 const CUR_MARK_HINT = {
   short: "Marked against the model answer — any wording that has the ideas earns the points.",
   essay: "No single right answer: marked against the rubric (a clear point, reasons, evidence).",
@@ -2221,7 +2161,14 @@ function CurriculumEditor({ unit, courses, divisions, examRefs, canWrite, aiEnab
   const save = async () => {
     setBusy("save");
     try {
-      const data = { ...f, objectives: f.objectives, checks: f.checks.map(c => ({ ...c, options: c.kind === "mcq" ? c.options.filter(o => o.trim()) : [], videoUrl: c.kind === "watch" ? (c.videoUrl || "") : "" })) };
+      /* Each kind sends only what it uses: options for a choice or an ordering, the reasons a wrong option
+         is tempting (whys, kept aligned with the options), a video for "watch", a link for an outside exercise. */
+      const data = { ...f, objectives: f.objectives, checks: f.checks.map(c => {
+        const keep = (c.options || []).map((o, k) => [o, (c.whys || [])[k] || ""]).filter(([o]) => o.trim());
+        return { ...c, options: c.kind === "mcq" || c.kind === "order" ? keep.map(x => x[0]) : [],
+          whys: c.kind === "mcq" ? keep.map(x => x[1]) : [], videoUrl: c.kind === "watch" ? (c.videoUrl || "") : "",
+          url: c.kind === "evidence" ? (c.url || "") : "" };
+      }) };
       const saved = await api.save(data);
       toast.success(
         canPublish ? (isNew ? "Lesson created." : "Lesson saved.")
@@ -2432,15 +2379,42 @@ function CurriculumEditor({ unit, courses, divisions, examRefs, canWrite, aiEnab
                                      onChange={e => setCheck(i, "options", c.options.map((x, j) => j === k ? e.target.value : x))}
                                      placeholder={"Option " + (k + 1)} aria-label={"Option " + (k + 1)}/>
                               {!ro && c.options.length > 2 && <button type="button" className="lq-del" aria-label={"Remove option " + (k + 1)}
-                                onClick={() => setF(x => ({ ...x, checks: x.checks.map((cc, j) => j !== i ? cc : { ...cc, options: cc.options.filter((_, kk) => kk !== k), answer: String(Number(cc.answer) === k ? 0 : Number(cc.answer) > k ? Number(cc.answer) - 1 : Number(cc.answer)) }) }))}><LedIcon name="x"/></button>}
+                                onClick={() => setF(x => ({ ...x, checks: x.checks.map((cc, j) => j !== i ? cc : { ...cc, options: cc.options.filter((_, kk) => kk !== k), whys: (cc.whys || []).filter((_, kk) => kk !== k), answer: String(Number(cc.answer) === k ? 0 : Number(cc.answer) > k ? Number(cc.answer) - 1 : Number(cc.answer)) }) }))}><LedIcon name="x"/></button>}
+                              {/* The Labs' named slip: why somebody picks this wrong option. Shown to a learner who does. */}
+                              {!right && <input className="lq-opt-why" value={(c.whys || [])[k] || ""} disabled={ro}
+                                onChange={e => setCheck(i, "whys", c.options.map((_, j) => j === k ? e.target.value : ((c.whys || [])[j] || "")))}
+                                placeholder="Why is this tempting? (shown to a learner who picks it)" aria-label={"Why option " + (k + 1) + " is tempting"}/>}
                             </li>
                           );
                         })}
                       </ul>
                       {!ro && c.options.length < 8 && <button type="button" className="lq-add" onClick={() => setCheck(i, "options", c.options.concat([""]))}>Add an option</button>}
                     </div>
+                  ) : c.kind === "order" ? (
+                    <div className="lq-opts">
+                      <span className="lq-label">The steps, IN THE RIGHT ORDER — learners get them shuffled</span>
+                      <ol className="lq-steps">
+                        {c.options.map((o, k) => (
+                          <li key={k} className="lq-opt">
+                            <input className="lq-opt-text" value={o} disabled={ro} placeholder={"Step " + (k + 1)} aria-label={"Step " + (k + 1)}
+                                   onChange={e => setCheck(i, "options", c.options.map((x, j) => j === k ? e.target.value : x))}/>
+                            {!ro && c.options.length > 3 && <button type="button" className="lq-del" aria-label={"Remove step " + (k + 1)}
+                              onClick={() => setCheck(i, "options", c.options.filter((_, kk) => kk !== k))}><LedIcon name="x"/></button>}
+                          </li>))}
+                      </ol>
+                      {!ro && c.options.length < 8 && <button type="button" className="lq-add" onClick={() => setCheck(i, "options", c.options.concat([""]))}>Add a step</button>}
+                      <p className="lq-hint">Marked by how much of the sequence is right; only the exact order earns every mark. At least three steps.</p>
+                    </div>
                   ) : (
                     <div className="lq-mark">
+                      {c.kind === "evidence" && (
+                        <label className="lq-f lq-video">
+                          <span>The exercise, on another site</span>
+                          <input value={c.url || ""} inputMode="url" disabled={ro} placeholder="https://www.freecodecamp.org/learn/…"
+                                 aria-label={"Exercise link for question " + (i + 1)} onChange={e => setCheck(i, "url", e.target.value.trim())}/>
+                          <em className="lq-note">They do it there, then hand back their proof and what they did. It is marked like any written answer and followed up in the exam.</em>
+                        </label>
+                      )}
                       {/* Only a 'watch' question carries a video, and it must:
                           a question about a film nobody was shown is a question
                           nobody can answer, so it is refused on save. */}
@@ -3123,229 +3097,7 @@ function AdminTimetableForm({ form, d, onClose, onSaved }) {
   );
 }
 
-function AdminApprovals() {
-  const [d, setD] = React.useState(null);
-  const [err, setErr] = React.useState("");
-  const [status, setStatus] = React.useState("pending");
-  const [open, setOpen] = React.useState(null);
-  const [reason, setReason] = React.useState("");
-  const [busy, setBusy] = React.useState("");
-  const headId = React.useId();
-  const trigger = React.useRef(null);
 
-  const load = () => { setErr(""); return NGGApi.admin.approvals.list(status).then(setD).catch(e => { setD(null); setErr(e.code || e.message); }); };
-  React.useEffect(() => { setD(null); load(); /* eslint-disable-next-line */ }, [status]);
-
-  const close = () => { if (busy) return; setOpen(null); try { trigger.current && trigger.current.focus(); } catch (_) {} };
-  React.useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => { if (e.key === "Escape") close(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
-
-  const decide = async (decision) => {
-    if (decision === "reject" && !reason.trim()) { toast.error("Say why — the person who asked reads this."); return; }
-    setBusy(decision);
-    try {
-      const r = await NGGApi.admin.approvals.decide(open.approvalId, decision, reason.trim());
-      if (r.status === "failed") toast.error("Approved, but the action itself was refused: " + humanizeError((r.result && r.result.error) || "", (r.result && r.result.error) || ""), open.approvalId);
-      else toast.success(decision === "approve" ? "Approved — it has been done." : "Rejected, with your reason.", open.approvalId);
-      setOpen(null); load();
-    } catch (e) { toast.error(e.code === "own_request" ? "You can't approve your own request." : humanizeError(e.code, e.code), "Not decided"); }
-    finally { setBusy(""); }
-  };
-  const withdraw = async (r) => {
-    try { await NGGApi.admin.approvals.withdraw(r.approvalId); toast.success("Withdrawn — nothing was changed.", r.approvalId); load(); }
-    catch (e) { toast.error(humanizeError(e.code, e.code)); }
-  };
-
-  const canDecide = !!(d && d.canDecide);
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Approvals
-          {d && d.pending > 0 && <span className="admin-count mono" aria-live="polite">{d.pending} waiting</span>}
-        </h2>
-      </div>
-      <p className="admin-hint">
-        {canDecide
-          ? "Sensitive actions a club admin has asked for. Nothing has changed yet: approving does it, as the person who asked; rejecting tells them why."
-          : "Your sensitive actions — suspending or deactivating someone, merging records, renaming or retiring a centre, removing a volunteer — wait here for an admin. Nothing changes until one approves."}
-      </p>
-      <div className="appr-filters" role="group" aria-label="Show">
-        {["pending", "approved", "rejected", "failed", "withdrawn", "all"].map(k => (
-          <button key={k} type="button" className={"btn btn-sm " + (status === k ? "btn-primary" : "btn-ghost")}
-            aria-pressed={status === k} onClick={() => setStatus(k)}>{k === "all" ? "Everything" : APPROVAL_STATUS_LABEL[k]}</button>
-        ))}
-      </div>
-
-      {d === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner" role="status" aria-label="Loading"/>) :
-        !d.approvals.length ? <div className="admin-empty">{status === "pending" ? "Nothing is waiting for approval." : "Nothing here."}</div> :
-        <ul className="appr-list">
-          {d.approvals.map(r => (
-            <li key={r.approvalId} className={"appr-item is-" + r.status}>
-              <div className="appr-main">
-                <div className="appr-summary">{r.summary}</div>
-                <div className="appr-meta mono">
-                  {r.approvalId} · asked by {r.requesterName || r.requesterId} · {String(r.createdAt).slice(0, 16).replace("T", " ")}
-                  {r.decidedBy && r.status !== "pending" ? " · " + (r.status === "withdrawn" ? "withdrawn" : "decided by " + (r.decidedByName || r.decidedBy)) : ""}
-                </div>
-                {r.reason && <div className="appr-reason">“{r.reason}”</div>}
-                {r.resultError && <div className="appr-reason is-error">When it ran: {humanizeError(r.resultError, r.resultError)}</div>}
-              </div>
-              <div className="appr-side">
-                {r.status === "pending" && canDecide &&
-                  <button type="button" className="btn btn-primary btn-sm"
-                    onClick={e => { trigger.current = e.currentTarget; setReason(""); setOpen(r); }}>Decide</button>}
-                {r.status === "pending" && !canDecide &&
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => withdraw(r)}>Withdraw</button>}
-                {r.status !== "pending" && <span className="chip">{APPROVAL_STATUS_LABEL[r.status] || r.status}</span>}
-              </div>
-            </li>
-          ))}
-        </ul>}
-
-      {open && (
-        <div className="admin-drawer" role="dialog" aria-modal="true" aria-labelledby={headId}
-          onMouseDown={e => { if (e.target === e.currentTarget) close(); }}>
-          <div className="admin-drawer-panel">
-            <div className="admin-drawer-head">
-              <h3 id={headId}>Approve this?</h3>
-              <button type="button" className="admin-drawer-close" aria-label="Close" onClick={close}>✕</button>
-            </div>
-            <div className="admin-fields">
-              <p className="appr-summary">{open.summary}</p>
-              <p className="admin-hint">Asked by {open.requesterName || open.requesterId} · {open.approvalId}. Approving runs it now, as them.</p>
-              <label className="admin-field"><span className="admin-label">Note — required to reject; they read it</span>
-                <textarea className="admin-input" rows={3} value={reason} onChange={e => setReason(e.target.value)} placeholder="Why, in a sentence."/>
-              </label>
-            </div>
-            <div className="admin-drawer-foot">
-              <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy} onClick={close}>Cancel</button>
-              <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy || !reason.trim()} onClick={() => decide("reject")}
-                title={reason.trim() ? "" : "A rejection needs a reason"}>{busy === "reject" ? "…" : "Reject"}</button>
-              <button type="button" className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => decide("approve")}>{busy === "approve" ? "…" : "Approve"}</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AdminRequests() {
-  const [d, setD] = React.useState(null);
-  const [err, setErr] = React.useState("");
-  const [f, setF] = React.useState({ status: "open", kind: "" });
-  const [open, setOpen] = React.useState(null);      // the row being decided
-  const [reason, setReason] = React.useState("");
-  const [amount, setAmount] = React.useState("");
-  const [busy, setBusy] = React.useState("");
-  const decideId = React.useId();
-
-  const load = () => { setErr(""); return NGGApi.admin.requests.list(f).then(setD).catch(e => setErr(e.code || e.message)); };
-  React.useEffect(() => { setD(null); load(); /* eslint-disable-next-line */ }, [f.status, f.kind]);
-
-  const start = (r) => { setOpen(r); setReason(""); setAmount(r.kind === "payment" ? String(r.amount || "") : ""); };
-  const decide = async (approve) => {
-    if (!approve && !reason.trim()) { toast.error("Say why — the member sees this."); return; }
-    setBusy(approve ? "yes" : "no");
-    try {
-      await NGGApi.admin.requests.decide(open.requestId, approve, reason.trim(),
-        open.kind === "payment" && approve && amount !== "" ? Number(amount) : undefined);
-      toast.success(approve ? "Approved." : "Declined, with your reason.", open.requestId);
-      setOpen(null); load();
-    } catch (e) { toast.error(e.detail || e.code || e.message); } finally { setBusy(""); }
-  };
-
-  const kinds = (d && d.kinds) || {};
-  const tally = (d && d.openByKind) || {};
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Member requests
-          {Object.values(tally).reduce((a, b) => a + b, 0) > 0 &&
-            <span className="admin-count mono">{Object.values(tally).reduce((a, b) => a + b, 0)} open</span>}
-        </h2>
-      </div>
-      <p className="admin-hint">
-        What members have asked for from their own dashboard. Approving a payment posts it to the
-        ledger exactly as the Dues &amp; fees screen would — a claim is evidence, not an entry.
-      </p>
-      <div className="admin-filters">
-        <select className="admin-select" value={f.status} onChange={e => setF(o => ({ ...o, status: e.target.value }))}>
-          <option value="open">Waiting</option><option value="approved">Approved</option>
-          <option value="declined">Declined</option><option value="withdrawn">Withdrawn</option>
-        </select>
-        <select className="admin-select" value={f.kind} onChange={e => setF(o => ({ ...o, kind: e.target.value }))}>
-          <option value="">Every kind</option>
-          {Object.keys(kinds).map(k => <option key={k} value={k}>{kinds[k]}{tally[k] ? " (" + tally[k] + ")" : ""}</option>)}
-        </select>
-      </div>
-
-      {d === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner"/>) :
-        !d.requests.length ? <div className="admin-empty">Nothing here.</div> :
-        d.requests.map(r => (
-          <div key={r.requestId} className="admin-card" style={{ marginBottom: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>{r.subject || r.kindLabel}</div>
-                <div className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>
-                  {r.fullName || r.displayId} · {r.centre} · {r.kindLabel} · {String(r.createdAt).slice(0, 10)}
-                </div>
-                {r.byFamily && <div className="admin-cell-sub">From their family account{r.raisedByName ? ": " + r.raisedByName : ""} — the parent is emailed your reply.</div>}
-              </div>
-              {r.status === "open"
-                ? <button className="btn btn-primary btn-sm" onClick={() => start(r)}>Decide</button>
-                : <span className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>{r.status.toUpperCase()}</span>}
-            </div>
-            {r.body && <p style={{ margin: "8px 0 0", fontSize: 13 }}>{r.body}</p>}
-            {r.kind === "payment" && (
-              <div className="mono" style={{ fontSize: 12, marginTop: 6 }}>
-                Claims {fmtMoney(r.amount || 0)}
-                {r.reference ? " · ref " + r.reference : ""}{r.paidAt ? " · paid " + r.paidAt : ""}
-              </div>
-            )}
-            {r.kind === "leave" && <div className="mono" style={{ fontSize: 12, marginTop: 6 }}>{r.fromDate} → {r.toDate || "open-ended"}</div>}
-            {r.decision && <div className="admin-hint" style={{ marginTop: 8 }}>Replied: {r.decision}</div>}
-          </div>
-        ))}
-
-      {open && (
-        <div className="admin-drawer" role="dialog" aria-modal="true" aria-labelledby={decideId}
-          onMouseDown={e => { if (e.target === e.currentTarget && !busy) setOpen(null); }}>
-          <div className="admin-drawer-panel">
-            <div className="admin-drawer-head">
-              <h3 id={decideId}>{open.kindLabel}</h3>
-              <button type="button" className="admin-drawer-close" onClick={() => !busy && setOpen(null)}>✕</button>
-            </div>
-            <div className="admin-fields">
-              <p className="admin-hint" style={{ marginTop: 0 }}>
-                {open.fullName || open.displayId} · {open.requestId}
-              </p>
-              {open.body && <p style={{ fontSize: 13 }}>{open.body}</p>}
-              {open.kind === "payment" && (
-                <Field label="Amount to post (what actually arrived)" value={amount} onChange={setAmount}
-                  placeholder={String(open.amount || 0)}/>
-              )}
-              <label className="admin-field"><span className="admin-label">Your reply — the member reads this</span>
-                <textarea className="admin-input" rows={4} value={reason} onChange={e => setReason(e.target.value)}
-                  placeholder={open.kind === "payment" ? "Found it on the 3rd, thank you." : "Why, in a sentence."}/>
-              </label>
-            </div>
-            <div className="admin-drawer-foot">
-              <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => setOpen(null)}>Cancel</button>
-              <button className="btn btn-ghost btn-sm" disabled={!!busy || !reason.trim()} onClick={() => decide(false)}
-                title={reason.trim() ? "" : "A decline needs a reason"}>{busy === "no" ? "…" : "Decline"}</button>
-              <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => decide(true)}>{busy === "yes" ? "…" : "Approve"}</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ── How the cards members already hold read ─────────────────────────────────
  *
@@ -4683,7 +4435,7 @@ function AdminMentorship() {
         {roster.mentors.map(m => (
           <div key={m.mentorId} className="admin-roster-card">
             <div className="admin-roster-head">
-              {m.photoUrl ? <img src={m.photoUrl} alt="" className="admin-roster-avatar" onError={e => { e.target.style.display = "none"; }}/> : <div className="admin-roster-avatar admin-card-img-fallback">{(m.fullName || "?").charAt(0)}</div>}
+              {m.photoUrl ? <img src={nggImg(m.photoUrl, "avatar")} alt="" className="admin-roster-avatar" onError={e => { e.target.style.display = "none"; }}/> : <div className="admin-roster-avatar admin-card-img-fallback">{(m.fullName || "?").charAt(0)}</div>}
               <CentreRing centre={m.centre} centres={roster.centres} url={m.photoUrl} name={m.fullName} size={38}/>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="admin-roster-name">
@@ -4729,7 +4481,6 @@ function AdminMentorship() {
     </div>
   );
 }
-function CheckinDesks() { return <GateLinks scope="checkin"/>; }
 
 // ============================================================================
 // Sessions (TONI/MEDI/SUMMER/DOMI)
@@ -4985,90 +4736,7 @@ function AdminMissionEditor({ data, onClose, onSaved }) {
   );
 }
 
-function AdminEvents() {
-  const [editing, setEditing] = React.useState(null);
-  const [list, setList] = React.useState(null);
-  const [err, setErr] = React.useState("");
-  // Admin list = ALL events (drafts, internal, past), not the public feed.
-  const load = () => NGGApi.admin.events.list()
-    .then(r => { setList(r.events || []); setErr(""); })
-    .catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); }, []);
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Events</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New event</button>
-      </div>
-      {err ? <div className="admin-empty">Couldn't load events: {err}</div> :
-        list === null ? <div className="dash-spinner"/> :
-        list.length === 0 ? <div className="admin-empty">No events yet.</div> :
-        <div className="admin-event-list">
-          {list.map(ev => (
-            <button key={ev.eventId} className="admin-event-row" onClick={() => setEditing(ev)}>
-              <div className="admin-event-date-block">
-                <div>{ev.startAt ? new Date(ev.startAt).getDate() : "—"}</div>
-                <div className="mono">{ev.startAt ? fmtDayMonth(ev.startAt) : ""}</div>
-              </div>
-              <div>
-                <div className="admin-event-title">{ev.title}</div>
-                <div className="mono admin-event-meta">{ev.kind} · {ev.centre} · {ev.location || ""}</div>
-              </div>
-              <span className={"chip status-" + (ev.status || "draft")} style={{marginLeft:"auto"}}>{ev.status || "draft"}{ev.isPublic ? "" : " · internal"}</span>
-            </button>
-          ))}
-        </div>
-      }
-      {editing && <AdminEventEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
-    </div>
-  );
-}
 
-function AdminEventEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
-  const [d, setD] = React.useState(Object.assign({ status:"draft", kind:"session", centre:"Egbeda", isPublic: false }, data));
-  const [busy, setBusy] = React.useState(false);
-  const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
-  const save = async (e) => {
-    e.preventDefault(); setBusy(true);
-    try { await NGGApi.admin.events.upsert(d); onSaved(); }
-    catch (e) { toast.error(e.code || e.message); }
-    finally { setBusy(false); }
-  };
-  return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
-      <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
-        <div className="admin-drawer-head">
-          <h3 {...headingProps}>{d.eventId ? "Edit event" : "New event"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
-        </div>
-        <div className="admin-fields">
-          <Field label="Title" value={d.title||""} onChange={v => set("title", v)} required/>
-          <div className="admin-fields-row">
-            <FieldSelect label="Kind"   value={d.kind} onChange={v => set("kind", v)} options={["session","showcase","parent-meet","community","online"]}/>
-            <FieldCentre value={d.centre} onChange={v => set("centre", v)} extra={["Both","Online"]}/>
-          </div>
-          <div className="admin-fields-row">
-            <Field label="Start" value={d.startAt||""} onChange={v => set("startAt", v)} type="datetime-local"/>
-            <Field label="End"   value={d.endAt||""}   onChange={v => set("endAt", v)}   type="datetime-local"/>
-          </div>
-          <Field label="Location" value={d.location||""} onChange={v => set("location", v)} placeholder="Room 3, Egbeda Annex"/>
-          <FieldUpload label="Cover image" value={d.coverUrl||""} onChange={v => set("coverUrl", v)} kind="cover"/>
-          <FieldTextarea label="Description (markdown ok)" value={d.body||""} onChange={v => set("body", v)} rows={6}/>
-          <div className="admin-fields-row">
-            <Field label="Capacity (0 = open)" value={d.capacity||"0"} onChange={v => set("capacity", Number(v))} type="number"/>
-            <FieldSelect label="Status" value={d.status} onChange={v => set("status", v)} options={["draft","published","cancelled"]}/>
-            <FieldCheckbox label="Show on public events page" value={d.isPublic} onChange={v => set("isPublic", v)}/>
-          </div>
-        </div>
-        <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
-          <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
-        </div>
-      </form>
-    </div>
-  );
-}
 
 function AdminPosts() {
   const [list, setList] = React.useState(null);
@@ -5238,183 +4906,6 @@ function AdminBroadcast() {
  * and a scoped admin sees their centres only. Words, not colour alone: every
  * chip says its state.
  */
-const STATUS_TABS = [
-  ["members", "Members"], ["centres", "Centres"], ["mentors", "Mentors"],
-  ["instructors", "Instructors"], ["leads", "Centre leads"], ["staff", "Staff & admins"],
-];
-const STATUS_WORD = { active: "Active", quiet: "Quiet", dormant: "Dormant", never: "No activity yet", ok: "OK", attention: "Needs attention", unled: "No lead" };
-function StatusChip({ state, days }) {
-  return <span className={"st-chip is-" + state}>{STATUS_WORD[state] || state}{days != null && state !== "active" ? " · " + days + "d" : ""}</span>;
-}
-function StatusKpi({ n, label, tone, onClick }) {
-  const body = <><b className="st-kpi-n">{fmtNum(n || 0)}</b><span className="st-kpi-l">{label}</span></>;
-  return onClick ? <button type="button" className={"st-kpi" + (tone ? " is-" + tone : "")} onClick={onClick}>{body}</button>
-    : <div className={"st-kpi" + (tone ? " is-" + tone : "")}>{body}</div>;
-}
-function AdminStatus() {
-  const [d, setD] = React.useState(null);
-  const [err, setErr] = React.useState(null);
-  const [tab, setTab] = useAdminTab("members", React.useCallback(t => STATUS_TABS.some(([k]) => k === t), []));
-  const [only, setOnly] = React.useState(false);   // only what needs attention
-  const load = React.useCallback(() => { setErr(null); return NGGApi.admin.status().then(setD).catch(setErr); }, []);
-  React.useEffect(() => { load(); }, [load]);
-  if (err) return <div className="admin-section"><ErrorState title="Couldn't load the status board" message={err.message} code={err.code} onRetry={load}/></div>;
-  if (!d) return <div className="admin-section"><div className="dash-spinner" role="status" aria-label="Loading the status board"/></div>;
-  const tabs = STATUS_TABS.filter(([k]) => d.parts.indexOf(k) !== -1);
-  const cur = tabs.some(([k]) => k === tab) ? tab : (tabs[0] || [""])[0];
-  const m = d.members, c = d.centres;
-  const quietStaff = (t) => t ? (t.quiet || 0) + (t.dormant || 0) + (t.never || 0) : 0;
-  return (
-    <div className="admin-section st-board">
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Status board</h2>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
-      </div>
-      <p className="admin-hint">Today is {fmtDate(d.today)} (Lagos). {d.scoped ? "Your centres only: " + d.scopeNames.join(", ") + "." : "Every centre."} Active means work recorded in the last 14 days, quiet within 30, dormant beyond that.</p>
-
-      <div className="st-kpis" role="list" aria-label="Headline figures">
-        {m && <StatusKpi n={m.tally.active} label="active members" onClick={() => setTab("members")}/>}
-        {m && <StatusKpi n={m.tally.presentToday} label={"in today" + (m.tally.lateToday ? " · " + m.tally.lateToday + " late" : "")}/>}
-        {m && <StatusKpi n={m.tally.atRisk + (m.conduct.suspended || 0) + (m.conduct.evicted || 0)} label="at risk or blocked" tone={m.tally.atRisk ? "warn" : ""} onClick={() => setTab("members")}/>}
-        {m && m.withFees && <StatusKpi n={m.tally.owing} label={"owing · " + naira(m.tally.owingTotal)} tone={m.tally.owing ? "warn" : ""}/>}
-        {c && <StatusKpi n={c.withIssues} label={"of " + c.total + " centres need attention"} tone={c.withIssues ? "warn" : ""} onClick={() => setTab("centres")}/>}
-        {d.mentors && <StatusKpi n={quietStaff(d.mentors.tally)} label="mentors quiet or dormant" tone={quietStaff(d.mentors.tally) ? "warn" : ""} onClick={() => setTab("mentors")}/>}
-        {d.instructors && <StatusKpi n={quietStaff(d.instructors.tally)} label="instructors quiet or dormant" tone={quietStaff(d.instructors.tally) ? "warn" : ""} onClick={() => setTab("instructors")}/>}
-        {d.leads && <StatusKpi n={d.leads.unled} label="centres with no lead" tone={d.leads.unled ? "bad" : ""} onClick={() => setTab("leads")}/>}
-        {d.staff && <StatusKpi n={d.staff.tally.no2fa} label="staff without 2FA" tone={d.staff.tally.no2fa ? "bad" : ""} onClick={() => setTab("staff")}/>}
-      </div>
-
-      <div className="st-bar">
-        <div className="admin-tabs" role="tablist" aria-label="Status by area">
-          {tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={cur === k} className={"admin-tab" + (cur === k ? " is-active" : "")} onClick={() => setTab(k)}>{l}</button>)}
-        </div>
-        <label className="st-only"><input type="checkbox" checked={only} onChange={e => setOnly(e.target.checked)}/> Only what needs attention</label>
-      </div>
-
-      {cur === "members" && m && <StatusMembers m={m} only={only}/>}
-      {cur === "centres" && c && <StatusCentres c={c} only={only}/>}
-      {cur === "mentors" && d.mentors && <StatusPeople rows={d.mentors.rows} only={only} cols={[["Kind", r => r.kind], ["Centre", r => r.centre || "—"], ["Mentees", r => r.mentees, true], ["Stars · remarks (60d)", r => r.stars + " · " + r.remarks, true]]} empty="No mentors in your centres yet." caption="Mentors"/>}
-      {cur === "instructors" && d.instructors && <StatusPeople rows={d.instructors.rows} only={only} cols={[["Centre", r => r.centre || "—"], ["Courses", r => r.courses || "—"], ["Classes", r => r.classes, true], ["Sessions (60d)", r => r.sessions, true], ["Materials waiting", r => r.pendingMaterials, true]]} empty="No instructors in your centres yet." caption="Instructors"/>}
-      {cur === "leads" && d.leads && <StatusLeads l={d.leads} only={only}/>}
-      {cur === "staff" && d.staff && <StatusStaff s={d.staff} only={only}/>}
-    </div>
-  );
-}
-function StatusMembers({ m, only }) {
-  const t = m.tally;
-  const rows = m.attention;
-  return (
-    <div className="st-pane">
-      <div className="st-strip">
-        <span><b>{t.onTrack}</b> on track</span><span><b>{t.watch}</b> watch</span><span><b>{t.atRisk}</b> at risk</span><span><b>{t.unrated}</b> not yet rated this week</span>
-        <span><b>{m.conduct.warned || 0}</b> conduct warning</span><span><b>{(m.conduct.suspended || 0) + (m.conduct.evicted || 0)}</b> suspended or evicted</span>
-        <span><b>{t.newThisMonth}</b> joined this month</span><span><b>{t.neverSignedIn}</b> never signed in</span><span><b>{t.notSignedIn60}</b> not signed in for 60 days</span>
-        {Object.entries(m.byStatus).filter(([k]) => k !== "active").map(([k, n]) => <span key={k}><b>{n}</b> {k.replace(/-/g, " ")}</span>)}
-      </div>
-      <h3 className="admin-h4">Members who need attention <span className="admin-count mono">{m.attentionTotal}</span></h3>
-      {!rows.length ? <EmptyState title="Nobody flagged" message="No member is at risk, blocked, warned or owing a large balance."/> :
-      <div className="admin-table-wrap"><table className="admin-table">
-        <caption className="sr-only">Members who need attention, most urgent first</caption>
-        <thead><tr><th scope="col">Member</th><th scope="col">Centre</th><th scope="col">Why</th><th scope="col">Last signed in</th></tr></thead>
-        <tbody>{rows.map(r => (
-          <tr key={r.memberId}>
-            <td><div className="admin-cell-name">{r.fullName}</div><div className="mono admin-cell-sub">{r.memberId}</div></td>
-            <td className="admin-cell-sub">{r.centre || "—"}</td>
-            <td><div className="st-reasons">{r.reasons.map(x => <span key={x} className={"st-chip " + (r.severity >= 3 ? "is-dormant" : "is-quiet")}>{x}</span>)}</div></td>
-            <td className="admin-cell-sub">{r.lastSignIn ? fmtDate(r.lastSignIn) : "never"}</td>
-          </tr>
-        ))}</tbody>
-      </table></div>}
-      {m.attentionTotal > rows.length && <p className="admin-hint">Showing the {rows.length} most urgent of {m.attentionTotal}.</p>}
-    </div>
-  );
-}
-function StatusCentres({ c, only }) {
-  const rows = only ? c.rows.filter(r => r.state !== "ok") : c.rows;
-  return (
-    <div className="st-pane">
-      {!rows.length ? <EmptyState title={only ? "Every centre is in order" : "No centres"} message={only ? "No centre has an open issue." : "Add a centre under People → Centres."}/> :
-      <div className="admin-table-wrap"><table className="admin-table">
-        <caption className="sr-only">Centres and what each needs</caption>
-        <thead><tr><th scope="col">Centre</th><th scope="col" className="admin-num">Members</th><th scope="col" className="admin-num">In today</th><th scope="col" className="admin-num">Classes</th><th scope="col">Lead</th><th scope="col">Status</th></tr></thead>
-        <tbody>{rows.map(r => (
-          <tr key={r.centreId}>
-            <td><div className="admin-cell-name">{r.name}</div><div className="admin-cell-sub">{r.meetDays || "meeting days not set"}{r.meetsToday ? " · meets today" : ""}</div></td>
-            <td className="admin-num">{r.members}{r.capacity ? <span className="admin-cell-sub"> / {r.capacity}</span> : null}</td>
-            <td className="admin-num">{r.presentToday}{r.lateToday ? <span className="admin-cell-sub"> ({r.lateToday} late)</span> : null}</td>
-            <td className="admin-num">{r.classes}</td>
-            <td className="admin-cell-sub">{[r.lead].concat(r.leadAccounts).filter(Boolean).join(", ") || "—"}</td>
-            <td>{r.issues.length ? <div className="st-reasons">{r.issues.map(x => <span key={x} className="st-chip is-quiet">{x}</span>)}</div> : <StatusChip state="ok"/>}</td>
-          </tr>
-        ))}</tbody>
-      </table></div>}
-    </div>
-  );
-}
-function StatusPeople({ rows, only, cols, empty, caption }) {
-  const list = only ? rows.filter(r => r.state !== "active") : rows;
-  return (
-    <div className="st-pane">
-      {!list.length ? <EmptyState title={only ? "Everybody is active" : "Nobody here"} message={only ? "Nobody has gone quiet." : empty}/> :
-      <div className="admin-table-wrap"><table className="admin-table">
-        <caption className="sr-only">{caption}, quietest first</caption>
-        <thead><tr><th scope="col">Name</th>{cols.map(([h, , num]) => <th key={h} scope="col" className={num ? "admin-num" : ""}>{h}</th>)}<th scope="col">Last active</th><th scope="col">Status</th></tr></thead>
-        <tbody>{list.map(r => (
-          <tr key={r.id}>
-            <td className="admin-cell-name">{r.fullName}</td>
-            {cols.map(([h, f, num]) => <td key={h} className={num ? "admin-num" : "admin-cell-sub"}>{f(r)}</td>)}
-            <td className="admin-cell-sub">{r.lastActive ? fmtDate(r.lastActive) : "—"}</td>
-            <td><StatusChip state={r.state} days={r.days}/></td>
-          </tr>
-        ))}</tbody>
-      </table></div>}
-    </div>
-  );
-}
-function StatusLeads({ l, only }) {
-  const rows = only ? l.rows.filter(r => r.state !== "active") : l.rows;
-  return (
-    <div className="st-pane">
-      <p className="admin-hint">A centre's leads are its lead volunteer (People → Centres), its lead mentors, and any <b>Centre lead</b> account scoped to it (Access &amp; roles).</p>
-      {!rows.length ? <EmptyState title="Every centre is led" message="Each centre has an active lead."/> :
-      <div className="admin-table-wrap"><table className="admin-table">
-        <caption className="sr-only">Who leads each centre</caption>
-        <thead><tr><th scope="col">Centre</th><th scope="col">Leads</th><th scope="col">Status</th></tr></thead>
-        <tbody>{rows.map(r => (
-          <tr key={r.centreId}>
-            <td className="admin-cell-name">{r.centre}</td>
-            <td>{r.leads.length ? <ul className="st-leads">{r.leads.map((p, i) => <li key={i}><b>{p.name}</b> <span className="admin-cell-sub">{p.kind}</span> <StatusChip state={p.state} days={p.days}/></li>)}</ul> : <span className="admin-cell-sub">Nobody — name a lead volunteer or give somebody the Centre lead role.</span>}</td>
-            <td><StatusChip state={r.state === "unled" ? "unled" : r.state}/></td>
-          </tr>
-        ))}</tbody>
-      </table></div>}
-    </div>
-  );
-}
-function StatusStaff({ s, only }) {
-  const rows = only ? s.rows.filter(r => r.state !== "active" || r.flags.length) : s.rows;
-  return (
-    <div className="st-pane">
-      <div className="st-strip"><span><b>{s.tally.active}</b> active</span><span><b>{s.tally.quiet}</b> quiet</span><span><b>{s.tally.dormant + s.tally.never}</b> dormant or never</span><span><b>{s.tally.no2fa}</b> without 2FA</span><span><b>{s.tally.noCentre}</b> with no centre</span></div>
-      {!rows.length ? <EmptyState title="Nothing to flag" message="Every staff account is active, has 2FA and has what its role needs."/> :
-      <div className="admin-table-wrap"><table className="admin-table">
-        <caption className="sr-only">Staff accounts</caption>
-        <thead><tr><th scope="col">Person</th><th scope="col">Role</th><th scope="col">Centres</th><th scope="col">2FA</th><th scope="col">Last signed in · acted</th><th scope="col" className="admin-num">Awaiting approval</th><th scope="col">Status</th></tr></thead>
-        <tbody>{rows.map(r => (
-          <tr key={r.memberId}>
-            <td><div className="admin-cell-name">{r.fullName}</div>{r.extraCaps.length > 0 && <div className="admin-cell-sub">+ {r.extraCaps.join(", ")}</div>}</td>
-            <td className="admin-cell-sub">{r.roleLabel}</td>
-            <td className="admin-cell-sub">{r.centres.length ? r.centres.join(", ") : "All"}</td>
-            <td>{r.twoFactor ? <span className="st-chip is-active">On</span> : <span className="st-chip is-dormant">Off</span>}</td>
-            <td className="admin-cell-sub">{r.lastSignIn ? fmtDate(r.lastSignIn) : "never"} · {r.lastAction ? fmtDate(r.lastAction) : "—"}</td>
-            <td className="admin-num">{r.pendingApprovals}</td>
-            <td><div className="st-reasons"><StatusChip state={r.state} days={r.days}/>{r.flags.map(f => <span key={f} className="st-chip is-dormant">{f}</span>)}</div></td>
-          </tr>
-        ))}</tbody>
-      </table></div>}
-    </div>
-  );
-}
 
 // Access & roles — every staff account, its role and what it can actually do,
 // and the matrix of roles × capabilities × the sections each opens. All of it
@@ -7488,46 +6979,6 @@ function AdminCommunityChannels() {
   );
 }
 
-function AdminComments() {
-  const [status, setStatus] = React.useState("pending");
-  const [d, setD] = React.useState(null);
-  const [err, setErr] = React.useState("");
-  const load = () => NGGApi.admin.comments(status).then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [status]);
-  const act = async (commentId, a) => { try { await NGGApi.admin.commentModerate(commentId, a); load(); } catch (e) { toast.error(e.code || e.message); } };
-  const rows = d ? d.comments : null;
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Comment moderation {d && d.pending ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{d.pending} pending</span> : null}</h2>
-      </div>
-      <p className="admin-hint">Member comments on posts stay hidden until you approve them. Nothing is public until it's cleared here.</p>
-      <div className="admin-filters">
-        <select className="admin-select" value={status} onChange={e => setStatus(e.target.value)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
-      </div>
-      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
-        rows === null ? <div className="dash-spinner"/> :
-        rows.length === 0 ? <div className="admin-empty">Nothing here.</div> :
-        <div className="admin-app-list">
-          {rows.map(c => (
-            <div className="admin-app" key={c.commentId}>
-              <div className="admin-app-top">
-                <div><div className="admin-cell-name">{c.memberName} <span className="chip chip-navy">{c.postTitle || c.postSlug || c.postId}</span></div>
-                  <div className="mono admin-cell-sub">{fmtDate(c.createdAt)}</div></div>
-                <span className={"chip status-" + (c.status === "approved" ? "published" : c.status === "rejected" ? "archived" : "draft")}>{c.status}</span>
-              </div>
-              <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{c.body}</p>
-              <div className="admin-app-actions">
-                {c.status !== "approved" && <button className="btn btn-ghost btn-sm" onClick={() => act(c.commentId, "approve")}>Approve</button>}
-                {c.status !== "rejected" && <button className="btn btn-ghost btn-sm" onClick={() => act(c.commentId, "reject")}>Reject</button>}
-                <button className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={async () => { if (await dialog.confirm({ title: "Delete this comment?", body: "Permanently removes the comment. This can't be undone.", cta: "Delete", danger: true })) act(c.commentId, "delete"); }}>Delete</button>
-              </div>
-            </div>
-          ))}
-        </div>}
-    </div>
-  );
-}
 
 // ============================================================================
 // Behaviour monitor — log observations, AI/rule triage, wellbeing flags
@@ -7756,198 +7207,7 @@ function AdminOps() {
   );
 }
 
-function AdminStaff() {
-  const [d, setD] = React.useState(null);
-  const [days, setDays] = React.useState(30);
-  const [err, setErr] = React.useState("");
-  const [skills, setSkills] = React.useState(null);
-  const [dirty, setDirty] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
-  const [tab, setTab] = React.useState("activity");
-  React.useEffect(() => {
-    NGGApi.admin.staff.performance(days).then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
-  }, [days]);
-  React.useEffect(() => {
-    if (tab === "skills" && skills === null) NGGApi.admin.staff.skills().then(r => setSkills(r.skills || {})).catch(e => toast.error(e.code || e.message));
-  }, [tab]);
 
-  const saveSkills = async () => {
-    setBusy(true);
-    try { const r = await NGGApi.admin.staff.saveSkills(skills); setSkills(r.skills || {}); setDirty(false); toast.success("Instructors mark against these from now on", "Skills saved"); }
-    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
-  };
-
-  const rows = (d && d.staff) || [];
-  const t = (d && d.totals) || {};
-  const centres = (d && d.centres) || {};
-  /* A count with no denominator says nothing. 12 stars is diligent for a
-     mentor with 8 children and thin for one with 40, so coverage is the
-     column that carries the meaning. */
-  const covChip = (c) => c === null ? "chip-navy" : c >= 70 ? "chip-lime" : c >= 30 ? "chip-gold" : "chip-crimson";
-
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Staff activity</h2>
-        <div className="admin-section-actions">
-          <FieldSelect label="" value={String(days)} onChange={v => setDays(parseInt(v, 10) || 30)}
-            options={[{ value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" }, { value: "90", label: "Last 90 days" }]}/>
-        </div>
-      </div>
-      <div className="admin-tabs">
-        <button className={"admin-tab" + (tab === "activity" ? " is-active" : "")} onClick={() => setTab("activity")}>Who is filing{t.silent ? " · " + t.silent + " silent" : ""}</button>
-        <button className={"admin-tab" + (tab === "skills" ? " is-active" : "")} onClick={() => setTab("skills")}>Course skills</button>
-      </div>
-
-      {tab === "activity" && <>
-        <p className="admin-hint">
-          Mentors and instructors together, quietest first. These are counts of work filed, not a rating — the point is to notice who has stopped, not to rank anyone.
-          {d && d.scope === "lead" && " You're seeing your own centre."}
-        </p>
-        {err && <p role="alert" className="admin-error">{err}</p>}
-        {!d && !err && <p className="admin-hint">Loading…</p>}
-        {d && (
-          <div className="admin-chips" style={{ marginBottom: 12 }}>
-            <span className="chip chip-navy">{t.staff} staff</span>
-            {t.silent > 0 && <span className="chip chip-crimson">{t.silent} never filed anything</span>}
-            <span className="chip chip-navy">{t.stars} stars</span>
-            <span className="chip chip-navy">{t.remarks} notes</span>
-            {t.flags > 0 && <span className="chip chip-gold">{t.flags} safeguarding</span>}
-            <span className="chip chip-navy">{t.sessions} sessions</span>
-            <span className="chip chip-navy">{t.skillMarks} skill marks</span>
-          </div>
-        )}
-        {d && (
-          <div className="admin-table-wrap">
-            <table className="admin-table">
-              <thead><tr><th>Person</th><th>Centre</th><th>Last active</th><th>Coverage</th><th>Stars</th><th>Notes</th><th>Sessions</th><th>Skills</th></tr></thead>
-              <tbody>
-                {!rows.length && <tr><td colSpan={8} className="admin-empty">No mentors or instructors on record yet.</td></tr>}
-                {rows.map(s => (
-                  <tr key={s.staffId + s.kind}>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <CentreRing centre={s.centre} centres={centres} name={s.fullName} size={34}/>
-                        <span style={{ minWidth: 0 }}>
-                          <span className="admin-cell-name">{s.fullName}</span>
-                          {s.kind === "lead mentor" && <RankChip rank="lead"/>}
-                          <div className="mono admin-cell-sub">{s.kind}{s.focus ? " · " + s.focus : ""}</div>
-                        </span>
-                      </div>
-                    </td>
-                    <td className="mono">{s.centre || "—"}</td>
-                    <td>
-                      {/* Never-filed is a different thing from "quiet for a
-                          while", and the two must not read the same. */}
-                      {s.lastActive
-                        ? <>{s.quietDays === 0 ? "today" : s.quietDays + "d ago"}<div className="mono admin-cell-sub">{s.lastActive}</div></>
-                        : <span className="chip chip-crimson">never</span>}
-                    </td>
-                    <td>
-                      {s.coverage === null
-                        ? <span className="admin-cell-sub">no class set</span>
-                        : <><span className={"chip " + covChip(s.coverage)}>{s.coverage}%</span>
-                            <div className="mono admin-cell-sub">{s.childrenStarred} of {s.classSize}</div></>}
-                    </td>
-                    <td>{s.stars || "—"}</td>
-                    <td>{s.remarks || "—"}{s.flags > 0 && <div className="mono admin-cell-sub">{s.flags} flagged</div>}</td>
-                    <td>{s.sessions || "—"}</td>
-                    <td>{s.skillMarks || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </>}
-
-      {tab === "skills" && <>
-        <p className="admin-hint">What instructors mark each child against, per course. Four levels — not yet · getting there · can do it · can teach it — and no numbers, because a score invites a ranking between children and this is meant to say what one child can now do. Seeded from the catalogue; correct them to whatever the people teaching the course actually mean.</p>
-        {skills === null && <p className="admin-hint">Loading…</p>}
-        {skills && Object.keys(skills).map(course => (
-          <div key={course} className="admin-field" style={{ marginBottom: 14 }}>
-            <span className="admin-label">{course}</span>
-            <textarea className="admin-input" rows={Math.max(3, (skills[course] || []).length + 1)}
-              value={(skills[course] || []).join("\n")}
-              placeholder="One skill per line — verb-led and observable, e.g. “Plays hands together”."
-              onChange={e => { setSkills(s => ({ ...s, [course]: e.target.value.split("\n") })); setDirty(true); }}/>
-            <span className="admin-cell-sub">{(skills[course] || []).filter(x => x.trim()).length} skills</span>
-          </div>
-        ))}
-        {skills && <button className="btn btn-primary btn-sm" disabled={busy || !dirty} onClick={saveSkills}>{busy ? "Saving…" : "Save skills"}</button>}
-      </>}
-    </div>
-  );
-}
-
-function AdminBehaviour() {
-  const [d, setD] = React.useState(null);
-  const [f, setF] = React.useState({ status: "", category: "" });
-  const [err, setErr] = React.useState("");
-  const [form, setForm] = React.useState({ subjectId: "", note: "", category: "", severity: "" });
-  const [busy, setBusy] = React.useState(false);
-  const load = () => NGGApi.admin.behaviour.list(f).then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [f.status, f.category]);
-  const submit = async (e) => {
-    e.preventDefault(); setBusy(true);
-    try {
-      const r = await NGGApi.admin.behaviour.log(form.subjectId.trim(), form.note.trim(), form.category, form.severity);
-      toast.success("Logged as " + r.category + " · " + r.severity + (r.aiSource === "manual" ? "" : " (" + r.aiSource + ")"), "Observation saved");
-      setForm({ subjectId: "", note: "", category: "", severity: "" }); load();
-    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
-  };
-  const review = async (logId) => { try { await NGGApi.admin.behaviour.review(logId); load(); } catch (e) { toast.error(e.code || e.message); } };
-  const sevChip = (s) => s === "urgent" ? "chip-crimson" : s === "concern" ? "chip-gold" : s === "positive" ? "chip-lime" : "chip-navy";
-  const logs = d ? d.logs : null;
-  const cats = (d && d.categories) || ["wellbeing", "commendation", "respect", "discipline", "peer", "participation"];
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Behaviour monitor {d && d.openFlags ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{d.openFlags} open flag{d.openFlags === 1 ? "" : "s"}</span> : null}</h2>
-      </div>
-      <p className="admin-hint">Log an observation about a student or member; it's auto-triaged (AI when configured, rules otherwise). Wellbeing/urgent notes page the team through configured integrations.</p>
-      <form onSubmit={submit} className="admin-fields" style={{ maxWidth: 640, marginBottom: 18 }}>
-        <div className="admin-fields-row">
-          <Field label="Subject ID (student or member)" value={form.subjectId} onChange={v => setForm(o => ({ ...o, subjectId: v }))}/>
-          <FieldSelect label="Category (blank = auto)" value={form.category} onChange={v => setForm(o => ({ ...o, category: v }))} options={[""].concat(cats)}/>
-          <FieldSelect label="Severity (blank = auto)" value={form.severity} onChange={v => setForm(o => ({ ...o, severity: v }))} options={["", "info", "concern", "urgent", "positive"]}/>
-        </div>
-        <label className="admin-field"><span className="admin-label">Observation</span>
-          <textarea className="admin-input" rows={3} value={form.note} onChange={e => setForm(o => ({ ...o, note: e.target.value }))} placeholder="What happened, in a sentence or two."/>
-        </label>
-        <div><button className="btn btn-primary btn-sm" disabled={busy || form.subjectId.trim() === "" || form.note.trim().length < 5}>{busy ? "Saving…" : "Log observation"}</button></div>
-      </form>
-      {d && d.trend && Object.keys(d.trend).length > 0 && (
-        <div className="admin-chips" style={{ marginBottom: 12 }}>
-          <span className="admin-hint" style={{ marginRight: 6 }}>Last 30 days:</span>
-          {Object.entries(d.trend).map(([k, v]) => <span key={k} className="chip chip-navy" style={{ marginRight: 6 }}>{k}: {v}</span>)}
-        </div>
-      )}
-      <div className="admin-filters">
-        <select className="admin-select" value={f.status} onChange={e => setF(o => ({ ...o, status: e.target.value }))}><option value="">All statuses</option><option value="open">Open</option><option value="reviewed">Reviewed</option></select>
-        <select className="admin-select" value={f.category} onChange={e => setF(o => ({ ...o, category: e.target.value }))}><option value="">All categories</option>{cats.map(c => <option key={c} value={c}>{c}</option>)}</select>
-      </div>
-      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
-        logs === null ? <div className="dash-spinner"/> :
-        logs.length === 0 ? <div className="admin-empty">No observations logged.</div> :
-        <div className="admin-app-list">
-          {logs.map(l => (
-            <div className="admin-app" key={l.logId}>
-              <div className="admin-app-top">
-                <div>
-                  <div className="admin-cell-name">{l.subjectName || l.subjectId} <span className={"chip " + sevChip(l.severity)}>{l.category} · {l.severity}</span></div>
-                  <div className="mono admin-cell-sub">{l.observerName || l.observerId} · {fmtDate(l.createdAt)}{l.aiSource ? " · " + l.aiSource : ""}</div>
-                </div>
-                <span className={"chip status-" + (l.status === "reviewed" ? "published" : "draft")}>{l.status}</span>
-              </div>
-              <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{l.note}</p>
-              {l.status === "open" && <div className="admin-app-actions"><button className="btn btn-ghost btn-sm" onClick={() => review(l.logId)}>Mark reviewed</button></div>}
-            </div>
-          ))}
-        </div>}
-    </div>
-  );
-}
 
 // ============================================================================
 // Integrations & delivery — bus destinations, delivery log, manual dispatch
@@ -8907,7 +8167,7 @@ function ApplicantDetail({ a }) {
   const dobLine = a.dob ? (a.dob + (age != null ? " · age " + age : "")) : (age != null ? "age " + age : "");
   return (
     <div className="admin-detail">
-      {a.photoUrl ? <img className="admin-detail-photo" src={a.photoUrl} alt="" onError={e => { e.target.style.display = "none"; }}/> : null}
+      {a.photoUrl ? <img className="admin-detail-photo" src={nggImg(a.photoUrl, "headshot")} alt="" onError={e => { e.currentTarget.hidden = true; }}/> : null}
       <DetailRow label="Reference">{a.ref ? <span className="mono">{a.ref}</span> : null}</DetailRow>
       <DetailRow label="Full name">{fullName}</DetailRow>
       {(a.firstName || a.lastName) ? <DetailRow label="Name parts">{"First: " + (a.firstName || "—") + "  ·  Other: " + (a.otherName || "—") + "  ·  Last: " + (a.lastName || "—")}</DetailRow> : null}
@@ -8921,169 +8181,17 @@ function ApplicantDetail({ a }) {
       {a.role ? <DetailRow label="Role">{a.role}</DetailRow> : null}
       {(a.courses && a.courses.length) ? <DetailRow label="Courses">{a.courses.join(", ")}</DetailRow> : null}
       <DetailRow label="Submitted">{fmtDate(a.createdAt)}</DetailRow>
-      <DetailRow label="Reason">{a.why ? <span style={{ whiteSpace: "pre-wrap" }}>{a.why}</span> : null}</DetailRow>
+      <DetailRow label="Reason">{a.why ? <span className="admin-prewrap">{a.why}</span> : null}</DetailRow>
+      {/* A volunteer's safeguarding, as the form gathered it: referees to contact, the declaration, and under 18 the guardian. */}
+      {a.details && (a.details.referees || []).map((r, i) => <DetailRow key={"ref" + i} label={"Referee " + (i + 1)}>{r.name + (r.relation ? " (" + r.relation + ")" : "") + " · " + r.contact}</DetailRow>)}
+      {a.details && a.details.declaration ? <DetailRow label="Declaration">{"Agreed · version " + (a.details.declaration.version || "")}</DetailRow> : null}
+      {a.details && a.details.guardian ? <DetailRow label="Guardian">{a.details.guardian.name + " · " + a.details.guardian.phone + (a.details.guardian.email ? " · " + a.details.guardian.email : "") + " · agreed on the form"}</DetailRow> : null}
     </div>
   );
 }
 
 /* Correct a pending application's data before converting/approving it.
    Mirrors admin.application.update. */
-function ApplicationEditor({ a, onSaved, onDelete }) {
-  const centreOpts = useCentreOptions();
-  const [f, setF] = React.useState({
-    name: a.name || "", email: a.email || "", phone: a.phone || "", age: a.age != null ? String(a.age) : "",
-    centre: a.centre || "", track: a.track || "", role: a.role || "", faculty: a.faculty || "",
-    program: a.program || "", courses: (a.courses || []).join(", "), why: a.why || "", photoUrl: a.photoUrl || "",
-  });
-  const [busy, setBusy] = React.useState(false);
-  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
-  const save = async () => {
-    if (f.name.trim().length < 2) { toast.error("Name needs at least 2 characters."); return; }
-    setBusy(true);
-    try {
-      await NGGApi.admin.applications.update(a.id, { ...f, age: f.age === "" ? 0 : parseInt(f.age, 10) || 0, courses: f.courses.split(",").map(c => c.trim()).filter(Boolean) });
-      toast.success("Application saved."); onSaved();
-    } catch (e) { toast.error(e.code === "bad_email" ? "That email isn't valid." : e.code === "bad_age" ? "Age looks off." : (e.code || e.message)); }
-    finally { setBusy(false); }
-  };
-  const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
-  const fld = (key, label, opts = {}) => (
-    <div style={{ flex: "1 1 170px", minWidth: opts.min || 140 }}>
-      <span style={lbl}>{label}</span>
-      <input className="admin-input" style={{ width: "100%" }} type={opts.type || "text"} value={f[key]} onChange={e => set(key, e.target.value)} placeholder={opts.ph || ""}/>
-    </div>
-  );
-  return (
-    <div style={{ padding: "14px 2px", display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid #eef0f4", marginTop: 12 }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
-        {fld("name", "Full name", { min: 200 })}
-        {fld("email", "Email", { type: "email", min: 200 })}
-        {fld("phone", "Phone")}
-        {fld("age", "Age", { type: "number" })}
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
-        <div style={{ flex: "1 1 180px", minWidth: 150 }}><span style={lbl}>Centre</span>
-          <select className="admin-input" style={{ width: "100%" }} value={f.centre || ""} onChange={e => set("centre", e.target.value)}>
-            <option value="">— select —</option>
-            {((f.centre && !centreOpts.includes(f.centre)) ? [f.centre, ...centreOpts] : centreOpts).map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        {fld("track", "Track")}
-        {fld("role", "Role")}
-        {fld("faculty", "Faculty")}
-        {fld("courses", "Courses (comma-separated)", { min: 200 })}
-      </div>
-      <div><span style={lbl}>Why / message</span><textarea className="admin-input" rows={2} value={f.why} onChange={e => set("why", e.target.value)} style={{ width: "100%", resize: "vertical" }}/></div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save application"}</button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onSaved}>Cancel</button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onDelete} style={{ color: "#b03535", marginLeft: "auto" }}>Delete application</button>
-      </div>
-    </div>
-  );
-}
-
-function AdminApplications() {
-  const [list, setList] = React.useState(null);
-  const [filter, setFilter] = React.useState({ kind: "", status: "" });
-  const [err, setErr] = React.useState("");
-  const [sel, setSel] = React.useState(() => new Set());
-  const [expanded, setExpanded] = React.useState(() => new Set());
-  const toggleExpand = (id) => setExpanded(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const [bulkBusy, setBulkBusy] = React.useState(false);
-  const load = () => NGGApi.admin.applications.list(filter).then(r => { setList(r.applications || []); setErr(""); setSel(new Set()); }).catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter.kind, filter.status]);
-  const setStatus = async (id, status) => { try { await NGGApi.admin.applications.status(id, status); load(); } catch (e) { toast.error(e.code || e.message); } };
-  const toggle = (id) => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const allSelected = list && list.length > 0 && sel.size === list.length;
-  const toggleAll = () => setSel(allSelected ? new Set() : new Set((list || []).map(a => a.id)));
-  // Bulk status change — one confirm, then apply to every selected row and
-  // report how many succeeded. Beats changing dozens of rows one at a time.
-  const bulkStatus = async (status) => {
-    if (!sel.size || bulkBusy) return;
-    const ids = Array.from(sel);
-    const ok = await dialog.confirm({ title: "Set " + ids.length + " to " + status + "?", body: "Applies the “" + status + "” status to every selected application.", cta: "Apply to " + ids.length, danger: status === "rejected" });
-    if (!ok) return;
-    setBulkBusy(true);
-    const results = await Promise.allSettled(ids.map(id => NGGApi.admin.applications.status(id, status)));
-    const failed = results.filter(r => r.status === "rejected").length;
-    setBulkBusy(false);
-    if (failed) toast.error(failed + " of " + ids.length + " couldn't be updated."); else toast.success(ids.length + " applications updated.");
-    load();
-  };
-  const convert = async (id) => {
-    const ok = await dialog.confirm({ title: "Convert to member?", body: "This creates an active member account from this application.", cta: "Create member" });
-    if (!ok) return;
-    try { const r = await NGGApi.admin.applications.convert(id); toast.success("Member created: " + r.memberId); load(); } catch (e) { toast.error(e.code || e.message); }
-  };
-  const [editId, setEditId] = React.useState(0);
-  const [zoomUrl, setZoomUrl] = React.useState("");
-  const removeApp = async (a) => {
-    if (!(await dialog.confirm({ title: "Delete this application?", body: "Permanently removes " + a.name + "'s application. Use this for spam, duplicates or test entries. This can't be undone.", cta: "Delete", danger: true }))) return;
-    try { await NGGApi.admin.applications.remove(a.id); toast.success("Application deleted."); setEditId(0); load(); } catch (e) { toast.error(e.code || e.message); }
-  };
-  return (
-    <div className="admin-section">
-      {zoomUrl && <ImageLightbox url={zoomUrl} alt="Applicant photo" onClose={() => setZoomUrl("")}/>}
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Applications</h2>
-        <div className="admin-section-actions">
-          <button className="btn btn-ghost btn-sm" disabled={!list || !list.length} onClick={() => downloadCsv("applications", (list || []).map(a => ({ kind: a.kind, program: a.program || "", name: a.name, email: a.email, age: a.age || "", centre: a.centre || "", track: a.track || "", role: a.role || "", status: a.status, createdAt: a.createdAt })))}>Export CSV</button>
-        </div>
-      </div>
-      <div className="admin-filters">
-        <select className="admin-select" value={filter.kind} onChange={e => setFilter(f => ({ ...f, kind: e.target.value }))}><option value="">All kinds</option><option value="teen">Teen</option><option value="mentor">Mentor</option></select>
-        <select className="admin-select" value={filter.status} onChange={e => setFilter(f => ({ ...f, status: e.target.value }))}><option value="">All statuses</option><option value="new">New</option><option value="reviewing">Reviewing</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="waitlist">Waitlist</option></select>
-      </div>
-      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
-        list === null ? <div className="dash-spinner"/> :
-        list.length === 0 ? <div className="admin-empty">No applications.</div> :
-        <React.Fragment>
-        <div className="admin-bulkbar">
-          <label className="admin-bulk-all"><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all applications"/> <span>{sel.size ? sel.size + " selected" : "Select all"}</span></label>
-          {sel.size > 0 && (
-            <div className="admin-bulk-actions">
-              <span className="mono admin-bulk-label">Set status:</span>
-              {["reviewing", "accepted", "waitlist", "rejected"].map(s => (
-                <button key={s} className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={() => bulkStatus(s)}>{s}</button>
-              ))}
-              <button className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={() => setSel(new Set())}>Clear</button>
-            </div>
-          )}
-        </div>
-        <div className="admin-app-list">
-          {list.map(a => (
-            <div className={"admin-app" + (sel.has(a.id) ? " is-selected" : "")} key={a.id}>
-              <div className="admin-app-top">
-                <div style={{display:"flex", gap:12, alignItems:"center"}}>
-                  <input type="checkbox" checked={sel.has(a.id)} onChange={() => toggle(a.id)} aria-label={"Select " + a.name} style={{flex:"0 0 auto", width:18, height:18}}/>
-                  {a.photoUrl && <img src={a.photoUrl} alt="" title="View photo" onClick={() => setZoomUrl(a.photoUrl)} style={{width:40, height:40, borderRadius:"50%", objectFit:"cover", flex:"0 0 auto", cursor:"zoom-in"}} onError={e => { e.target.style.display = "none"; }}/>}
-                  <div>
-                    <div className="admin-cell-name">{a.name} <span className="chip">{a.kind}</span>{a.program ? <span className={"chip " + (a.program === "summer" ? "chip-gold" : "chip-navy")}>{a.program}</span> : null}</div>
-                    <div className="mono admin-cell-sub">{a.email}{a.age ? " · age " + a.age : ""}{a.centre ? " · " + a.centre : ""}{a.track ? " · " + a.track : ""}{a.role ? " · " + a.role : ""} · {fmtDate(a.createdAt)}</div>
-                  </div>
-                </div>
-                <span className={"chip status-" + (a.status === "accepted" ? "published" : a.status === "rejected" ? "archived" : "draft")}>{a.status}</span>
-              </div>
-              {!expanded.has(a.id) && a.why && <p className="admin-app-why">{a.why}</p>}
-              {expanded.has(a.id) && <ApplicantDetail a={a}/>}
-              {editId === a.id && <ApplicationEditor a={a} onSaved={() => { setEditId(0); load(); }} onDelete={() => removeApp(a)}/>}
-              <div className="admin-app-actions">
-                <button className="btn btn-ghost btn-sm" aria-expanded={expanded.has(a.id)} onClick={() => toggleExpand(a.id)}>{expanded.has(a.id) ? "Hide details ▴" : "View details ▾"}</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setEditId(editId === a.id ? 0 : a.id)}>{editId === a.id ? "Close editor" : "Edit"}</button>
-                <select className="admin-select admin-app-status" value={a.status} onChange={e => setStatus(a.id, e.target.value)}>
-                  <option value="new">New</option><option value="reviewing">Reviewing</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="waitlist">Waitlist</option>
-                </select>
-                {a.kind === "teen" && a.status !== "accepted" && <button className="btn btn-primary btn-sm" onClick={() => convert(a.id)}>Convert to member →</button>}
-              </div>
-            </div>
-          ))}
-        </div>
-        </React.Fragment>
-      }
-    </div>
-  );
-}
 
 // ============================================================================
 // Volunteers — review desk + approved roster + safeguarding
@@ -9742,7 +8850,7 @@ function AdminFees() {
                       [prev.skipped.tooSoon, "reminded recently"],
                       [prev.skipped.optedOut, "asked not to be reminded"],
                       [prev.skipped.underMinimum, "under the minimum balance"],
-                      [prev.skipped.noEmail, "no guardian email on file"]]
+                      [prev.skipped.noContact, "no way to reach the family (no app account, email or phone)"]]
                       .filter(([n]) => n > 0).map(([n, why]) => n + " " + why).join(" · ") || "nobody — everyone with a balance is on the list"}.
                   </div>
                   {prev.count > 0 && (
@@ -10661,11 +9769,19 @@ function AdminVolunteers({ crCtx } = {}) {
 
   const approve = async (a) => {
     if (a.role === "instructor" && !a.phone) { toast.error("Instructors need a phone before approval."); return; }
-    const ok = await dialog.confirm({ title: "Approve " + a.name + "?", body: "This issues a volunteer ID + QR attendance profile and emails" + (a.phone ? "/SMSes" : "") + " it to them. " + (a.role !== "admin" ? "Safeguarding screening is still required before they work with young people." : ""), cta: "Approve & issue ID" });
+    const g = a.details && a.details.guardian;
+    /* Under 18: approval is also a statement that staff spoke to the guardian named on the form and they agree. */
+    const ok = await dialog.confirm(a.minor
+      ? { title: "Approve " + a.name + ", who is under 18?", body: "Only if you have spoken to their guardian" + (g ? ", " + g.name + " (" + g.phone + ")," : "") + " and they agree to " + a.name + " volunteering. Approving records that consent. Screening and referees still clear before they work with members.", cta: "Guardian agrees: approve" }
+      : { title: "Approve " + a.name + "?", body: "This issues a volunteer ID and QR attendance profile and emails" + (a.phone ? " and texts" : "") + " it to them. They work with members only once their referees and screening have cleared.", cta: "Approve & issue ID" });
     if (!ok) return;
     setBusy("a" + a.id);
-    try { const r = await NGGApi.admin.volunteers.approve(a.id); toast.success("Approved · " + r.volunteer.volunteerId + (r.idSent && r.idSent.length ? " · ID sent by " + r.idSent.join(" + ") : "")); load(); }
-    catch (e) { toast.error(e.code === "phone_required" ? "Instructors need a phone first." : (e.code || e.message)); }
+    try {
+      const r = await NGGApi.admin.volunteers.approve(a.id, !!a.minor);
+      toast.success(r.widened ? a.name + " already volunteers, and now serves both programmes" : "Approved · " + r.volunteer.volunteerId + (r.idSent && r.idSent.length ? " · ID sent by " + r.idSent.join(" + ") : "") + " · screening " + (r.safeguarding || "pending"));
+      load();
+    }
+    catch (e) { toast.error(e.code === "phone_required" ? "Instructors need a phone first." : ((e.data && e.data.message) || e.code || e.message)); }
     finally { setBusy(""); }
   };
   const decline = async (a) => {
@@ -10754,6 +9870,7 @@ function AdminVolunteers({ crCtx } = {}) {
                     <div className="mono admin-cell-sub">{a.email}{a.phone ? " · " + a.phone : " · no phone"}{a.centre ? " · 🏫 " + a.centre : ""}{a.faculty ? " · " + a.faculty : ""}{(a.courses || []).length ? " · " + a.courses.join(", ") : ""} · {fmtDate(a.createdAt)}</div>
                   </div>
                   {a.role === "instructor" && !a.phone && <span className="chip status-archived">phone required</span>}
+                  {a.minor && <span className="chip status-draft">Under 18 · guardian</span>}
                 </div>
                 {!expanded.has(a.id) && a.why && <p className="admin-app-why">{a.why}</p>}
                 {expanded.has(a.id) && <ApplicantDetail a={a}/>}
@@ -10878,94 +9995,11 @@ function AdminPromo() {
   );
 }
 
-function AdminNewsletter() {
-  const [d, setD] = React.useState(null);
-  const [err, setErr] = React.useState("");
-  const [msg, setMsg] = React.useState({ subject: "", body: "" });
-  const [busy, setBusy] = React.useState(false);
-  const load = () => { setErr(""); NGGApi.admin.newsletter().then(setD).catch(e => setErr(e.code || e.message)); };
-  React.useEffect(() => { load(); }, []);
-  const send = async () => {
-    const active = (d && d.active) || 0;
-    if (!(await dialog.confirm({ title: "Send to " + active + " subscriber(s)?", body: "Emails the current newsletter to everyone subscribed. There's no undo.", cta: "Send newsletter", danger: true }))) return;
-    setBusy(true);
-    try { const r = await NGGApi.admin.newsletterSend(msg.subject, msg.body); toast.success("Sent to " + (r.sent || 0) + (r.skipped ? " (" + r.skipped + " skipped)" : "") + ".", "Newsletter"); setMsg({ subject: "", body: "" }); }
-    catch (e) { toast.error(e.code || e.message, "Couldn't send"); } finally { setBusy(false); }
-  };
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Newsletter {d ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {d.active}/{d.total} active</span> : null}</h2>
-        <button className="btn btn-ghost btn-sm" disabled={!d || !d.subscribers.length} onClick={() => downloadCsv("newsletter", d.subscribers)}>Export CSV</button>
-      </div>
-      <div className="admin-fields" style={{ maxWidth: 640, marginBottom: 18 }}>
-        <div className="admin-fields-h" style={{ fontWeight: 700 }}>Compose &amp; send</div>
-        <Field label="Subject" value={msg.subject} onChange={v => setMsg(o => ({ ...o, subject: v }))}/>
-        <label className="admin-field"><span className="admin-label">Body</span><textarea className="admin-input" rows={6} value={msg.body} onChange={e => setMsg(o => ({ ...o, body: e.target.value }))} placeholder="Write your update — plain text; links become clickable."/></label>
-        <div><button className="btn btn-primary btn-sm" disabled={busy || msg.subject.trim().length < 3 || msg.body.trim().length < 10} onClick={send}>{busy ? "Sending…" : "Send newsletter"}</button> <span className="admin-hint">Each email includes a one-click unsubscribe link.</span></div>
-      </div>
-      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
-        !d ? <div className="dash-spinner"/> :
-        d.subscribers.length === 0 ? <div className="admin-empty">No subscribers yet.</div> :
-        <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Email</th><th>Source</th><th>Status</th><th>Joined</th></tr></thead>
-          <tbody>{d.subscribers.map((s, i) => <tr key={i}><td>{s.email}</td><td>{s.source}</td><td><span className={"chip status-" + (s.status === "subscribed" ? "published" : "archived")}>{s.status}</span></td><td className="mono">{fmtDate(s.createdAt)}</td></tr>)}</tbody>
-        </table></div>
-      }
-    </div>
-  );
-}
 
 // ============================================================================
 // Messages — contact-form inbox
 // ============================================================================
 
-function AdminContact() {
-  const [d, setD] = React.useState(null);
-  const [filter, setFilter] = React.useState({ status: "", purpose: "" });
-  const [err, setErr] = React.useState("");
-  const load = () => NGGApi.admin.contact.list(filter).then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter.status, filter.purpose]);
-  const setStatus = async (id, status) => { try { await NGGApi.admin.contact.status(id, status); load(); } catch (e) { toast.error(e.code || e.message); } };
-  const msgs = d ? d.messages : null;
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Messages {d ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {d.unread} new</span> : null}</h2>
-        <button className="btn btn-ghost btn-sm" disabled={!msgs || !msgs.length} onClick={() => downloadCsv("messages", (msgs || []).map(m => ({ ref: m.ref, purpose: m.purpose, name: m.name, email: m.email, phone: m.phone || "", subject: m.subject || "", message: m.message, status: m.status, createdAt: m.createdAt })))}>Export CSV</button>
-      </div>
-      <div className="admin-filters">
-        <select className="admin-select" value={filter.status} onChange={e => setFilter(f => ({ ...f, status: e.target.value }))}><option value="">All statuses</option><option value="new">New</option><option value="read">Read</option><option value="replied">Replied</option><option value="archived">Archived</option></select>
-        <select className="admin-select" value={filter.purpose} onChange={e => setFilter(f => ({ ...f, purpose: e.target.value }))}><option value="">All topics</option><option value="general">General</option><option value="apply">Admissions</option><option value="mentor">Mentoring</option><option value="partner">Partnership</option><option value="media">Media</option><option value="support">Support</option></select>
-      </div>
-      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
-        msgs === null ? <div className="dash-spinner"/> :
-        msgs.length === 0 ? <div className="admin-empty">No messages.</div> :
-        <div className="admin-app-list">
-          {msgs.map(m => (
-            <div className="admin-app" key={m.id}>
-              <div className="admin-app-top">
-                <div>
-                  <div className="admin-cell-name">{m.name} <span className="chip chip-navy">{m.purpose}</span></div>
-                  <div className="mono admin-cell-sub">{m.email}{m.phone ? " · " + m.phone : ""} · {fmtDate(m.createdAt)} · {m.ref}</div>
-                </div>
-                <span className={"chip status-" + (m.status === "replied" ? "published" : m.status === "archived" ? "archived" : "draft")}>{m.status}</span>
-              </div>
-              {m.subject && <div style={{ fontWeight: 600, marginTop: 6 }}>{m.subject}</div>}
-              <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{m.message}</p>
-              <div className="admin-app-actions">
-                <select className="admin-select admin-app-status" value={m.status} onChange={e => setStatus(m.id, e.target.value)}>
-                  <option value="new">New</option><option value="read">Read</option><option value="replied">Replied</option><option value="archived">Archived</option>
-                </select>
-                <a className="btn btn-ghost btn-sm" href={"mailto:" + m.email + "?subject=" + encodeURIComponent("Re: " + (m.subject || "Your message") + " (" + m.ref + ")")}>Reply by email →</a>
-              </div>
-            </div>
-          ))}
-        </div>
-      }
-    </div>
-  );
-}
 
 // ============================================================================
 // Settings
@@ -12077,175 +11111,6 @@ function CentreGeoEditor({ c, onSaved }) {
 // Photo review — the editor's console. Free-AI triage flags problems; Cloudinary
 // does identity-safe edits; a human approves, requests a retake, or rejects.
 // ============================================================================
-function AdminPhotos() {
-  const [data, setData] = React.useState(null);
-  const [err, setErr] = React.useState("");
-  const [busyId, setBusyId] = React.useState("");
-  const [zoom, setZoom] = React.useState("");
-  /* Children with NO photograph, which the queue above structurally cannot show
-     — it lists photo ASSETS, and these have none. Every registration that
-     arrived before the image store existed lost its headshot at submit time and
-     cannot be recovered, so the only fix is to ask those families again. */
-  const [missing, setMissing] = React.useState(null);
-  const [asking, setAsking] = React.useState(false);
-  const loadMissing = () => NGGApi.admin.photos.missing(200).then(setMissing).catch(() => setMissing(null));
-  const load = () => { loadMissing(); return NGGApi.admin.photos.queue().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message)); };
-  React.useEffect(() => { load(); }, []);
-
-  const askMissing = async () => {
-    const n = (missing && missing.students || []).filter(s => s.reachable && !s.askedAt).length;
-    const go = await dialog.confirm({
-      title: "Send retake links",
-      body: "Emails each guardian a one-tap link to take a new photo. " + n + " famil" + (n === 1 ? "y is" : "ies are") +
-            " due — anyone asked in the last 3 days is skipped, so pressing this again continues rather than asking twice." +
-            " Sent in batches of 50; press again for the next batch.",
-      cta: "Send " + Math.min(50, n),
-    });
-    if (!go) return;
-    setAsking(true);
-    try {
-      const r = await NGGApi.admin.photos.requestMissing(50, 3);
-      toast.success(r.asked ? "Asked " + r.asked + " famil" + (r.asked === 1 ? "y" : "ies") + (r.remaining ? " · " + r.remaining + " still due" : " · that's everyone") : (r.message || "Nobody was due."));
-      loadMissing();
-    } catch (e) { toast.error(e.code || e.message); } finally { setAsking(false); }
-  };
-
-  const claim = async (a) => { setBusyId(a.assetId); try { await NGGApi.admin.photos.claim(a.assetId); toast.success("Claimed — you're reviewing this one."); load(); } catch (e) { toast.error(e.code === "already_claimed" ? "Another editor already claimed it." : (e.code || e.message)); } finally { setBusyId(""); } };
-  const approve = async (a) => {
-    const edited = await dialog.prompt({ title: "Approve this photo", body: "Approves the edited image for the ID card. Paste a corrected Cloudinary URL to override it, or leave it as-is.", cta: "Approve", required: false, defaultValue: a.editedUrl || "", placeholder: "https://res.cloudinary.com/…" });
-    if (edited === null) return;
-    setBusyId(a.assetId);
-    try { await NGGApi.admin.photos.approve(a.assetId, (edited || "").trim() || a.editedUrl, ""); toast.success("Photo approved."); load(); }
-    catch (e) { toast.error(e.code || e.message); } finally { setBusyId(""); }
-  };
-  const retake = async (a) => {
-    const reason = await dialog.prompt({ title: "Request a retake", body: "Tell the desk what to fix (lighting, framing, background). The registration keeps its place in the queue.", cta: "Request retake", placeholder: "e.g. Please retake against a plain wall." });
-    if (!reason) return;
-    setBusyId(a.assetId);
-    try { await NGGApi.admin.photos.retake(a.assetId, reason.trim()); toast.success("Retake requested."); load(); }
-    catch (e) { toast.error(e.code === "reason_required" ? "Add a short reason." : (e.code || e.message)); } finally { setBusyId(""); }
-  };
-  const reject = async (a) => {
-    const reason = await dialog.prompt({ title: "Reject this photo", body: "Rejects the image entirely — for inappropriate or unusable uploads. Needs elevated (People) access.", cta: "Reject", danger: true, placeholder: "Reason" });
-    if (!reason) return;
-    setBusyId(a.assetId);
-    try { await NGGApi.admin.photos.reject(a.assetId, reason.trim()); toast.success("Photo rejected."); load(); }
-    catch (e) { toast.error(e.code === "forbidden" ? "Rejecting needs the People permission." : (e.code || e.message)); } finally { setBusyId(""); }
-  };
-
-  const shot = (url, label, tone) => (
-    <div style={{ flex: "1 1 160px" }}>
-      <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: "var(--ink-500)", marginBottom: 5 }}>{label}</div>
-      <button type="button" onClick={() => url && setZoom(url)} title={url ? "View full size" : ""} style={{ display: "grid", placeItems: "center", width: "100%", aspectRatio: "4/5", borderRadius: 10, overflow: "hidden", background: "rgba(12,20,50,0.05)", border: "1px solid " + (tone || "rgba(12,20,50,0.12)"), padding: 0, cursor: url ? "zoom-in" : "default" }}>
-        {url ? <img src={url} alt={label} style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : <span style={{ color: "var(--ink-400)", fontSize: 12 }}>—</span>}
-      </button>
-    </div>
-  );
-
-  return (
-    <div className="admin-section">
-      {zoom && <ImageLightbox url={zoom} alt="Headshot" onClose={() => setZoom("")}/>}
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Photo review {data && data.pending ? <span className="chip chip-lime">{data.pending} waiting</span> : null}</h2>
-        <button className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
-      </div>
-      <p className="admin-hint">The free AI only <b>flags</b> problems; Cloudinary <b>enhances</b> — it never alters the person. Approve the edit, request a retake, or (for unusable/inappropriate uploads) reject. You can paste a corrected image URL when approving.</p>
-
-      {/* The children this queue cannot show. A card with no face on it is not a
-          smaller problem than a badly-lit one, and it is invisible here because
-          there is no asset to list — so it needs its own block, above the
-          queue, with the one action that fixes it. */}
-      {missing && missing.total > 0 && (
-        <div className="admin-card" style={{ padding: 16, marginBottom: 16, borderColor: "rgba(245,176,38,.45)", background: "rgba(245,176,38,.06)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <h3 className="admin-h3" style={{ margin: 0 }}>
-              {missing.total} child{missing.total === 1 ? "" : "ren"} with no photo on file
-            </h3>
-            <button className="btn btn-primary btn-sm" disabled={asking} onClick={askMissing}>
-              {asking ? "Sending…" : "Send retake links"}
-            </button>
-          </div>
-          <p className="admin-hint" style={{ marginTop: 6 }}>
-            {(() => {
-              const rows = missing.students || [];
-              const self = rows.filter(s => s.selfRegistered).length;
-              const unreachable = rows.filter(s => !s.reachable).length;
-              const asked = rows.filter(s => s.askedAt).length;
-              return <>
-                {self > 0 && <><b>{self}</b> registered themselves — that form cannot be submitted without a photo, so those images
-                were lost before reaching the record and cannot be recovered. </>}
-                Each link lets a guardian take a new one on their phone in under a minute.
-                {asked > 0 && <> {asked} already asked.</>}
-                {unreachable > 0 && <> <b>{unreachable} have no email on file</b> and cannot be reached this way — a coordinator
-                has to photograph them at the centre.</>}
-              </>;
-            })()}
-          </p>
-          <div className="admin-table-wrap" style={{ maxHeight: 260, overflow: "auto" }}>
-            <table className="admin-table">
-              <thead><tr><th>Child</th><th>Centre</th><th>Registered</th><th>Guardian</th><th>Asked</th></tr></thead>
-              <tbody>
-                {(missing.students || []).map(sx => (
-                  <tr key={sx.studentId}>
-                    <td><b>{sx.fullName}</b><div className="mono admin-cell-sub">{sx.displayId || sx.studentId}{sx.selfRegistered ? " · self-registered" : ""}</div></td>
-                    <td className="mono" style={{ fontSize: 12 }}>{sx.centre || "—"}</td>
-                    <td className="mono" style={{ fontSize: 12 }}>{(sx.registeredAt || "").slice(0, 10) || "—"}</td>
-                    <td className="mono" style={{ fontSize: 12 }}>{sx.reachable ? sx.parentEmail : <span style={{ color: "#b3001b" }}>no email</span>}</td>
-                    <td className="mono" style={{ fontSize: 12 }}>{sx.askedAt ? sx.askedAt.slice(0, 10) : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {missing.shown < missing.total && <p className="admin-cell-sub" style={{ marginTop: 6 }}>Showing the {missing.shown} most recent of {missing.total}.</p>}
-        </div>
-      )}
-      {err ? <ErrorState title="Couldn't load the queue" code={err} onRetry={load}/> :
-        data === null ? <div className="dash-spinner"/> :
-        (data.queue || []).length === 0 ? <div className="admin-empty">Nothing waiting — clean photos auto-approve and only flagged ones land here. 🎉</div> :
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {data.queue.map(a => {
-            const f = a.aiFindings || {};
-            const flags = f.flags || [];
-            const issues = f.issues || [];
-            const claimed = a.status === "in_review";
-            const busy = busyId === a.assetId;
-            return (
-              <div key={a.assetId} className="admin-card" style={{ padding: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-                  <div><b className="mono">{a.subjectType}:{a.subjectId}</b> <span className="admin-cell-sub">· v{a.version} · {a.assetId}</span></div>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    {a.aiScore != null && <span className="chip" style={{ background: a.aiScore >= 70 ? "rgba(118,176,67,.16)" : a.aiScore >= 45 ? "rgba(255,206,84,.18)" : "rgba(255,120,120,.16)" }}>AI score {a.aiScore}</span>}
-                    <span className={"chip " + (claimed ? "chip-lime" : "status-archived")}>{claimed ? "in review" : "waiting"}</span>
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
-                  {shot(a.sourceUrl, "AS CAPTURED", null)}
-                  {shot(a.editedUrl, "ENHANCED (IDENTITY-SAFE)", "rgba(118,176,67,.4)")}
-                  <div style={{ flex: "2 1 220px", minWidth: 200 }}>
-                    <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: "var(--ink-500)", marginBottom: 6 }}>AI FINDINGS</div>
-                    {flags.length === 0 && issues.length === 0 ? <p className="admin-cell-sub" style={{ margin: 0 }}>No specific issues flagged.</p> : (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-                        {flags.map((fl, i) => <span key={i} className="chip" style={{ background: "rgba(255,120,120,.14)" }}>{String(fl).replace(/_/g, " ")}</span>)}
-                      </div>
-                    )}
-                    {issues.length > 0 && <ul style={{ margin: "0 0 0 16px", padding: 0, color: "var(--ink-600)", fontSize: 13, lineHeight: 1.5 }}>{issues.map((it, i) => <li key={i}>{it}</li>)}</ul>}
-                    {flags.indexOf("ai_unavailable") >= 0 && <p className="admin-cell-sub" style={{ margin: "6px 0 0" }}>Analysis was unavailable — please eyeball this one carefully.</p>}
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-                  {!claimed && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => claim(a)}>Claim to review</button>}
-                  <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => approve(a)}>Approve</button>
-                  <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => retake(a)}>Request retake</button>
-                  <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => reject(a)} style={{ color: "#b03535" }}>Reject</button>
-                </div>
-              </div>
-            );
-          })}
-        </div>}
-    </div>
-  );
-}
 
 // ============================================================================
 // Forms — one visual builder, every public form (registration/volunteer/contact)

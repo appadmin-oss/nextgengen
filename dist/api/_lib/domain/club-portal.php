@@ -40,7 +40,7 @@ const CP_ANN_TG_MAX = 400;
  * checked for lost facts — or the SMS is dropped and it goes by email and
  * Telegram instead, which carry the whole message. Never truncated. */
 const CP_ANN_SMS_CHARS = 306;
-const CP_ANN_CHANNELS = ['app', 'email', 'telegram', 'sms'];
+const CP_ANN_CHANNELS = ['app', 'email', 'telegram', 'sms', 'community'];
 const CP_ROTA_WEEKS = 4;
 
 /* ── Context ─────────────────────────────────────────────────────────────── */
@@ -540,9 +540,12 @@ function conduct_rule_key(array $opts): string {
        evidence fine's note carries an assignment's title, and a title like
        "Absence essay" must not be capped under the absence rule. */
     if (isset($opts['rule'])) return '';
+    /* Older rows name no rule, so their wording decides — as WHOLE WORDS. It
+       matched "late" anywhere, so "plate", "chocolate" and "escalated" counted
+       against the lateness cap. New fines name their rule (policy_fine_to_ledger). */
     $note = strtolower((string)($opts['note'] ?? ''));
-    if (str_contains($note, 'late')) return 'late';
-    if (str_contains($note, 'absen') || str_contains($note, 'missed')) return 'absent';
+    if (preg_match('/\blate(ness|ly)?\b/', $note)) return 'late';
+    if (preg_match('/\b(absent|absence|absences|missed)\b/', $note)) return 'absent';
     return '';
 }
 /**
@@ -1058,7 +1061,8 @@ function cp_ann_row(array $a): array {
  *  guardians in their family account) and email, plus Telegram when the site
  *  has a bot. SMS costs money per text, so it is a choice, not a default. */
 function cp_ann_default_channels(): array {
-    return array_merge(['app', 'email'], function_exists('telegram_on') && telegram_on() ? ['telegram'] : []);
+    // Community too: an announcement for members is pinned in the commons (cp_ann_send skips it for guardians only).
+    return array_merge(['app', 'email'], function_exists('telegram_on') && telegram_on() ? ['telegram'] : [], ['community']);
 }
 /** A stored phone (08031234567, 234803…) as the E.164 Telegram links are keyed by. */
 function cp_ann_e164(string $ph): string { return function_exists('sms_normalize') ? sms_normalize($ph) : telegram_phone_e164($ph); }
@@ -1158,8 +1162,8 @@ function admin_clubp_ann_reach(array $p): array {
 function cp_ann_unreachable(string $aud, array $chs): string {
     $toM = $aud !== 'guardians';
     if ($aud !== 'members' && array_intersect(['app', 'email', 'sms', 'telegram'], $chs)) return '';
-    if ($toM && array_intersect(['app', 'email', 'telegram'], $chs)) return '';
-    return 'Members don’t get SMS. Add App or Email to reach them.';
+    if ($toM && array_intersect(['app', 'email', 'telegram', 'community'], $chs)) return '';
+    return $chs === ['community'] ? 'Community is the members’ space; guardians are not in it. Add App or Email to reach them.' : 'Members don’t get SMS. Add App or Email to reach them.';
 }
 /** How many of this audience the channels actually reach — 0 is refused,
  *  never sent to nobody. Members' email, app and Telegram; guardians' family
@@ -1167,6 +1171,7 @@ function cp_ann_unreachable(string $aud, array $chs): string {
 function cp_ann_reachable(array $aud, array $chs): int {
     $n = 0; $on = static fn($c) => in_array($c, $chs, true);
     if ($on('app')) $n += count($aud['members']) + count($aud['guardianIds']);
+    elseif ($on('community')) $n += count($aud['members']);   // the members see the pinned post; App already counts them
     if ($on('email')) { $n += count($aud['emails']); foreach ($aud['members'] as $m) if (filter_var(trim((string)$m['email']), FILTER_VALIDATE_EMAIL)) $n++; }
     if ($on('sms') && function_exists('sms_enabled') && sms_enabled()) $n += count($aud['phones']);
     if ($on('telegram') && function_exists('telegram_on') && telegram_on())
@@ -1174,7 +1179,7 @@ function cp_ann_reachable(array $aud, array $chs): int {
     return $n;
 }
 function cp_ann_nobody(array $chs): string {
-    $l = array_map(static fn($c) => ['app' => 'the app', 'email' => 'email', 'telegram' => 'Telegram', 'sms' => 'SMS'][$c] ?? $c, $chs);
+    $l = array_map(static fn($c) => ['app' => 'the app', 'email' => 'email', 'telegram' => 'Telegram', 'sms' => 'SMS', 'community' => 'Community'][$c] ?? $c, $chs);
     return 'Nobody in this audience can be reached by ' . implode(' or ', $l) . ' — no family accounts, addresses or connected phones. Add Email, or check the records.';
 }
 
@@ -1237,7 +1242,12 @@ function cp_ann_send(array $x, array $a): array {
     $ch = (array)(safe_json((string)$a['channels']) ?: ['app']);
     $aud = cp_ann_audience($x, (string)$a['aud'], (string)$a['centre']);
     $title = (string)$a['title']; $body = (string)$a['body'];
-    $stats = ['app' => 0, 'family' => 0, 'email' => 0, 'telegram' => 0, 'sms' => 0, 'emailSkipped' => 0, 'smsSkipped' => 0, 'telegramSkipped' => 0, 'smsDropped' => 0];
+    $stats = ['app' => 0, 'family' => 0, 'email' => 0, 'telegram' => 0, 'sms' => 0, 'community' => 0, 'emailSkipped' => 0, 'smsSkipped' => 0, 'telegramSkipped' => 0, 'smsDropped' => 0];
+    /* Community: one pinned Announcement in the commons, by whoever approved it (or wrote it, when an admin sent it). */
+    if (in_array('community', $ch, true) && (string)$a['aud'] !== 'guardians' && function_exists('community_announce')) {
+        $cp = community_announce((string)($a['approvedById'] ?: $a['byId']), 'ann:' . (string)$a['annId'], $title, $body, (string)$a['centre'] === 'all' ? '' : (string)$a['centre']);
+        if (!empty($cp['ok'])) $stats['community'] = 1;
+    }
     if (in_array('app', $ch, true)) {
         foreach ($aud['members'] as $m) { try { push_notification((string)$m['memberId'], ['kind' => 'announcement', 'title' => $title, 'body' => $body, 'linkPage' => 'dashboard']); $stats['app']++; } catch (Throwable $e) {} }
         // Guardians with a family account: one notice each, however many children.

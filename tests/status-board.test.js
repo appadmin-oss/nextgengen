@@ -136,78 +136,86 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
       await page.waitForFunction(() => !!window.__adminSection, null, { timeout: 60000 });
       return { page, errs };
     };
-    const main = (page) => page.evaluate(() => (document.querySelector('.admin-main') || document.body).innerText);
-    const tabs = (page, label) => page.evaluate(l => Array.from(document.querySelectorAll('[role=tablist][aria-label="' + l + '"] [role=tab]')).map(b => b.textContent.trim()), label);
-    const clickTab = (page, label, name) => page.evaluate(({ l, n }) => {
-      const b = Array.from(document.querySelectorAll('[role=tablist][aria-label="' + l + '"] [role=tab]')).find(x => x.textContent.trim() === n);
-      if (b) b.click(); return !!b;
-    }, { l: label, n: name });
+    /* The Control Room (/control) draws a choice of parts as a radiogroup (CrSeg), not a tablist:
+       "Status by area" on the board, "Part of the record" on a member's record page. */
+    const radios = (page, label) => page.evaluate(l => Array.from(document.querySelectorAll('[role=radiogroup][aria-label="' + l + '"] [role=radio]')).map(b => b.textContent.trim()), label);
+    const pick = async (page, label, name) => {
+      const ok = await page.evaluate(({ l, n }) => {
+        const b = Array.from(document.querySelectorAll('[role=radiogroup][aria-label="' + l + '"] [role=radio]')).find(x => x.textContent.trim() === n);
+        if (b) b.click(); return !!b;
+      }, { l: label, n: name });
+      await page.waitForFunction(({ l, n }) => { const b = Array.from(document.querySelectorAll('[role=radiogroup][aria-label="' + l + '"] [role=radio]')).find(x => x.textContent.trim() === n); return b && b.getAttribute('aria-checked') === 'true'; }, { l: label, n: name }, { timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      return ok;
+    };
+    const main = (page) => page.evaluate(() => (document.querySelector('#cr-main, #cr-pmain') || document.body).innerText);
+    const board = async (page) => {
+      await page.evaluate(() => window.__adminSection('status'));
+      await page.waitForSelector('[role=radiogroup][aria-label="Status by area"]', { timeout: 30000 });
+    };
+    const record = async (page, id) => {
+      await page.goto(BASE + '/control/members/members/' + id, { waitUntil: 'domcontentloaded' });
+      await waitForBoot(page);
+      await page.waitForSelector('[role=radiogroup][aria-label="Part of the record"]', { timeout: 30000 });
+    };
+    const part = async (page, name, re) => {
+      await pick(page, 'Part of the record', name);
+      if (re) await page.waitForFunction(src => new RegExp(src).test((document.querySelector('#cr-main, #cr-pmain') || document.body).innerText), re.source, { timeout: 10000 }).catch(() => {});
+      return main(page);
+    };
 
     // ── The super admin's board ─────────────────────────────────────────
     console.log('\n── The status board, everything visible ─────────────────────');
     const A = await openAs(ADMIN);
-    await A.page.evaluate(() => window.__adminSection('status'));
-    await A.page.waitForSelector('[role=tablist][aria-label="Status by area"]', { timeout: 30000 });
-    chk('"Status board" is in the sidebar', await A.page.evaluate(() => Array.from(document.querySelectorAll('nav button, nav a, aside button, aside a')).some(b => /Status board/.test(b.textContent))));
-    let tl = await tabs(A.page, 'Status by area');
-    chk('a tab for each area: members, centres, mentors, instructors, centre leads, staff (' + tl.join(' · ') + ')', tl.length === 6);
+    await board(A.page);
+    chk('"Status board" is where the address says, under Analytics', /\/control\/analytics\/status/.test(A.page.url()) && /Status board/.test(await A.page.evaluate(() => (document.querySelector('.cr-crumb-tab') || {}).innerText || '')));
+    let tl = await radios(A.page, 'Status by area');
+    chk('a part for each area: members, centres, mentors, instructors, centre leads, staff (' + tl.join(' · ') + ')', tl.length === 6);
+    await A.page.waitForFunction(() => /Kemi Atrisk/.test((document.querySelector('#cr-main') || document.body).innerText), null, { timeout: 15000 }).catch(() => {});
     let t = await main(A.page);
     chk('the at-risk member is on the attention list, saying why', /Kemi Atrisk/.test(t) && /at risk/i.test(t));
-    await clickTab(A.page, 'Status by area', tl[1]); await A.page.waitForTimeout(300);
+    await pick(A.page, 'Status by area', 'Centres');
     t = await main(A.page);
     chk('centres: both centres, and the one with no lead says so', /Ijaiye/.test(t) && /Egbeda/.test(t) && /no lead/i.test(t));
-    await clickTab(A.page, 'Status by area', tl[5]); await A.page.waitForTimeout(300);
+    await pick(A.page, 'Status by area', 'Staff & admins');
     t = await main(A.page);
-    chk('staff: the centre lead is listed, flagged for having no 2FA', /Lola Lead/.test(t) && /no 2FA/i.test(t));
-    await A.page.evaluate(() => { const c = document.querySelector('.st-only input'); if (c) c.click(); });
-    await A.page.waitForTimeout(300);
+    const staffRow = (page, who) => page.evaluate(w => { const r = Array.from(document.querySelectorAll('#cr-main tbody tr')).find(x => x.innerText.includes(w)); return r ? r.innerText : ''; }, who);
+    chk('staff: the centre lead is listed, with 2FA off', /Lola Lead/.test(t) && /\bOff\b/.test(await staffRow(A.page, 'Lola Lead')));
+    await A.page.click('[role=switch][aria-label="Only what needs attention"]');
+    await A.page.waitForTimeout(400);
     t = await main(A.page);
-    chk('"Only what needs attention" hides the admin who has 2FA and a clean record', /Lola Lead/.test(t) && !/Ada Admin/.test(t));
+    chk('"Only what needs attention" hides the admin who has 2FA and a clean record', /Lola Lead/.test(t) && !/Ada Admin/.test(await A.page.evaluate(() => Array.from(document.querySelectorAll('#cr-main tbody')).map(x => x.innerText).join(' '))));
     chk('no page errors on the board', A.errs.length === 0 || (console.log(A.errs), false));
 
-    // ── The member drawer ───────────────────────────────────────────────
+    // ── The member record ───────────────────────────────────────────────
     console.log('\n── The member record ────────────────────────────────────────');
-    // Jumping from the board to another section's sub-tab: the open section must
-    // not swallow the tab meant for the next one (it did — see useAdminTab).
-    await A.page.evaluate(() => window.__adminSection('members', 'roster'));
-    await A.page.waitForSelector('.admin-main .admin-table tbody tr', { timeout: 30000 });
-    await A.page.evaluate(() => { const r = Array.from(document.querySelectorAll('.admin-main tbody tr')).find(x => /Tunde Present/.test(x.innerText)); if (r) r.click(); });
-    await A.page.waitForSelector('[role=tablist][aria-label="Member record"]', { timeout: 15000 });
-    tl = await tabs(A.page, 'Member record');
-    chk('the drawer has the record tabs (' + tl.join(' · ') + ')', ['Overview', 'Attendance', 'Conduct', 'Fees', 'Curriculum', 'Companion', 'Family & mentor', 'Classes'].every(x => tl.includes(x)));
-    const drawer = () => A.page.evaluate(() => document.querySelector('.admin-drawer-panel').innerText);
-    await clickTab(A.page, 'Member record', 'Attendance');
-    await A.page.waitForSelector('.mr-panel', { timeout: 15000 });
-    t = await drawer();
+    await record(A.page, 'NGG-SBT-M1');
+    tl = await radios(A.page, 'Part of the record');
+    chk('the record has its parts (' + tl.join(' · ') + ')', ['Overview', 'Attendance', 'Conduct', 'Fees', 'Curriculum', 'Companion', 'Family & mentor', 'Classes'].every(x => tl.includes(x)));
+    t = await part(A.page, 'Attendance', /Late · 12 min/);
     chk('attendance: today\'s late arrival, with the minutes', /Late · 12 min/.test(t));
-    await clickTab(A.page, 'Member record', 'Fees'); await A.page.waitForTimeout(200);
-    t = await drawer();
-    chk('fees: a super admin (who holds every capability) sees the money', /Outstanding/.test(t) && !/not part of your access/.test(t));
-    await clickTab(A.page, 'Member record', 'Classes'); await A.page.waitForTimeout(200);
-    t = await drawer();
+    t = await part(A.page, 'Fees', /Payable now|isn’t part of your access/);
+    chk('fees: a super admin (who holds every capability) sees the money', /Payable now/.test(t) && !/isn’t part of your access/.test(t));
+    t = await part(A.page, 'Classes', /10:00/);
     chk('classes: their Piano class on their centre\'s timetable', /Piano/.test(t) && /10:00/.test(t));
-    chk('no page errors in the drawer', A.errs.length === 0 || (console.log(A.errs), false));
+    chk('no page errors on the record', A.errs.length === 0 || (console.log(A.errs), false));
 
     // ── The centre lead ─────────────────────────────────────────────────
     console.log('\n── A centre lead\'s board ────────────────────────────────────');
     const L = await openAs(LEAD);
-    await L.page.evaluate(() => window.__adminSection('status'));
-    await L.page.waitForSelector('[role=tablist][aria-label="Status by area"]', { timeout: 30000 });
-    tl = await tabs(L.page, 'Status by area');
-    chk('no staff tab for a centre lead (' + tl.join(' · ') + ')', tl.length > 0 && !tl.some(x => /staff/i.test(x)));
-    await clickTab(L.page, 'Status by area', tl.find(x => /centre/i.test(x)) || tl[1]); await L.page.waitForTimeout(300);
+    await board(L.page);
+    tl = await radios(L.page, 'Status by area');
+    chk('no staff part for a centre lead (' + tl.join(' · ') + ')', tl.length > 0 && !tl.some(x => /staff/i.test(x)));
+    await pick(L.page, 'Status by area', tl.find(x => /centre/i.test(x) && !/lead/i.test(x)) || tl[1]);
     t = await main(L.page);
     chk('only their own centre', /Ijaiye/.test(t) && !/Egbeda/.test(t));
-    await L.page.evaluate(() => window.__adminSection('members', 'roster'));
-    await L.page.waitForSelector('.admin-main .admin-table tbody tr', { timeout: 30000 });
+    await L.page.evaluate(() => window.__adminSection('members', 'members'));
+    await L.page.waitForFunction(() => /Tunde Present/.test((document.querySelector('#cr-main') || document.body).innerText), null, { timeout: 30000 }).catch(() => {});
     t = await main(L.page);
     chk('the lead\'s roster holds their centre only', /Tunde Present/.test(t) && !/Bayo Egbeda/.test(t));
-    await L.page.evaluate(() => { const r = Array.from(document.querySelectorAll('.admin-main tbody tr')).find(x => /Tunde Present/.test(x.innerText)); if (r) r.click(); });
-    await L.page.waitForSelector('[role=tablist][aria-label="Member record"]', { timeout: 15000 });
-    await clickTab(L.page, 'Member record', 'Fees');
-    await L.page.waitForSelector('.mr-panel, .mr-hidden', { timeout: 15000 });
-    t = await L.page.evaluate(() => document.querySelector('.admin-drawer-panel').innerText);
-    chk('fees: a centre lead (no fees capability) is told money is not their access — not shown an empty ledger', /not part of your access/.test(t) && !/Outstanding/.test(t));
+    await record(L.page, 'NGG-SBT-M1');
+    t = await part(L.page, 'Fees', /Payable now|isn’t part of your access/);
+    chk('fees: a centre lead (no fees capability) is told money is not their access — not shown an empty ledger', /isn’t part of your access/.test(t) && !/Payable now/.test(t));
     chk('no page errors for the lead', L.errs.length === 0 || (console.log(L.errs), false));
   } catch (e) {
     bad('threw: ' + (e && e.stack || e));

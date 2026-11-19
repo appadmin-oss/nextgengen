@@ -78,7 +78,9 @@ AddDefaultCharset UTF-8
   Header always set X-Content-Type-Options "nosniff"
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
   Header always set X-Frame-Options "SAMEORIGIN"
-  Header always set Permissions-Policy "geolocation=(), camera=(self), microphone=(), payment=(), interest-cohort=()"
+  # microphone=(self), not (): the member portal's voice notes and the English Lab's "Hear and say" step
+  # record from this site's own pages. A denied capability fails silently in the browser (6 Nov 2026).
+  Header always set Permissions-Policy "geolocation=(), camera=(self), microphone=(self), payment=(), interest-cohort=()"
   Header always set X-DNS-Prefetch-Control "on"
 
   # Strict-Transport-Security — uncomment AFTER HTTPS is verified and you're
@@ -179,7 +181,7 @@ object-src 'none'"
   # MUST come after the generic .js/.css rules so it wins for these names.
   # (Basenames also match the Journal PWA's copies under /journal/ — app.min.js,
   # app.css, index.html, manifest.webmanifest.)
-  <FilesMatch "^(index\.html|app\.min\.js|app\.css|api-client\.js|outbox\.js|data\.js|photos\.js|styles\.css|styles-app\.css|manifest\.webmanifest)$">
+  <FilesMatch "^(index\.html|app\.min\.js|app-more\.min\.js|app\.css|api-client\.js|outbox\.js|data\.js|photos\.js|styles\.css|styles-app\.css|manifest\.webmanifest)$">
     Header set Cache-Control "no-cache, must-revalidate"
     Header unset Expires
   </FilesMatch>
@@ -284,14 +286,24 @@ object-src 'none'"
   # Don't rewrite known asset paths or the API tree (its own .htaccess wins)
   # Sitemap is generated (static pages + published posts).
   RewriteRule ^sitemap\.xml$ api/public/sitemap.php [L]
+  # A Lab address is served with its own title, description, canonical, JSON-LD and readable
+  # content (api/_lib/domain/lab-seo.php), not the bare shell every SPA address otherwise gets.
+  # Any /study/<x> address goes there; one that is not a Lab gets the plain shell back, so the Lab
+  # registry (domain/labs.php) stays the only list of Labs.
+  RewriteRule ^study/[a-z]+(/.*)?$ api/public/lab-page.php [L]
   # The Timetable Maker's landing is one prerendered file, not a folder: a
   # timetable/ directory would turn the maker's own /timetable into a directory.
   RewriteRule ^timetable/about/?$ timetable-about.html [L]
+  # A document's QR opens /verify/<number>?c=<check code> (domain/documents.php).
+  # Only an NGG document number takes this road: /verify?t=… stays the SPA's
+  # parent-consent page.
+  RewriteRule ^verify/(NGG-[A-Za-z0-9-]+)/?$ api/public/doc-verify.php?no=$1 [QSA,L]
   RewriteRule ^(assets|uploads|api|vendor|apps-script|docs)/ - [L]
 
-  # Everything else → index.html (SPA fallback)
-  RewriteRule ^ index.html [L]
+  # Everything else → the app shell, with the page's own head and a real 404 for an
+  # unknown address (api/public/spa.php; SEO audit, 8 Nov 2026).
+  RewriteRule ^ api/public/spa.php [L]
 </IfModule>
 
 # ErrorDocument fallbacks point back at the SPA
-ErrorDocument 404 /index.html
+ErrorDocument 404 /api/public/spa.php

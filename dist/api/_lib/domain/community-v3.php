@@ -137,7 +137,7 @@ function cm3_my_channels(string $viewer): array {
         /* The member's courses as the curriculum reads them (chosen, else what
            the track names: "Tech" is the Technology courses), so a Tech member's
            channels are Tech's, never the Media ones. */
-        foreach (curriculum_member_courses($m) as $c) $courses[] = mb_strtolower(trim((string)$c));
+        foreach (curriculum_member_courses($m) as $c) if (!in_array($c, CURR_CORE_COURSES, true)) $courses[] = mb_strtolower(trim((string)$c));
         $pj = safe_json((string)($m['profileJson'] ?? '')) ?: [];
         foreach ((array)($pj['courses'] ?? []) as $c) if (is_string($c) && trim($c) !== '') $courses[] = strtolower(trim($c));
     } else {

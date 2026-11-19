@@ -24,8 +24,21 @@
 (function () {
   var React = window.React;
   if (!React) { console.error('[DataTable] React global missing'); return; }
-  var TT = window.TanstackTable;
-  if (!TT) { console.error('[DataTable] window.TanstackTable missing — is vendor/tanstack-table.min.js loaded before the app?'); }
+  /* TanStack is loaded when the first table draws, not by every page (owner, 18 Nov 2026: the site
+     must work on low-end devices — a public visitor never sees a DataTable). */
+  var TT = window.TanstackTable || null;
+  var TT_SRC = '/vendor/tanstack-table.min.js';
+  var ttLoading = null;
+  function loadTT() {
+    if (window.TanstackTable) return Promise.resolve(window.TanstackTable);
+    if (!ttLoading) ttLoading = new Promise(function (res, rej) {
+      var s = document.createElement('script'); s.src = TT_SRC; s.async = true;
+      s.onload = function () { TT = window.TanstackTable || null; TT ? res(TT) : rej(new Error('tanstack')); };
+      s.onerror = function () { ttLoading = null; rej(new Error('tanstack')); };
+      document.head.appendChild(s);
+    });
+    return ttLoading;
+  }
   var useState = React.useState;
 
   // Inject the component's styles once. Colours use site CSS variables with
@@ -67,7 +80,21 @@
     return React.createElement('span', { className: 'ngg-dt-arrow' }, d === 'asc' ? '▲' : d === 'desc' ? '▼' : '↕');
   }
 
+  /* The outer component waits for the library; the inner one calls its hooks, always in the same order. */
   function DataTable(props) {
+    var st = useState(TT ? 'ready' : 'loading'); var state = st[0], setState = st[1];
+    React.useEffect(function () {
+      if (state === 'ready') return;
+      var live = true;
+      loadTT().then(function () { if (live) setState('ready'); }, function () { if (live) setState('failed'); });
+      return function () { live = false; };
+    }, [state === 'failed' ? 0 : 1]);
+    if (state === 'failed') return React.createElement('div', { className: 'ngg-dt-empty', role: 'alert' }, 'The table could not load. ',
+      React.createElement('button', { type: 'button', onClick: function () { setState('loading'); } }, 'Try again'));
+    if (state !== 'ready') return React.createElement('div', { className: 'ngg-dt-empty', 'aria-busy': 'true' }, 'Loading the table…');
+    return React.createElement(DataTableInner, props);
+  }
+  function DataTableInner(props) {
     ensureStyles();
     var columns = props.columns || [];
     var data = props.data || [];

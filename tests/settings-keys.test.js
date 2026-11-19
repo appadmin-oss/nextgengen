@@ -161,7 +161,7 @@ function cleanup() {
     await pg.fill('form[aria-label="Add a centre"] #crf-name', 'Ikorodu');
     await pg.fill('form[aria-label="Add a centre"] #crf-code', 'ik');
     await pg.click('form[aria-label="Add a centre"] button[type=submit]');
-    await pg.waitForFunction(() => /Ikorodu/.test(document.querySelector('.admin-section')?.innerText || ''), null, { timeout: 30000 });
+    await pg.waitForFunction(() => /Ikorodu/.test(document.querySelector('#cr-main')?.innerText || ''), null, { timeout: 30000 });
     chk('Members → Centres: “Add a centre” in the header adds an NGG centre, and it appears in the directory at once',
       php(`echo json_encode(db_row("SELECT code, programmes, status FROM centres WHERE name = 'Ikorodu'"));`, ['bootstrap']) === '{"code":"IK","programmes":"ngg","status":"active"}');
     chk('no page errors', errs.length === 0);

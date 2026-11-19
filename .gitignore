@@ -56,6 +56,8 @@ tests/_*_fixture.html
 
 # Throwaway files a running test writes and removes
 tests/_fixture-*
+# community-v3.test.js writes a throwaway media clip while it runs (removed at the end).
+tests/_cmv3_clip_*.webm
 
 # Screenshots the browser suites write on every run (regenerated; not committed)
 tests/screens/
@@ -63,3 +65,4 @@ tests/screens/
 # Source maps for debugging a production stack trace — never shipped (build.js)
 .build/
 *.zip
+tools/learn-media/__pycache__/

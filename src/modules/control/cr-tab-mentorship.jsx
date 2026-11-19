@@ -13,8 +13,6 @@ const CR_MS_TASK = { one_to_one: "One-to-one", lead_checkin: "Lead check-in", go
   relationship_check: "Relationship check", closure: "Closure conversation" };
 const CR_MS_PHASE = { match: "Match", connect: "Connect", grow: "Grow", lead: "Lead", close: "Close" };
 const CR_MS_HEALTH_TONE = { Healthy: "ok", Watch: "warn", "At risk": "bad", Paused: "neutral", Closing: "neutral" };
-/* Rule tones (§3): mentor rules neutral, lead rules amber, R3 and R8 red. */
-function crMsRuleTone(rule) { return rule === "R3" || rule === "R8" ? "bad" : (["R5", "R6", "R7", "P1"].indexOf(rule) >= 0 ? "warn" : "neutral"); }
 const CR_MS_OBLIG = [["cimc", "CIMC training · Saturday 7:00am"], ["prep", "Mentor Preparation · 7–8pm"], ["saturday", "Mentoring · Saturday 9:30am"],
   ["sts", "STS meeting · Tuesday"], ["retreat", "Quarterly day retreat"]];
 const CR_MS_SCORE = [["1", "1 · Not at all"], ["2", "2"], ["3", "3"], ["4", "4"], ["5", "5 · Completely"]];

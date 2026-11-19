@@ -20,7 +20,7 @@
        (a cap below the standard amount is refused on the form);
      · a voided entry is voided from the record, with its reason;
      · each view is offered only to whoever holds what its server ops gate
-       on — a club admin (people, no summer, no fees) sees the board alone;
+       on — a club admin (people, no summer, no fees) sees the board and the Rules page;
      · the Summer workspace's old "Programme & policy" panel points here.
 
    Run:  node tests/conduct-tab.test.js
@@ -124,7 +124,7 @@ async function pageFor(memberId, viewport) {
     await P.goto(BASE + '/control/money/conduct', { waitUntil: 'domcontentloaded' });
     await waitForBoot(P);
     chk('Fines opens with the upload and the rules on one screen', await until(() => /Upload a fines register/.test(document.body.innerText) && /Fine rules/.test(document.body.innerText) && /Late attendance/.test(document.body.innerText), null, 60000));
-    chk('…and the four views, for a super admin', (await P.locator('[aria-label="Conduct view"] button').allInnerTexts()).join(',') === 'Fines,Compliance,Policy,Calendars');
+    chk('…and the five views, Rules first, for a super admin', (await P.locator('[aria-label="Conduct view"] button').allInnerTexts()).join(',') === 'Rules,Fines,Compliance,Policy,Calendars');
     await P.screenshot({ path: path.join(SHOTS, 'fines.png'), fullPage: true });
     await P.click('tr:has-text("Late attendance")');
     await P.waitForSelector('[role="dialog"]');
@@ -204,7 +204,8 @@ async function pageFor(memberId, viewport) {
     await waitForBoot(C);
     const okC = await C.waitForFunction(() => /Everyone with something on record/.test(document.body.innerText), null, { timeout: 60000 }).then(() => true, () => false);
     const ct = await C.evaluate(() => document.body.innerText);
-    chk('a club admin (people, no fees, no summer) is shown the board alone — no rules, no upload, no policy', okC && !/Fine rules/.test(ct) && !/Upload a fines register/.test(ct) && !(await C.$('[aria-label="Conduct view"]')));
+    const cViews = (await C.locator('[aria-label="Conduct view"] button').allInnerTexts()).join(',');
+    chk('a club admin (people, no fees, no summer) gets the board and the Rules page only — no fines desk, no upload, no policy (' + cViews + ')', okC && !/Fine rules/.test(ct) && !/Upload a fines register/.test(ct) && cViews === 'Rules,Compliance');
 
     // ── Phone ──
     const M = await pageFor('NGG-CT-ADM', { width: 390, height: 844 });

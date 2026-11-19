@@ -232,9 +232,14 @@ class Ss3Portal extends React.Component {
     if (u) u();
   }
   openPal() {
+    if (this.state.pal && this.palRef.current) this.palRef.current.focus();   // already open: back to the search
     this.setState({ pal: true, palQ: "", palI: 0, palKids: [], help: false });
     this.S().recent().then(r => this.setState({ recent: r.children || [] })).catch(() => {});
-    setTimeout(() => this.palRef.current && this.palRef.current.focus(), 30);
+  }
+  /* Focus the search the moment the palette is committed, not on a 30 ms timer: "/" then a name
+     typed straight after lost its first letters to whatever had focus in between. */
+  componentDidUpdate(_, prev) {
+    if (this.state.pal && !prev.pal && this.palRef.current) this.palRef.current.focus();
   }
   onPalQ(q) {
     this.setState({ palQ: q, palI: 0 });

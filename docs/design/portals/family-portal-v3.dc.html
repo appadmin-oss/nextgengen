@@ -39,6 +39,13 @@ button{cursor:pointer}
         <sc-if value="{{ siEmailStep }}" hint-placeholder-val="{{ true }}">
           <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Your email<input type="email" value="{{ siEmail }}" onChange="{{ onSiEmail }}" onKeyDown="{{ onSiKey }}" placeholder="the one you gave NGG" autoComplete="email" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:16px; outline:none; background:#fff;"></label>
           <button onClick="{{ siSend }}" style="height:52px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:16px; font-weight:600;">Email me a sign-in code</button>
+          <button onClick="{{ siToDesk }}" style="height:40px; border:0; background:transparent; font-size:14px; color:#4a4a50; text-decoration:underline;">I have a code from staff</button>
+        </sc-if>
+        <sc-if value="{{ siDeskStep }}">
+          <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Your email<input type="email" value="{{ siEmail }}" onChange="{{ onSiEmail }}" onKeyDown="{{ onSiKey }}" placeholder="the one you gave NGG" autoComplete="email" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:16px; outline:none; background:#fff;"></label>
+          <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Code from staff<input value="{{ siDesk }}" onChange="{{ onSiDesk }}" onKeyDown="{{ onSiKey }}" placeholder="XXXX-XXXX" autoComplete="off" autoCapitalize="characters" spellCheck="false" style="height:56px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:22px; letter-spacing:.2em; font-family:'Geist Mono', monospace; outline:none; text-align:center;"></label>
+          <button onClick="{{ siDeskGo }}" style="height:52px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:16px; font-weight:600;">Sign in</button>
+          <button onClick="{{ siBack }}" style="height:40px; border:0; background:transparent; font-size:14px; color:#4a4a50; text-decoration:underline;">Email me a code instead</button>
         </sc-if>
         <sc-if value="{{ siCodeStep }}">
           <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">6-digit code<input inputMode="numeric" value="{{ siCode }}" onChange="{{ onSiCode }}" onKeyDown="{{ onSiKey }}" placeholder="••• •••" autoComplete="one-time-code" style="height:56px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:24px; letter-spacing:.3em; font-family:'Geist Mono', monospace; outline:none; text-align:center;"></label>
@@ -328,7 +335,7 @@ button{cursor:pointer}
             </sc-if>
             <sc-if value="{{ mo.canPay }}">
               <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <sc-if value="{{ mo.online }}"><button onClick="{{ openPay }}" style="flex:1 1 200px; height:52px; border:0; border-radius:14px; background:#f5b026; color:#2a1d00; font-size:15px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; gap:8px;"><i class="ph ph-lock-simple" aria-hidden="true"></i>Pay {{ mo.amount }} online</button></sc-if>
+                <sc-if value="{{ mo.online }}"><button onClick="{{ openPay }}" style="flex:1 1 200px; height:52px; border:0; border-radius:14px; background:#f5b026; color:#2a1d00; font-size:15px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; gap:8px;"><i class="ph ph-lock-simple" aria-hidden="true"></i>{{ mo.payOnlineL }}</button></sc-if>
                 <button onClick="{{ toggleBank }}" aria-expanded="{{ mo.bankOpen }}" style="flex:1 1 160px; height:52px; border:1px solid rgba(255,255,255,.28); border-radius:14px; background:transparent; color:#fff; font-size:14.5px; font-weight:500;">Pay by bank transfer</button>
               </div>
             </sc-if>
@@ -373,7 +380,7 @@ button{cursor:pointer}
 
           <section aria-labelledby="st-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; overflow:hidden;">
             <div style="padding:14px 18px 10px; display:flex; flex-direction:column; gap:10px;">
-              <div style="display:flex; align-items:baseline; gap:8px;"><h2 id="st-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">Statement</h2><span style="font-size:12.5px; color:#6b6b72;">{{ mo.stCount }}</span></div>
+              <div style="display:flex; align-items:baseline; gap:8px;"><h2 id="st-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">Statement</h2><span style="font-size:12.5px; color:#6b6b72;">{{ mo.stCount }}</span><a href="{{ mo.stPdf }}" target="_blank" rel="noopener" aria-label="Download the statement as a PDF" style="display:inline-flex; align-items:center; gap:4px; min-height:44px; padding:0 4px; font-size:13px; font-weight:600; color:#0b0b0c; text-decoration:underline; white-space:nowrap;"><i class="ph ph-file-pdf" aria-hidden="true"></i>PDF</a></div>
               <div role="tablist" aria-label="Show" style="display:flex; gap:6px; overflow-x:auto; padding-bottom:2px;">
                 <sc-for list="{{ mo.stTabs }}" as="t" hint-placeholder-count="5"><button role="tab" aria-selected="{{ t.sel }}" onClick="{{ t.onClick }}" style="height:34px; padding:0 12px; border-radius:999px; border:1px solid {{ t.bd }}; background:{{ t.bg }}; color:{{ t.fg }}; font-size:13px; font-weight:500; white-space:nowrap; flex-shrink:0;">{{ t.l }}</button></sc-for>
               </div>
@@ -537,6 +544,7 @@ button{cursor:pointer}
           </sc-if>
           <sc-if value="{{ shIsLeave }}">
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;"><label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">From<input type="date" value="{{ fFrom }}" onChange="{{ onFFrom }}" style="height:48px; padding:0 12px; border:1px solid #d9d6cd; border-radius:12px; font-size:15px;"></label><label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">To<input type="date" value="{{ fTo }}" onChange="{{ onFTo }}" style="height:48px; padding:0 12px; border:1px solid #d9d6cd; border-radius:12px; font-size:15px;"></label></div>
+            <sc-if value="{{ shNoticeOn }}"><p role="status" style="margin:0; padding:12px 14px; border-radius:12px; background:#fdf6e3; border:1px solid #f1e3b8; color:#5c4100; font-size:14px; line-height:1.5; display:flex; gap:10px; align-items:flex-start;"><i class="ph ph-warning" aria-hidden="true" style="margin-top:2px;"></i><span>{{ shNotice }}</span></p></sc-if>
           </sc-if>
           <sc-if value="{{ shIsAppeal }}">
             <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Which charge<select value="{{ fRef }}" onChange="{{ onFRef }}" style="height:48px; padding:0 12px; border:1px solid #d9d6cd; border-radius:12px; font-size:15px; background:#fff;"><sc-for list="{{ chargeOpts }}" as="o" hint-placeholder-count="2"><option value="{{ o.v }}">{{ o.l }}</option></sc-for></select></label>
@@ -629,7 +637,7 @@ class Component extends DCLogic {
 
     if (!signedIn) {
       const step = S.siStep;
-      Object.assign(out, { siEmailStep: step === 'email', siCodeStep: step === 'code', siEmail: S.siEmail, siCode: S.siCode, siHasErr: !!S.siErr, siErr: S.siErr,
+      Object.assign(out, { siEmailStep: step === 'email', siCodeStep: step === 'code', siDeskStep: step === 'desk', siDesk: S.siDesk || '', siToDesk: () => this.setState({ siStep: 'desk', siErr: '' }), onSiDesk: e => this.setState({ siDesk: e.target.value.toUpperCase().slice(0, 9) }), siDeskGo: () => { this.setState({ out: false, siStep: 'email' }); this.toast('Signed in'); }, siEmail: S.siEmail, siCode: S.siCode, siHasErr: !!S.siErr, siErr: S.siErr,
         siH: step === 'email' ? 'See how your child is doing at NGG.' : 'Check your email', siP: step === 'email' ? 'Attendance, lessons, fees and what their mentor says, all in one place. We’ll email you a code, so there’s no password to remember.' : 'We sent a 6-digit code to ' + S.siEmail + '. It works for 15 minutes.',
         onSiEmail: e => this.setState({ siEmail: e.target.value, siErr: '' }), onSiCode: e => this.setState({ siCode: e.target.value.replace(/\D/g, '').slice(0, 6), siErr: '' }),
         siSend: () => { if (!/^\S+@\S+\.\S+$/.test(S.siEmail.trim())) return this.setState({ siErr: 'That doesn’t look like an email address.' }); this.setState({ siStep: 'code', siErr: '' }); },
@@ -773,7 +781,7 @@ class Component extends DCLogic {
         next: F.next.map(x => ({ label: x.label, when: x.when, amount: N(x.amount) })),
         termsL: 'Membership is ' + N(TM.membershipFee) + ' a year, renewed on the date ' + first + ' joined. The commitment fee is ' + N(TM.monthly) + ' a month, charged on the 1st; a first month is charged only for the Saturdays left. While something is owed, a reminder is emailed every ' + TM.remindEvery + ' days.',
         stTabs: TABS.map(t => { const on = S.stF === t[0]; return { l: t[1], sel: on ? 'true' : 'false', bg: on ? '#0b0b0c' : '#fff', fg: on ? '#fff' : '#0b0b0c', bd: on ? '#0b0b0c' : '#d9d6cd', onClick: () => this.setState({ stF: t[0], stN: 14 }) }; }),
-        rows, stCount: list.length + (list.length === 1 ? ' entry' : ' entries'), stEmpty: !list.length, stEmptyL: S.stF === 'fines' ? 'No fines. ' + first + ' has a clean record.' : 'Nothing here yet.',
+        rows, stPdf: '#', stCount: list.length + (list.length === 1 ? ' entry' : ' entries'), stEmpty: !list.length, stEmptyL: S.stF === 'fines' ? 'No fines. ' + first + ' has a clean record.' : 'Nothing here yet.',
         stMore: list.length > S.stN, stMoreL: 'Show ' + Math.min(20, list.length - S.stN) + ' more of ' + (list.length - S.stN), showMore: () => this.setState(s2 => ({ stN: s2.stN + 20 }))
       };
       const tm = P.trainingMonths, sm = P.serviceMonths, leave = ' If ' + first + ' leaves before the MOU is complete, the part not yet earned off becomes due.';

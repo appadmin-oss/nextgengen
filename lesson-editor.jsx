@@ -249,14 +249,18 @@ function leParse(md) {
             k++;
             continue;
           }
-          out.push(leBlock("ul", { text: ls[k].replace(/^\s*[-*•]\s+/, "") }));
+          /* The item's own indent and marker go back out exactly as they came in. A seed's
+             "  - " sub-point was written back as "- ", rewriting the file the first time it was
+             opened; the screen draws both the same, so only the file changed, and silently. */
+          const um = ls[k].match(/^(\s*)([-*•])\s+/);
+          out.push(leBlock("ul", { text: ls[k].slice(um[0].length), ind: um[1], mark: um[2] }));
         }
         return;
       }
       if (ls.every(l => /^\s*\d+[.)]\s+/.test(l))) {
         ls.forEach(l => {
-          const m = l.match(/^\s*(\d+)([.)])\s+/);
-          out.push(leBlock("ol", { text: l.slice(m[0].length), num: m[1], dot: m[2] }));
+          const m = l.match(/^(\s*)(\d+)([.)])\s+/);
+          out.push(leBlock("ol", { text: l.slice(m[0].length), num: m[2], dot: m[3], ind: m[1] }));
         });
         return;
       }
@@ -340,8 +344,8 @@ function leLineOf(b) {
   const t = String(b.text || "");
   if (b.type === "h2") return "## " + t;
   if (b.type === "h3") return "### " + t;
-  if (b.type === "ul") return "- " + t;
-  if (b.type === "ol") return (b.num || "1") + (b.dot || ".") + " " + t;
+  if (b.type === "ul") return (b.ind || "") + (b.mark || "-") + " " + t;
+  if (b.type === "ol") return (b.ind || "") + (b.num || "1") + (b.dot || ".") + " " + t;
   if (b.type === "quote") return "> " + t.replace(/\n/g, "\n> ");
   return t;
 }

@@ -464,6 +464,7 @@ function require_session(): array {
         json_error($st['error'], $st['http']);
     }
     $s = $st['session'];
+    $GLOBALS['__ai_subject_mid'] = (string)($s['mid'] ?? '');   // whose surname ai_run() keeps off the wire (ai_scrub_text)
     if (!empty($s['mfaP']) && empty($GLOBALS['__mfa_pending_ok'])) json_error('mfa_required', 401);
     // Server-side revocation: a remotely revoked device dies here even though
     // its cookie signature is still valid. Missing row (pruned) stays valid —

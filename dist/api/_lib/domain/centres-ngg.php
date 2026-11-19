@@ -113,6 +113,8 @@ const CENTRE_NAME_TABLES = [
     'projects',
     'safeguarding_cases',
     'safeguarding_flags',
+    'shop_cash_sessions',
+    'shop_orders',
     'skill_marks',
     'student_remarks',
     'summer_incidents',

@@ -47,7 +47,7 @@ const CAC_CENTRE_NAMED_BY = [
     'member_stars', 'v3_scores', 'awards', 'activities', 'volunteers', 'arcade_scores', 'course_sessions',
     'student_remarks', 'skill_marks', 'insight_threads', 'engagement_snapshots', 'match_games',
     'tournament_entrants', 'mentor_meetings', 'mentor_goals', 'tournament_pairings', 'tournament_invites',
-    'community_homework_state', 'courage_marks', 'mentor_reviews', 'attendance',
+    'community_homework_state', 'courage_marks', 'mentor_reviews', 'attendance', 'shop_orders', 'shop_cash_sessions',
 ];
 
 /** Is CACENTRE's list in charge of NGG's centres yet? True once it has arrived. */

@@ -53,13 +53,15 @@ function loadChromium() {
 <link rel="stylesheet" href="/dist/styles.css">
 <link rel="stylesheet" href="/dist/styles-app.css">
 <style>body{margin:0;background:var(--cream-50,#fdf9f0);padding:22px;}</style>
-</head><body><div id="root"></div>
+</head><body><div id="root" hidden></div><div id="fx"></div>
 <script src="/dist/vendor/react.production.min.js"></script>
 <script src="/dist/vendor/react-dom.production.min.js"></script>
 <script src="/dist/vendor/tanstack-table.min.js"></script>
 <script src="/dist/data.js"></script>
 <script src="/dist/photos.js"></script>
+<script src="/dist/api-client.js"></script>
 <script src="/dist/${manifest.bundle.file}"></script>
+<script src="/dist/${manifest.more.file}"></script>
 <script>
 /* In a function, so nothing here shadows a bundle global: the bundle is
    one concatenated script in global scope and a bare var at top level
@@ -168,7 +170,7 @@ function loadChromium() {
     }
   };
 
-  ReactDOM.createRoot(document.getElementById('root')).render(h(VIEWS[view] || VIEWS.segments));
+  ReactDOM.createRoot(document.getElementById('fx')).render(h(VIEWS[view] || VIEWS.segments));
 })();
 </script>
 </body></html>`);

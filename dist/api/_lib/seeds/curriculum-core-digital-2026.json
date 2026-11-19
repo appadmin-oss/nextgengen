@@ -1,0 +1,1825 @@
+{
+ "key": "core-digital-2026",
+ "title": "Data Appreciation and Desktop Publishing — every member (2026)",
+ "allowNewCourse": false,
+ "description": "Two courses every member takes, replacing the Media Lab's six Club-wide lessons: Data Appreciation (what every computer user should know about data, basics to intermediate: storage, files, backup, data entry, spreadsheets and formulas, charts, checking sources, safety and sharing) and Desktop Publishing (page set-up, type, grids, colour, images and print-ready files). Twelve Saturdays each, with diagrams, worked-example screenshots, a slide deck per lesson, a learning guide, and assessment that is not only multiple choice.",
+ "source": "NGG curriculum team, from the investigation cycle (PPDAC) and data-education frameworks, and common DTP syllabi",
+ "lessons": [
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 1,
+   "position": 1,
+   "title": "Computers and data: what it is and how big it is",
+   "summary": "A computer takes data in, processes it, stores it and gives it out — and it measures everything in bytes.",
+   "objectives": [
+    "Explain input, process, output and storage with real examples",
+    "Say what a bit and a byte are",
+    "Read KB, MB, GB and TB, and check free space on a device"
+   ],
+   "body": "## What to do\n\n- Name the input, process, output and storage when you send a voice note\n- Order six files from smallest to largest by their size\n- Find how much free storage your phone or the lab computer has\n\n## Understand it\n\nEverything a computer handles is **data**: the letters you type, a photo, a song, your marks, a location.\n\nEvery device does four things with it:\n\n1. **Input** — data comes in (keyboard, touchscreen, camera, microphone).\n2. **Process** — the processor works on it (resizes the photo, adds the numbers).\n3. **Output** — it comes back out (screen, speaker, printer).\n4. **Storage** — it is kept for later (phone storage, a hard drive, a flash drive, the cloud).\n\nInside, all of it is stored as **bits** — 0s and 1s. Eight bits make a **byte**, about one letter. Bigger amounts go up in steps of about a thousand: **KB** (kilobyte), **MB** (megabyte), **GB** (gigabyte), **TB** (terabyte). A text message is a few KB; a phone photo 2–5 MB; an hour of video around 1 GB.\n\nWhy it matters: when a phone says \"storage full\", when a file is \"too large to attach\", or when a data bundle runs out, it is these units you are reading.\n\n![How big is data?](media:core/storage-units.svg)\n\n## Key words\n\n- **Data:** facts, words, sounds or pictures a computer can store and process\n- **Bit:** a single 0 or 1\n- **Byte:** 8 bits — about one character\n- **Storage:** where data is kept when the device is off\n\n## Read and watch\n\n- [GCFGlobal — Computer Basics](https://edu.gcfglobal.org/en/computerbasics/) — Free, illustrated, no account: do the lesson named in class, then its quiz.\n\n## Practise at home\n\n- Check the storage on a phone at home: what uses the most?\n- Work out how many 3 MB photos fit in 1 GB of free space\n\n## Make it fit you\n\n- **If this is new to you:** Use the picture: each step to the right is about 1,000 of the one before.\n- **If you already can:** Find out why a \"64 GB\" phone shows less than 64 GB free, and explain it in two sentences.\n\n## Assessed this week\n\n- Which is the LARGEST amount of data?\n- When you take a photo and post it, name the input, process, output and storage.\n- Show your instructor how much free storage a device has, and what is using the most space.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-01.html",
+     "title": "Slides: Computers and data: what it is and how big it is",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/guides/da.html",
+     "title": "Data Appreciation — learning guide",
+     "kind": "doc",
+     "guide": "The whole course on one page: twelve weeks, what you will be able to do, and how each Saturday works."
+    },
+    {
+     "url": "media:core/storage-units.svg",
+     "title": "How big is data?",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/computerbasics/",
+     "title": "GCFGlobal — Computer Basics",
+     "kind": "link",
+     "guide": "Free, illustrated, no account: do the lesson named in class, then its quiz."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which is the LARGEST amount of data?",
+     "points": 1,
+     "options": [
+      "2 GB",
+      "900 MB",
+      "50,000 KB",
+      "8,000 bytes"
+     ],
+     "answer": "2 GB",
+     "whys": [
+      "",
+      "900 MB is less than 1 GB.",
+      "50,000 KB is about 50 MB.",
+      "8,000 bytes is about 8 KB — tiny."
+     ]
+    },
+    {
+     "kind": "short",
+     "prompt": "When you take a photo and post it, name the input, process, output and storage.",
+     "points": 2,
+     "answer": "Input: the camera; process: the phone resizes/filters it; output: the screen shows it (and it is sent); storage: it is saved in the gallery or the cloud."
+    },
+    {
+     "kind": "task",
+     "prompt": "Show your instructor how much free storage a device has, and what is using the most space.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: storage screen found (1), free space read with the right unit (1), biggest user named (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 2,
+   "position": 1,
+   "title": "Files, folders and good names",
+   "summary": "A file is one piece of saved work; folders keep them organised; a good name finds it again in six months.",
+   "objectives": [
+    "Create, rename, move and delete files and folders",
+    "Read a file's extension and path",
+    "Name files so they sort and can be found"
+   ],
+   "body": "## What to do\n\n- Make a folder called Data Appreciation with three sub-folders\n- Save, rename and move a file into it\n- Find a file using search, then by following its path\n\n## Understand it\n\nA **file** is one saved thing — a document, a photo, a spreadsheet. A **folder** holds files and other folders, like drawers in a cabinet. The route from the top to a file is its **path**: `Documents › Club › Data Appreciation › lunch-survey.xlsx`.\n\nThe last part of a file name after the dot is the **extension**. It tells you the file type and which app opens it: `.docx` a document, `.xlsx` a spreadsheet, `.jpg` a photo, `.pdf` a finished page.\n\nGood names save hours:\n\n- **Start with the date, year first** — `2026-03-14_` — so files sort in order.\n- **Say what it is** and **which version**: `lunch-survey_v2`.\n- Never `final`, `final2`, `finalFINAL`.\n\nThe everyday actions: **New folder**, **Rename**, **Move** (drag, or cut and paste), **Copy**, **Delete** (it goes to the Recycle Bin or Trash first, so it can be restored).\n\n![A file manager: the path at the top, files named date-first, and the type from the extension](media:core/shots/file-manager.png)\n\n![Files, folders and names](media:core/file-tree.svg)\n\n## Key words\n\n- **File:** one saved piece of work\n- **Folder:** a container for files and other folders\n- **Extension:** the letters after the dot that give the file type\n- **Path:** a file's address, folder by folder\n\n## Read and watch\n\n- [GCFGlobal — Operating systems and files](https://edu.gcfglobal.org/en/computerbasics/understanding-operating-systems/1/) — How a computer organises files; read it with your own file manager open.\n- [GCFGlobal — Computer Basics](https://edu.gcfglobal.org/en/computerbasics/) — Free, illustrated, no account: do the lesson named in class, then its quiz.\n\n## Practise at home\n\n- Tidy the downloads folder on a home device (ask first)\n- Rename three files using the date-first pattern\n\n## Make it fit you\n\n- **If this is new to you:** Follow the picture: make the folders first, then save into them.\n- **If you already can:** Find where a deleted file goes on your device and restore one.\n\n## Assessed this week\n\n- Put the steps for saving a new file into a new folder in order.\n- A file is called `2026-03-14_report_v3.pdf`. What does `.pdf` tell you?\n- Show your Data Appreciation folder with three sub-folders and two files named date-first.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-02.html",
+     "title": "Slides: Files, folders and good names",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/file-tree.svg",
+     "title": "Files, folders and names",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/shots/file-manager.png",
+     "title": "A file manager: the path at the top, files named date-first, and the type from the extension",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/computerbasics/understanding-operating-systems/1/",
+     "title": "GCFGlobal — Operating systems and files",
+     "kind": "link",
+     "guide": "How a computer organises files; read it with your own file manager open."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/computerbasics/",
+     "title": "GCFGlobal — Computer Basics",
+     "kind": "link",
+     "guide": "Free, illustrated, no account: do the lesson named in class, then its quiz."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "order",
+     "prompt": "Put the steps for saving a new file into a new folder in order.",
+     "points": 3,
+     "options": [
+      "Open the place where the folder should go",
+      "Create a new folder and name it",
+      "Choose Save As in the app",
+      "Go into the new folder",
+      "Type a date-first file name and save"
+     ]
+    },
+    {
+     "kind": "mcq",
+     "prompt": "A file is called `2026-03-14_report_v3.pdf`. What does `.pdf` tell you?",
+     "points": 1,
+     "options": [
+      "Its type — a finished page that opens the same everywhere",
+      "Its version",
+      "The folder it is in",
+      "Who made it"
+     ],
+     "answer": "Its type — a finished page that opens the same everywhere",
+     "whys": [
+      "",
+      "The version is the `v3` part.",
+      "The folder is part of the path, not the name.",
+      "File names do not record the author."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show your Data Appreciation folder with three sub-folders and two files named date-first.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: folder and sub-folders (1), files inside the right folder (1), date-first names with versions (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 3,
+   "position": 1,
+   "title": "Saving, storage and backups",
+   "summary": "Know where your work is saved — on the device, a flash drive or the cloud — and keep a backup before you need it.",
+   "objectives": [
+    "Tell device storage, removable storage and cloud storage apart",
+    "Use Save and Save As correctly",
+    "Make a backup plan with the 3-2-1 rule"
+   ],
+   "body": "## What to do\n\n- Save a file twice: once with Save, once with Save As to a new name\n- Copy it to a flash drive or cloud drive\n- Write your own 3-2-1 backup plan\n\n## Understand it\n\nWhere can a file live?\n\n- **On the device** — the phone or laptop itself. Fast, but lost with the device.\n- **Removable storage** — a flash drive (USB) or memory card. Carry it anywhere; easy to lose.\n- **The cloud** — your files kept on a company's computers over the internet (Google Drive, OneDrive, iCloud). Reached from any device, but needs data and a strong password.\n\n**Save** keeps changes in the same file. **Save As** makes a new copy with a new name or place — use it before big changes, so the old version survives.\n\nThe **3-2-1 rule**: keep **3** copies of anything important, on **2** different kinds of storage, with **1** somewhere else (the cloud, or away from home). Phones are lost, stolen and dropped; a project that exists in one place is a project you can lose the day before it is due.\n\n![The 3-2-1 backup rule](media:core/backup-321.svg)\n\n## Key words\n\n- **Cloud storage:** files kept on servers you reach over the internet\n- **Save As:** save a copy with a new name or place\n- **Backup:** an extra copy kept in case the original is lost\n- **Sync:** keeping the same files up to date on several devices\n\n## Read and watch\n\n- [NCSC — Back up your data](https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online/always-back-up-your-most-important-data) — Official, plain-English steps: follow them on one of your own devices.\n- [GCFGlobal — Computer Basics](https://edu.gcfglobal.org/en/computerbasics/) — Free, illustrated, no account: do the lesson named in class, then its quiz.\n\n## Practise at home\n\n- Find out where the photos on a home phone are backed up, if anywhere\n- Write the 3-2-1 plan for your schoolwork\n\n## Make it fit you\n\n- **If this is new to you:** Fill the three boxes of the picture with YOUR devices.\n- **If you already can:** Find out what happens to a cloud file you delete: is there a bin, and for how long?\n\n## Assessed this week\n\n- Your only copy of a project is on your phone. Which change makes it safest?\n- Follow the NCSC backup steps on one of your devices (with a parent if it is theirs). Paste a screenshot of the backup turned on, and say what it backs up.\n- Write your own 3-2-1 backup plan: the three copies, the two kinds of storage, and the one kept elsewhere.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-03.html",
+     "title": "Slides: Saving, storage and backups",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/backup-321.svg",
+     "title": "The 3-2-1 backup rule",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online/always-back-up-your-most-important-data",
+     "title": "NCSC — Back up your data",
+     "kind": "link",
+     "guide": "Official, plain-English steps: follow them on one of your own devices."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/computerbasics/",
+     "title": "GCFGlobal — Computer Basics",
+     "kind": "link",
+     "guide": "Free, illustrated, no account: do the lesson named in class, then its quiz."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Your only copy of a project is on your phone. Which change makes it safest?",
+     "points": 1,
+     "options": [
+      "Also keep a copy on a flash drive and one in the cloud",
+      "Rename it",
+      "Move it to another folder on the phone",
+      "Save it again"
+     ],
+     "answer": "Also keep a copy on a flash drive and one in the cloud",
+     "whys": [
+      "",
+      "A new name is still one copy on one device.",
+      "Same device, same risk.",
+      "Saving again does not make a second copy."
+     ]
+    },
+    {
+     "kind": "evidence",
+     "prompt": "Follow the NCSC backup steps on one of your devices (with a parent if it is theirs). Paste a screenshot of the backup turned on, and say what it backs up.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: proof the backup is on (1), what it covers named (1), where the copy goes named (1).",
+     "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online/always-back-up-your-most-important-data"
+    },
+    {
+     "kind": "task",
+     "prompt": "Write your own 3-2-1 backup plan: the three copies, the two kinds of storage, and the one kept elsewhere.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: three real copies (1), two kinds of storage (1), one off-site (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 4,
+   "position": 1,
+   "title": "The keyboard, shortcuts and entering data accurately",
+   "summary": "Fast is good; accurate is essential. Shortcuts save time, and consistent data entry saves everyone after you.",
+   "objectives": [
+    "Use ten everyday keyboard shortcuts",
+    "Type with accuracy before speed",
+    "Enter data consistently: dates, names, numbers"
+   ],
+   "body": "## What to do\n\n- Practise the ten shortcuts on a document\n- Do a two-minute typing test and record accuracy\n- Find and fix five inconsistent entries in a list\n\n## Understand it\n\nTen shortcuts every user should know (on a Mac, Cmd instead of Ctrl):\n\n- **Ctrl+C** copy · **Ctrl+X** cut · **Ctrl+V** paste\n- **Ctrl+Z** undo · **Ctrl+Y** redo\n- **Ctrl+S** save · **Ctrl+F** find\n- **Ctrl+A** select all · **Ctrl+P** print · **Alt+Tab** switch window\n\nTyping: eyes on the screen, fingers home on **ASDF JKL;**, and **accuracy first** — fixing errors costs more than typing slowly.\n\n**Entering data** is where most mistakes start. A list where one person wrote `14/3/26`, another `March 14` and a third `14-03-2026` cannot be sorted. Agree a format before you start and keep it: one date format, the same spelling every time (`Egbeda`, never `egbeda` or `Egbedda`), numbers with no units typed in (`900`, with `₦` in the heading). Then check: read it back, or have a partner read it.\n\n![Ten everyday shortcuts](media:core/shortcuts.svg)\n\n## Key words\n\n- **Shortcut:** a key combination that does a command\n- **Accuracy:** the share of what you typed that was right\n- **Consistent:** always done the same way\n\n## Read and watch\n\n- [Monkeytype](https://monkeytype.com/) — Free typing practice in a browser, no account needed: aim for accuracy first, speed second.\n- [GCFGlobal — Computer Basics](https://edu.gcfglobal.org/en/computerbasics/) — Free, illustrated, no account: do the lesson named in class, then its quiz.\n\n## Practise at home\n\n- Do three typing tests at home and record accuracy each time\n- Use five shortcuts while doing homework\n\n## Make it fit you\n\n- **If this is new to you:** Learn three shortcuts this week — copy, paste, undo — and add more next week.\n- **If you already can:** Find the shortcut for a new tab, closing a window and taking a screenshot on your device.\n\n## Assessed this week\n\n- Take a two-minute typing test on Monkeytype and paste a screenshot of your result. Say your accuracy and one thing you will change.\n- A class list has dates written as 14/3/26, March 14 and 14-03-2026. What is the main problem?\n- Fix the inconsistent list your instructor gives you: one date format, one spelling per place, no units in the numbers.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-04.html",
+     "title": "Slides: The keyboard, shortcuts and entering data accurately",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/shortcuts.svg",
+     "title": "Ten everyday shortcuts",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://monkeytype.com/",
+     "title": "Monkeytype",
+     "kind": "link",
+     "guide": "Free typing practice in a browser, no account needed: aim for accuracy first, speed second."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/computerbasics/",
+     "title": "GCFGlobal — Computer Basics",
+     "kind": "link",
+     "guide": "Free, illustrated, no account: do the lesson named in class, then its quiz."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "evidence",
+     "prompt": "Take a two-minute typing test on Monkeytype and paste a screenshot of your result. Say your accuracy and one thing you will change.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: proof (1), accuracy stated (1), a specific change (1).",
+     "url": "https://monkeytype.com/"
+    },
+    {
+     "kind": "mcq",
+     "prompt": "A class list has dates written as 14/3/26, March 14 and 14-03-2026. What is the main problem?",
+     "points": 1,
+     "options": [
+      "It cannot be sorted or counted reliably",
+      "It uses too much storage",
+      "Dates cannot go in a spreadsheet",
+      "Nothing — all are correct"
+     ],
+     "answer": "It cannot be sorted or counted reliably",
+     "whys": [
+      "",
+      "Storage is not the issue; mixed formats are.",
+      "Dates go in spreadsheets fine — in ONE format.",
+      "Each is a correct date, but together they break sorting."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Fix the inconsistent list your instructor gives you: one date format, one spelling per place, no units in the numbers.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: dates consistent (1), spellings consistent (1), numbers clean (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 5,
+   "position": 1,
+   "title": "Spreadsheets I: cells, rows, columns and formatting",
+   "summary": "A spreadsheet is a grid for data: learn its parts, enter data cleanly and make it readable.",
+   "objectives": [
+    "Name a cell by its column and row",
+    "Enter text, numbers and dates and format them",
+    "Make a table readable: headers, widths, number formats"
+   ],
+   "body": "## What to do\n\n- Open a new spreadsheet in Google Sheets or LibreOffice Calc\n- Build a shopping budget table with five items\n- Format the headers, the ₦ column and the widths\n\n## Understand it\n\nA spreadsheet is a grid.\n\n- **Columns** are lettered A, B, C… and run down.\n- **Rows** are numbered 1, 2, 3… and run across.\n- A **cell** is where they meet, named column-then-row: **B6**.\n- The **formula bar** shows what is really in the selected cell.\n\nEntering data: click a cell, type, press **Enter** (down) or **Tab** (right). One value per cell. Put headings in row 1.\n\nFormatting makes it readable without changing the data:\n\n- **Bold** the header row and **freeze** it (View → Freeze → 1 row).\n- Widen columns (double-click the edge between column letters).\n- Number formats: currency for money, a date format for dates, 0 or 2 decimal places as needed.\n- Align numbers right, text left.\n\nA number formatted as currency is still a number — you can add it up. A number typed as `₦900` text cannot be added: format, don't type the symbol.\n\n![The parts of a spreadsheet](media:core/spreadsheet-anatomy.svg)\n\n## Key words\n\n- **Cell:** one box of the grid, named like B6\n- **Column / row:** a vertical line of cells (letter) / a horizontal one (number)\n- **Format:** how a value looks, without changing the value\n\n## Read and watch\n\n- [GCFGlobal — Google Sheets](https://edu.gcfglobal.org/en/googlespreadsheets/) — Step-by-step spreadsheet lessons with practice files; work through the one named in class.\n- [LibreOffice Calc Help](https://help.libreoffice.org/latest/en-US/text/scalc/main0000.html) — The free, offline spreadsheet: every step today works in it too.\n\n## Practise at home\n\n- Build a table of your week's spending or screen time\n- Format it so a parent can read it at a glance\n\n## Make it fit you\n\n- **If this is new to you:** Copy the picture's table exactly first, then change the items.\n- **If you already can:** Add conditional formatting: colour any amount over ₦2,000.\n\n## Assessed this week\n\n- The cell in column C, row 4 is called…\n- Show your formatted budget table: a bold frozen header, readable widths, and the money in currency format.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-05.html",
+     "title": "Slides: Spreadsheets I: cells, rows, columns and formatting",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/spreadsheet-anatomy.svg",
+     "title": "The parts of a spreadsheet",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/googlespreadsheets/",
+     "title": "GCFGlobal — Google Sheets",
+     "kind": "link",
+     "guide": "Step-by-step spreadsheet lessons with practice files; work through the one named in class."
+    },
+    {
+     "url": "https://help.libreoffice.org/latest/en-US/text/scalc/main0000.html",
+     "title": "LibreOffice Calc Help",
+     "kind": "link",
+     "guide": "The free, offline spreadsheet: every step today works in it too."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "The cell in column C, row 4 is called…",
+     "points": 1,
+     "options": [
+      "C4",
+      "4C",
+      "R4C",
+      "C-row-4"
+     ],
+     "answer": "C4",
+     "whys": [
+      "",
+      "The column letter comes first.",
+      "That is not how spreadsheets name cells.",
+      "Cells are named by letter then number: C4."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show your formatted budget table: a bold frozen header, readable widths, and the money in currency format.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: header bold and frozen (1), widths (1), currency format not typed symbols (1), one value per cell (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 6,
+   "position": 1,
+   "title": "Spreadsheets II: formulas that do the work",
+   "summary": "Formulas calculate for you, and recalculate when the data changes: SUM, AVERAGE, MIN, MAX, COUNT — and fill down.",
+   "objectives": [
+    "Write formulas with SUM, AVERAGE, MIN, MAX and COUNT",
+    "Fill a formula across or down",
+    "Explain relative and absolute references"
+   ],
+   "body": "## What to do\n\n- Add a total row to your budget with SUM\n- Fill it across three days\n- Work out a 7.5% charge using an absolute reference\n\n## Understand it\n\nA **formula** starts with **=**. A **function** is a named calculation; a **range** is the cells it works on.\n\n- `=SUM(B2:B5)` adds B2 to B5.\n- `=AVERAGE(B2:B5)` · `=MIN(…)` · `=MAX(…)` · `=COUNT(…)` counts numbers.\n- `=B2*C2` multiplies two cells; `+ - * /` all work.\n\nChange a number and every formula that uses it updates. That is the whole point: never type a total you could calculate.\n\n**Fill**: drag the small square at the corner of a cell. The references move with it — `=SUM(B2:B5)` becomes `=SUM(C2:C5)` one column right. That is a **relative** reference.\n\nSometimes one cell must NOT move — a tax rate in E1. Write it `$E$1`: an **absolute** reference. `=B2*$E$1` filled down always uses E1.\n\nIf you ask an AI chatbot to write a formula, test it on numbers you can check by hand before you trust it — it is often confidently wrong about ranges.\n\n![Worked example: SUM in B6, filled right to C6 and D6](media:core/shots/sheets-sum.png)\n\n![Reading a formula](media:core/formula.svg)\n\n## Key words\n\n- **Formula:** a calculation that starts with =\n- **Function:** a named calculation such as SUM\n- **Range:** a block of cells, like B2:B5\n- **Absolute reference:** a reference with $ that does not move when filled\n\n## Read and watch\n\n- [Google Sheets function list](https://support.google.com/docs/table/25273) — Look up any formula used today — AVERAGE, MEDIAN, MODE, COUNTIF.\n- [GCFGlobal — Google Sheets](https://edu.gcfglobal.org/en/googlespreadsheets/) — Step-by-step spreadsheet lessons with practice files; work through the one named in class.\n\n## Practise at home\n\n- Add totals and an average to the table you made last week\n- Change one number and watch the totals update\n\n## Make it fit you\n\n- **If this is new to you:** Type the formula from the picture exactly, then change only the range.\n- **If you already can:** Use COUNTIF to count how many days spending went over ₦2,000.\n\n## Assessed this week\n\n- Write a formula to find the average of the values in D2 to D10.\n- C6 holds =SUM(C2:C5). You fill it one column right into D6. What does D6 hold?\n- Complete the GCFGlobal Google Sheets lesson on formulas and functions and its practice; paste proof and one formula you wrote yourself.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-06.html",
+     "title": "Slides: Spreadsheets II: formulas that do the work",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/formula.svg",
+     "title": "Reading a formula",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/shots/sheets-sum.png",
+     "title": "Worked example: SUM in B6, filled right to C6 and D6",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://support.google.com/docs/table/25273",
+     "title": "Google Sheets function list",
+     "kind": "link",
+     "guide": "Look up any formula used today — AVERAGE, MEDIAN, MODE, COUNTIF."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/googlespreadsheets/",
+     "title": "GCFGlobal — Google Sheets",
+     "kind": "link",
+     "guide": "Step-by-step spreadsheet lessons with practice files; work through the one named in class."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "short",
+     "prompt": "Write a formula to find the average of the values in D2 to D10.",
+     "points": 2,
+     "answer": "=AVERAGE(D2:D10)"
+    },
+    {
+     "kind": "mcq",
+     "prompt": "C6 holds =SUM(C2:C5). You fill it one column right into D6. What does D6 hold?",
+     "points": 1,
+     "options": [
+      "=SUM(D2:D5)",
+      "=SUM(C2:C5)",
+      "=SUM(D6:D9)",
+      "The same number as C6"
+     ],
+     "answer": "=SUM(D2:D5)",
+     "whys": [
+      "",
+      "That would only happen with absolute references ($C$2:$C$5).",
+      "Filling right moves columns, not rows.",
+      "It holds a formula over its own column, so usually a different number."
+     ]
+    },
+    {
+     "kind": "evidence",
+     "prompt": "Complete the GCFGlobal Google Sheets lesson on formulas and functions and its practice; paste proof and one formula you wrote yourself.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: proof (1), a correct formula of their own (1), it says what the formula does (1).",
+     "url": "https://edu.gcfglobal.org/en/googlespreadsheets/"
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 7,
+   "position": 1,
+   "title": "Sort, filter, find and tidy data",
+   "summary": "Answer questions from a long list in seconds — if the table is tidy and you sort the whole thing.",
+   "objectives": [
+    "Sort a whole table by one column",
+    "Filter to show only some rows",
+    "Use Find and Replace, and keep data tidy"
+   ],
+   "body": "## What to do\n\n- Sort the survey table by age, then by name\n- Filter to show only one answer\n- Use Find and Replace to fix a misspelling everywhere\n\n## Understand it\n\nA table is **tidy** when it has one row per thing, one column per question, one value per cell, and a header row. Then the spreadsheet can answer questions for you.\n\n- **Sort**: select the WHOLE table, then **Data → Sort range**, with \"has header row\" ticked. Never sort a single column — it scrambles every row.\n- **Filter**: **Data → Create a filter**, then pick values in a column. Other rows are **hidden, not deleted** — turn the filter off and they come back.\n- **Find** (Ctrl+F) locates a word; **Find and Replace** (Ctrl+H) fixes it everywhere at once. Check the count before you press Replace all.\n\n![Filter on: only Jollof shows; the row numbers jump because the other rows are hidden](media:core/shots/sheets-sort-filter.png)\n\n![A tidy table](media:core/tidy-data.svg)\n\n## Key words\n\n- **Sort:** put rows in order by a column\n- **Filter:** show only some rows, without deleting the rest\n- **Tidy data:** one row per thing, one column per question\n\n## Read and watch\n\n- [GCFGlobal — Google Sheets](https://edu.gcfglobal.org/en/googlespreadsheets/) — Step-by-step spreadsheet lessons with practice files; work through the one named in class.\n- [Google Sheets function list](https://support.google.com/docs/table/25273) — Look up any formula used today — AVERAGE, MEDIAN, MODE, COUNTIF.\n\n## Practise at home\n\n- Sort a list of family birthdays by month\n- Filter it to show this term's\n\n## Make it fit you\n\n- **If this is new to you:** Always click inside the table first, then use Data → Sort range.\n- **If you already can:** Sort by two columns: first by centre, then by name within each centre.\n\n## Assessed this week\n\n- Why should you never sort only ONE column of a table?\n- Show the survey table sorted by one column, filtered to one answer, and one spelling fixed with Find and Replace.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-07.html",
+     "title": "Slides: Sort, filter, find and tidy data",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/tidy-data.svg",
+     "title": "A tidy table",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/shots/sheets-sort-filter.png",
+     "title": "Filter on: only Jollof shows; the row numbers jump because the other rows are hidden",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/googlespreadsheets/",
+     "title": "GCFGlobal — Google Sheets",
+     "kind": "link",
+     "guide": "Step-by-step spreadsheet lessons with practice files; work through the one named in class."
+    },
+    {
+     "url": "https://support.google.com/docs/table/25273",
+     "title": "Google Sheets function list",
+     "kind": "link",
+     "guide": "Look up any formula used today — AVERAGE, MEDIAN, MODE, COUNTIF."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Why should you never sort only ONE column of a table?",
+     "points": 1,
+     "options": [
+      "Each row's values get separated, so the data no longer belongs together",
+      "It is slower",
+      "The column is deleted",
+      "Sorted data cannot be filtered"
+     ],
+     "answer": "Each row's values get separated, so the data no longer belongs together",
+     "whys": [
+      "",
+      "Speed is not the problem; scrambled rows are.",
+      "Nothing is deleted — it is silently scrambled, which is worse.",
+      "Sorted data filters fine."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show the survey table sorted by one column, filtered to one answer, and one spelling fixed with Find and Replace.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: whole table sorted (1), filter working (1), rows hidden not deleted (1), Find and Replace used (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 8,
+   "position": 1,
+   "title": "Summaries and charts",
+   "summary": "Turn a column of numbers into one honest summary and one clear chart.",
+   "objectives": [
+    "Find mean, median and mode, and choose the fair one",
+    "Choose a chart by the question",
+    "Make a labelled chart from a table"
+   ],
+   "body": "## What to do\n\n- Work out mean, median and mode for pocket money\n- Choose the chart for three questions\n- Make a bar chart with a title, labels and source\n\n## Understand it\n\nThree \"averages\":\n\n- **Mean** = add them up, divide by how many: `=AVERAGE()`. One huge value drags it.\n- **Median** = the middle value when sorted: `=MEDIAN()`. Not moved by one odd value.\n- **Mode** = the most common: `=MODE()`.\n\nWhen one value is far from the rest (an **outlier**), the median describes a typical person better.\n\nCharts answer questions: **bar** to compare groups, **line** for change over time, **pie** only for a few parts of one whole, **scatter** for whether two things go together. In Sheets: select the table → **Insert → Chart** → pick the type. A chart someone else can read has a **title that says what it shows**, **labelled axes**, the **source** and the **date**, and bar charts start at **zero**.\n\n![Worked example: a labelled bar chart, axis from 0](media:core/shots/sheets-chart.png)\n\n![An outlier and three averages](media:core/averages.svg)\n\n![Choose the chart by the question](media:core/chart-chooser.svg)\n\n## Key words\n\n- **Mean / median / mode:** the arithmetic average / the middle / the most common\n- **Outlier:** a value far from the rest\n- **Axis:** the scale along the side or bottom of a chart\n\n## Read and watch\n\n- [Khan Academy — Statistics and probability](https://www.khanacademy.org/math/statistics-probability) — Short videos and practice that check themselves; do the set named in the lesson.\n- [Our World in Data](https://ourworldindata.org/) — Real charts about the whole world, each with its source — read them like a detective.\n\n## Practise at home\n\n- Find mean and median of your screen time for a week; say which is fairer\n- Find a chart in the news and say if it is labelled properly\n\n## Make it fit you\n\n- **If this is new to you:** Sort the numbers first: the median and mode jump out.\n- **If you already can:** Find a bar chart whose axis does not start at zero and redraw it honestly.\n\n## Assessed this week\n\n- Pocket money (₦): 200, 300, 300, 300, 400, 500, 600, 3000. Which best describes a typical child?\n- Make a bar chart from your table with a title that states the finding, labelled axes, the source and the date.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-08.html",
+     "title": "Slides: Summaries and charts",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/averages.svg",
+     "title": "An outlier and three averages",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/chart-chooser.svg",
+     "title": "Choose the chart by the question",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/shots/sheets-chart.png",
+     "title": "Worked example: a labelled bar chart, axis from 0",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://www.khanacademy.org/math/statistics-probability",
+     "title": "Khan Academy — Statistics and probability",
+     "kind": "link",
+     "guide": "Short videos and practice that check themselves; do the set named in the lesson."
+    },
+    {
+     "url": "https://ourworldindata.org/",
+     "title": "Our World in Data",
+     "kind": "link",
+     "guide": "Real charts about the whole world, each with its source — read them like a detective."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Pocket money (₦): 200, 300, 300, 300, 400, 500, 600, 3000. Which best describes a typical child?",
+     "points": 1,
+     "options": [
+      "The median, ₦350",
+      "The mean, ₦700",
+      "The largest value",
+      "The range"
+     ],
+     "answer": "The median, ₦350",
+     "whys": [
+      "",
+      "The one ₦3,000 drags the mean above what seven of eight children get.",
+      "That is the outlier.",
+      "The range is spread, not a typical value."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Make a bar chart from your table with a title that states the finding, labelled axes, the source and the date.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: right chart type (1), finding as title (1), labelled axes from zero (1), source and date (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 9,
+   "position": 1,
+   "title": "Finding and checking information online",
+   "summary": "Search well, then check before you believe or share: who made it, when, and what do other trusted sources say?",
+   "objectives": [
+    "Use search operators to find better results",
+    "Check a source with SIFT",
+    "Tell a fact from a claim, and treat AI answers as a starting point"
+   ],
+   "body": "## What to do\n\n- Search the same question three ways and compare\n- Check one viral claim with SIFT\n- Find the original source of a statistic\n\n## Understand it\n\nBetter searching:\n\n- **\"quotes\"** find an exact phrase: `\"Lagos population\"`.\n- **site:** searches one site: `site:nigerianstat.gov.ng inflation`.\n- **-word** removes results: `jaguar -car`.\n- Add the year for recent facts: `2026`.\n\nBefore you believe or share, use **SIFT**:\n\n1. **Stop** — do you know this site or person?\n2. **Investigate the source** — who made it, when, why?\n3. **Find better coverage** — what do trusted sources say?\n4. **Trace** claims back to the original data or quote.\n\nA screenshot is not a source. A number with no source, date or link is a claim, not a fact.\n\nAI chatbots answer fluently and are sometimes wrong, with invented sources. Use an answer as a list of things to check, and check them.\n\n![SIFT: four moves before you share](media:core/sift.svg)\n\n## Key words\n\n- **Search operator:** a symbol or word that narrows a search\n- **Source:** who or where information comes from\n- **Misinformation:** false information, shared by mistake or on purpose\n\n## Read and watch\n\n- [SIFT — the four moves](https://hapgood.us/2019/06/19/sift-the-four-moves/) — A fact-checker's four quick moves for anything you read online.\n- [Our World in Data](https://ourworldindata.org/) — Real charts about the whole world, each with its source — read them like a detective.\n\n## Practise at home\n\n- Check one message forwarded in a family group with SIFT\n- Explain your verdict to someone at home\n\n## Make it fit you\n\n- **If this is new to you:** Do SIFT as a checklist on paper: tick each move.\n- **If you already can:** Find a statistic quoted in the news and trace it to the original table.\n\n## Assessed this week\n\n- Pick one claim you saw online this week. Do the four SIFT moves and paste the links you used, with your verdict.\n- A post says \"80% of students fail maths\" with no link. What is the best first step?\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-09.html",
+     "title": "Slides: Finding and checking information online",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/sift.svg",
+     "title": "SIFT: four moves before you share",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://hapgood.us/2019/06/19/sift-the-four-moves/",
+     "title": "SIFT — the four moves",
+     "kind": "link",
+     "guide": "A fact-checker's four quick moves for anything you read online."
+    },
+    {
+     "url": "https://ourworldindata.org/",
+     "title": "Our World in Data",
+     "kind": "link",
+     "guide": "Real charts about the whole world, each with its source — read them like a detective."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "evidence",
+     "prompt": "Pick one claim you saw online this week. Do the four SIFT moves and paste the links you used, with your verdict.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: a real claim (1), source investigated (1), better coverage found (1), a justified verdict (1).",
+     "url": "https://hapgood.us/2019/06/19/sift-the-four-moves/"
+    },
+    {
+     "kind": "mcq",
+     "prompt": "A post says \"80% of students fail maths\" with no link. What is the best first step?",
+     "points": 1,
+     "options": [
+      "Look for the original data and who published it",
+      "Share it so others can check",
+      "Believe it because many people liked it",
+      "Ask an AI chatbot and accept its answer"
+     ],
+     "answer": "Look for the original data and who published it",
+     "whys": [
+      "",
+      "Sharing first spreads it before anyone has checked.",
+      "Likes measure popularity, not truth.",
+      "An AI answer is something to check, not a source."
+     ]
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 10,
+   "position": 1,
+   "title": "Staying safe: passwords, scams and personal data",
+   "summary": "Protect your accounts and other people's data: strong passwords, 2-step verification, spotting scams, and the law.",
+   "objectives": [
+    "Make a strong passphrase and turn on 2-step verification",
+    "Spot a phishing message",
+    "Say what personal data is and what Nigeria's data law protects"
+   ],
+   "body": "## What to do\n\n- Turn a weak password into a strong passphrase\n- Find the five warning signs in a scam message\n- Turn on 2-step verification on one account (with a parent)\n\n## Understand it\n\n**Passwords**: long beats clever. Three or four random words — `plum-river-kettle-sunday` — are strong and memorable. Use a **different** one for every account, especially email (it can reset all the others). A password manager remembers them.\n\n**2-step verification (2FA)**: a code from your phone as well as the password. A stolen password alone then opens nothing.\n\n**Phishing** messages try to make you click, pay or log in. Warning signs: urgency (\"within 24 hours\"), a prize you did not enter, a sender address that is nearly right, a link that goes somewhere odd, a request for a code or password. No real bank or school asks for your password or OTP.\n\n**Updates** fix security holes: install them.\n\n**Personal data** — names, phone numbers, photos, addresses, marks — belongs to the person it describes. The **Nigeria Data Protection Act 2023** says: ask first, collect only what you need, keep it safe, share it with nobody who should not have it.\n\n![Strong passwords and 2FA](media:core/passwords.svg)\n\n## Key words\n\n- **Passphrase:** a password made of several random words\n- **2-step verification:** a second check, usually a code on your phone\n- **Phishing:** a message pretending to be someone trusted to steal details\n\n## Read and watch\n\n- [NCSC — Strong, separate passwords](https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online/use-a-strong-and-separate-password-for-email) — Why three random words beat a clever password, and how to start.\n- [NCSC — Turn on 2-step verification](https://www.ncsc.gov.uk/guidance/setting-two-step-verification-2sv) — How to switch on the second lock for your email and other accounts.\n- [NCSC — Spotting a suspicious message](https://www.ncsc.gov.uk/guidance/suspicious-email-actions) — What to do when a message asks you to click, pay or log in.\n- [Nigeria Data Protection Commission](https://ndpc.gov.ng/) — Who protects personal data in Nigeria, and what the law (NDPA 2023) promises you.\n\n## Practise at home\n\n- With a parent, check which accounts at home have 2-step verification\n- Show someone at home the five phishing signs\n\n## Make it fit you\n\n- **If this is new to you:** Use the picture: make your passphrase from four things you can see in the room.\n- **If you already can:** Find out what a data breach is and check how to tell if your email was in one.\n\n## Assessed this week\n\n- A message says your bank account will close today unless you send the code you just received. What should you do?\n- Show 2-step verification turned on for one account (yours or, with permission, a family one), and explain what it protects against.\n- Which piece of personal data about you would you least want shared, and why? (Private to your instructor.)\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-10.html",
+     "title": "Slides: Staying safe: passwords, scams and personal data",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/passwords.svg",
+     "title": "Strong passwords and 2FA",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://www.ncsc.gov.uk/collection/top-tips-for-staying-secure-online/use-a-strong-and-separate-password-for-email",
+     "title": "NCSC — Strong, separate passwords",
+     "kind": "link",
+     "guide": "Why three random words beat a clever password, and how to start."
+    },
+    {
+     "url": "https://www.ncsc.gov.uk/guidance/setting-two-step-verification-2sv",
+     "title": "NCSC — Turn on 2-step verification",
+     "kind": "link",
+     "guide": "How to switch on the second lock for your email and other accounts."
+    },
+    {
+     "url": "https://www.ncsc.gov.uk/guidance/suspicious-email-actions",
+     "title": "NCSC — Spotting a suspicious message",
+     "kind": "link",
+     "guide": "What to do when a message asks you to click, pay or log in."
+    },
+    {
+     "url": "https://ndpc.gov.ng/",
+     "title": "Nigeria Data Protection Commission",
+     "kind": "link",
+     "guide": "Who protects personal data in Nigeria, and what the law (NDPA 2023) promises you."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "A message says your bank account will close today unless you send the code you just received. What should you do?",
+     "points": 1,
+     "options": [
+      "Send nothing and contact the bank through its official number",
+      "Send the code quickly",
+      "Reply asking if it is real",
+      "Forward it to friends to warn them, with the link"
+     ],
+     "answer": "Send nothing and contact the bank through its official number",
+     "whys": [
+      "",
+      "No real bank asks for your code: that is how accounts are stolen.",
+      "Replying confirms your number is active to the scammer.",
+      "Forwarding the link spreads the trap."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show 2-step verification turned on for one account (yours or, with permission, a family one), and explain what it protects against.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: 2FA on (1), method named (1), threat explained (1)."
+    },
+    {
+     "kind": "reflection",
+     "prompt": "Which piece of personal data about you would you least want shared, and why? (Private to your instructor.)",
+     "points": 2,
+     "answer": "An honest, specific answer with a reason.",
+     "rubric": "Up to 2: honest and specific (1), reason linked to today (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 11,
+   "position": 1,
+   "title": "Sharing files and working together",
+   "summary": "Send the right file type, share with the right access, and work on one file together without losing anything.",
+   "objectives": [
+    "Choose a file type for the job (PDF, DOCX, XLSX, CSV, JPG, PNG)",
+    "Share with viewer, commenter or editor access",
+    "Use comments and version history"
+   ],
+   "body": "## What to do\n\n- Export your budget as a PDF and as a CSV\n- Share your sheet with a partner as a commenter\n- Restore an earlier version from version history\n\n## Understand it\n\n**Pick the file type for the job.** Still being edited? Send the editable file (`.docx`, `.xlsx`). Finished and must look the same everywhere? **PDF**. Data for another app? **CSV**. Photos **JPG**; screenshots and logos **PNG**.\n\n**Attachment or link?** An attachment is a copy — edits do not travel back. A shared link points to ONE file everybody works on.\n\n**Access**: give the least that does the job.\n\n- **Viewer** reads · **Commenter** suggests · **Editor** changes.\n- **Restricted** (only people you add) is the safe default; \"anyone with the link\" travels further than you think — never for personal data.\n\n**Working together**: use **comments** instead of typing into someone's work, and **version history** (File → Version history) to see who changed what and to restore an older version.\n\n![A share dialog: each person given only the access they need, general access Restricted](media:core/shots/share-dialog.png)\n\n![File types and what they are for](media:core/file-formats.svg)\n\n![Sharing permissions](media:core/sharing.svg)\n\n## Key words\n\n- **PDF:** a finished page that looks the same everywhere\n- **CSV:** plain table data any app can read\n- **Permission:** what someone is allowed to do with a shared file\n- **Version history:** the record of earlier versions of a file\n\n## Read and watch\n\n- [GCFGlobal — Google Sheets](https://edu.gcfglobal.org/en/googlespreadsheets/) — Step-by-step spreadsheet lessons with practice files; work through the one named in class.\n- [GCFGlobal — Computer Basics](https://edu.gcfglobal.org/en/computerbasics/) — Free, illustrated, no account: do the lesson named in class, then its quiz.\n\n## Practise at home\n\n- Share a document with a family member as a viewer\n- Send the same file as a PDF and compare\n\n## Make it fit you\n\n- **If this is new to you:** Use the share picture: start with Restricted and Viewer, then widen only if needed.\n- **If you already can:** Find out how to stop a shared link working, and do it.\n\n## Assessed this week\n\n- Put the steps for sharing a sheet safely with your team in order.\n- Your finished certificate design must look the same on every phone and printer. Which file type?\n- Show your sheet shared with a partner as a commenter (Restricted), one comment between you, and an earlier version restored from version history.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-11.html",
+     "title": "Slides: Sharing files and working together",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/file-formats.svg",
+     "title": "File types and what they are for",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/sharing.svg",
+     "title": "Sharing permissions",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/shots/share-dialog.png",
+     "title": "A share dialog: each person given only the access they need, general access Restricted",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/googlespreadsheets/",
+     "title": "GCFGlobal — Google Sheets",
+     "kind": "link",
+     "guide": "Step-by-step spreadsheet lessons with practice files; work through the one named in class."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/computerbasics/",
+     "title": "GCFGlobal — Computer Basics",
+     "kind": "link",
+     "guide": "Free, illustrated, no account: do the lesson named in class, then its quiz."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "order",
+     "prompt": "Put the steps for sharing a sheet safely with your team in order.",
+     "points": 3,
+     "options": [
+      "Decide who needs it and what they must do",
+      "Open Share and add their emails",
+      "Set each person to viewer, commenter or editor",
+      "Keep general access Restricted",
+      "Send, and check they can open it"
+     ]
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Your finished certificate design must look the same on every phone and printer. Which file type?",
+     "points": 1,
+     "options": [
+      "PDF",
+      "DOCX",
+      "CSV",
+      "The design app's share link"
+     ],
+     "answer": "PDF",
+     "whys": [
+      "",
+      "A DOCX can move and change fonts on another computer.",
+      "CSV holds table data, not a designed page.",
+      "A link can change and needs the app."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show your sheet shared with a partner as a commenter (Restricted), one comment between you, and an earlier version restored from version history.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: right access (1), Restricted (1), a comment used (1), version history used (1)."
+    }
+   ]
+  },
+  {
+   "course": "Data Appreciation",
+   "level": "Year 1 · Foundation",
+   "week": 12,
+   "position": 1,
+   "title": "Project: a data job, start to finish",
+   "summary": "Use everything from the term again on one real job: collect, organise, calculate, chart, share safely and back up.",
+   "objectives": [
+    "Carry out a complete data task on your own",
+    "Use files, formulas, sorting, a chart and safe sharing together",
+    "Explain your choices to a panel"
+   ],
+   "body": "## What to do\n\n- Choose a job: a class survey, a club budget, or a reading log\n- Collect at least 15 rows of data\n- Build, chart, share and present it\n\n## Understand it\n\nThis project uses every earlier week again. Go back to your notes from weeks 2, 6 and 11 before you start.\n\nYour project needs:\n\n- a **folder** with date-first file names (week 2) and a **backup** (week 3);\n- data entered **consistently** (week 4) — at least 15 rows, collected with a Google Form or by hand;\n- a **formatted** table (week 5) with **formulas** for totals and averages (week 6);\n- **sorted or filtered** to answer one question (week 7);\n- **one chart** with a title that states the finding (week 8);\n- **no unnecessary personal data**, and consent where people are involved (week 10);\n- **shared** as a PDF and as a Restricted link with your instructor as commenter (week 11).\n\nThe panel will ask about YOUR choices: why that format, why that chart, how it is backed up. That is how they know the work is yours.\n\n![Your project's table](media:core/spreadsheet-anatomy.svg)\n\n## Key words\n\n- **Panel:** the people who assess your presentation\n- **Deliverable:** the finished thing you hand in\n\n## Read and watch\n\n- [Google Forms](https://forms.google.com/) — Make a survey for free; the answers arrive in a spreadsheet.\n- [GCFGlobal — Google Sheets](https://edu.gcfglobal.org/en/googlespreadsheets/) — Step-by-step spreadsheet lessons with practice files; work through the one named in class.\n- [Google Sheets function list](https://support.google.com/docs/table/25273) — Look up any formula used today — AVERAGE, MEDIAN, MODE, COUNTIF.\n\n## Practise at home\n\n- Rehearse your two-minute explanation\n- Check your backup: can you open the file from the second place?\n\n## Make it fit you\n\n- **If this is new to you:** Use the checklist above as your plan: tick each line as you finish it.\n- **If you already can:** Add a second sheet that summarises the first with COUNTIF and AVERAGE, and a second chart.\n\n## Assessed this week\n\n- Your data job: share the folder or sheet (Restricted, instructor as commenter) and the PDF, and describe what you did at each step.\n- Name one thing that would have gone wrong without your backup or your consistent data, and how you avoided it.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/da-12.html",
+     "title": "Slides: Project: a data job, start to finish",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/spreadsheet-anatomy.svg",
+     "title": "Your project's table",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://forms.google.com/",
+     "title": "Google Forms",
+     "kind": "link",
+     "guide": "Make a survey for free; the answers arrive in a spreadsheet."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/googlespreadsheets/",
+     "title": "GCFGlobal — Google Sheets",
+     "kind": "link",
+     "guide": "Step-by-step spreadsheet lessons with practice files; work through the one named in class."
+    },
+    {
+     "url": "https://support.google.com/docs/table/25273",
+     "title": "Google Sheets function list",
+     "kind": "link",
+     "guide": "Look up any formula used today — AVERAGE, MEDIAN, MODE, COUNTIF."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "project",
+     "prompt": "Your data job: share the folder or sheet (Restricted, instructor as commenter) and the PDF, and describe what you did at each step.",
+     "points": 10,
+     "answer": "A tidy, formatted table of 15+ rows with correct formulas, a sort or filter that answers a question, a labelled chart, safe sharing and a backup.",
+     "rubric": "Up to 10: files and backup (2), consistent data (2), formulas correct (2), chart and finding (2), safe sharing and no unnecessary personal data (2)."
+    },
+    {
+     "kind": "short",
+     "prompt": "Name one thing that would have gone wrong without your backup or your consistent data, and how you avoided it.",
+     "points": 2,
+     "answer": "A specific risk (lost file, unsortable dates, wrong totals) and the specific step that prevented it."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 1,
+   "position": 1,
+   "title": "What desktop publishing is — and the tools for it",
+   "summary": "Desktop publishing is designing pages to be read — on paper or on screen. Free tools do it well.",
+   "objectives": [
+    "Say what desktop publishing is, with five examples",
+    "Tell print design from screen design",
+    "Choose a free tool for a job"
+   ],
+   "body": "## What to do\n\n- Collect five printed things (a flyer, a programme, a receipt, a certificate, a menu)\n- Say who each is for and what it must do\n- Open Canva and one other free tool\n\n## Understand it\n\n**Desktop publishing (DTP)** is arranging text and pictures on a page so people can read and use it: flyers, posters, newsletters, certificates, brochures, programmes, menus.\n\nGood design is not decoration. A flyer must be read in three seconds from across the road; a programme must be found in the dark; a certificate must look official.\n\nThe tools (all free):\n\n- **Canva** — browser and phone, templates, easy sharing.\n- **Google Docs / Slides** — quick documents and single pages.\n- **LibreOffice Draw/Writer** — offline, on any computer.\n- **Scribus** — professional page layout for print, free.\n\n(Microsoft Publisher's support ends in October 2026, so it is not taught here.)\n\n## Key words\n\n- **Desktop publishing:** designing pages of text and pictures\n- **Layout:** where things sit on the page\n- **Template:** a starting design you adapt\n\n## Read and watch\n\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n- [Scribus](https://www.scribus.net/) — Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free.\n- [LibreOffice Help](https://help.libreoffice.org/) — Free office suite; Draw and Writer can lay out a flyer or newsletter.\n\n## Practise at home\n\n- Collect three printed things and rank them: easiest to read to hardest\n- Say one thing that makes the best one work\n\n## Make it fit you\n\n- **If this is new to you:** For each printed thing, answer: who is it for? what must they do after reading it?\n- **If you already can:** Find one design that works badly and say exactly what you would change.\n\n## Assessed this week\n\n- A shop wants 500 flyers printed and also a post for WhatsApp. What is the main difference to plan for?\n- Show your five collected printed things and explain, for one of them, who it is for and what it must make them do.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-01.html",
+     "title": "Slides: What desktop publishing is — and the tools for it",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/guides/dtp.html",
+     "title": "Desktop Publishing — learning guide",
+     "kind": "doc",
+     "guide": "The whole course on one page: twelve weeks, what you will be able to do, and how each Saturday works."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    },
+    {
+     "url": "https://www.scribus.net/",
+     "title": "Scribus",
+     "kind": "link",
+     "guide": "Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free."
+    },
+    {
+     "url": "https://help.libreoffice.org/",
+     "title": "LibreOffice Help",
+     "kind": "link",
+     "guide": "Free office suite; Draw and Writer can lay out a flyer or newsletter."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "A shop wants 500 flyers printed and also a post for WhatsApp. What is the main difference to plan for?",
+     "points": 1,
+     "options": [
+      "Print needs high resolution and print colours; the post needs a screen size",
+      "There is no difference",
+      "The post must have more text",
+      "Print can use any image from the internet"
+     ],
+     "answer": "Print needs high resolution and print colours; the post needs a screen size",
+     "whys": [
+      "",
+      "Print and screen need different sizes, resolution and colour.",
+      "Usually less: people scroll past.",
+      "Copyright applies to both, and web images are often too low-resolution to print."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show your five collected printed things and explain, for one of them, who it is for and what it must make them do.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: five real examples (1), audience named (1), purpose named (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 2,
+   "position": 1,
+   "title": "Setting up the page: size, orientation, margins",
+   "summary": "Before any design, set up the page: the paper size, which way up, and the margins that keep things safe.",
+   "objectives": [
+    "Name common paper sizes (A4, A5, A3)",
+    "Choose portrait or landscape",
+    "Set margins and know why they matter"
+   ],
+   "body": "## What to do\n\n- Fold an A4 sheet to make A5 and A6\n- Set up an A5 portrait page in Canva or Docs\n- Set 12 mm margins\n\n## Understand it\n\n**A-sizes** halve each time: A3 folded in half is A4; A4 folded is A5. A4 (210 × 297 mm) is the standard Nigerian document page; A5 is a handy flyer; A3 a small poster.\n\n**Orientation**: portrait (tall) or landscape (wide). Choose by the content — a list is tall, a timeline is wide.\n\n**Margins** are the empty border. They make a page look calm, stop text being cut off, and leave room for fingers. Keep at least 10–15 mm on a printed page. In Google Docs: **File → Page setup**; in Canva: choose a custom size in mm.\n\nDecide the size FIRST: changing it later moves everything.\n\n![A document-setup window: size, orientation, margins, columns and bleed chosen before anything is drawn](media:core/shots/dtp-document-setup.png)\n\n## Key words\n\n- **A4:** 210 × 297 mm, the standard document page\n- **Portrait / landscape:** tall / wide orientation\n- **Margin:** the empty border around the page\n\n## Read and watch\n\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n- [LibreOffice Help](https://help.libreoffice.org/) — Free office suite; Draw and Writer can lay out a flyer or newsletter.\n\n## Practise at home\n\n- Measure three printed things at home and name their sizes\n- Find one where the text runs too close to the edge\n\n## Make it fit you\n\n- **If this is new to you:** Fold paper to feel the sizes before choosing one on screen.\n- **If you already can:** Work out how many A6 cards fit on one A3 sheet, and why printers use that.\n\n## Assessed this week\n\n- If you fold an A4 sheet in half, what size is each half?\n- Set up an A5 portrait page with 12 mm margins in Canva or Google Docs and show your instructor the settings.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-02.html",
+     "title": "Slides: Setting up the page: size, orientation, margins",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/shots/dtp-document-setup.png",
+     "title": "A document-setup window: size, orientation, margins, columns and bleed chosen before anything is drawn",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    },
+    {
+     "url": "https://help.libreoffice.org/",
+     "title": "LibreOffice Help",
+     "kind": "link",
+     "guide": "Free office suite; Draw and Writer can lay out a flyer or newsletter."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "If you fold an A4 sheet in half, what size is each half?",
+     "points": 1,
+     "options": [
+      "A5",
+      "A3",
+      "A6",
+      "Still A4"
+     ],
+     "answer": "A5",
+     "whys": [
+      "",
+      "A3 is twice A4, not half.",
+      "A6 is half of A5 — fold again.",
+      "Folding halves the size."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Set up an A5 portrait page with 12 mm margins in Canva or Google Docs and show your instructor the settings.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: A5 size (1), portrait (1), margins set (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 3,
+   "position": 1,
+   "title": "Type I: choosing and using fonts",
+   "summary": "Most of a page is words. The right font, size and spacing make them easy to read.",
+   "objectives": [
+    "Tell serif from sans-serif fonts",
+    "Set body text at a readable size and line length",
+    "Use at most two fonts on a page"
+   ],
+   "body": "## What to do\n\n- Compare three fonts on the same paragraph\n- Find the size where your partner reads it easily at arm's length\n- Set line spacing and line length\n\n## Understand it\n\n- **Serif** fonts have small strokes at the ends of letters (Georgia, Times); **sans-serif** fonts do not (Arial, Inter). Both are readable; pick one for body text and keep it.\n- **Size**: body text for print is usually 10–12 pt; for screens 16 px. Headings are bigger.\n- **Line length**: 45–75 characters per line is comfortable. Longer lines tire the eye.\n- **Line spacing**: about 1.2–1.5 times the font size.\n- **Two fonts at most**: one for headings, one for body. Never decorative fonts for body text.\n\nCAPITALS are hard to read in long stretches, and underline looks like a link. Use **bold** for emphasis.\n\n## Key words\n\n- **Font:** a style of lettering\n- **Serif:** small strokes at the ends of letters\n- **Sans-serif:** without those strokes\n- **Leading:** the space between lines\n\n## Read and watch\n\n- [Google Fonts Knowledge](https://fonts.google.com/knowledge) — Short, clear lessons on type: read the one named in the lesson.\n- [Practical Typography](https://practicaltypography.com/) — The rules of good type for documents people actually read.\n\n## Practise at home\n\n- Find a page with too many fonts and count them\n- Rewrite one paragraph at a comfortable size and spacing\n\n## Make it fit you\n\n- **If this is new to you:** Start with one sans-serif font only; change just size and weight.\n- **If you already can:** Pair a serif heading font with a sans-serif body font and explain why they work together.\n\n## Assessed this week\n\n- What is a comfortable line length for body text?\n- Read one Google Fonts Knowledge lesson on choosing type, then set a paragraph two ways and say which reads better and why.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-03.html",
+     "title": "Slides: Type I: choosing and using fonts",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "https://fonts.google.com/knowledge",
+     "title": "Google Fonts Knowledge",
+     "kind": "link",
+     "guide": "Short, clear lessons on type: read the one named in the lesson."
+    },
+    {
+     "url": "https://practicaltypography.com/",
+     "title": "Practical Typography",
+     "kind": "link",
+     "guide": "The rules of good type for documents people actually read."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "What is a comfortable line length for body text?",
+     "points": 1,
+     "options": [
+      "About 45–75 characters",
+      "As wide as the page allows",
+      "10–20 characters",
+      "Over 120 characters"
+     ],
+     "answer": "About 45–75 characters",
+     "whys": [
+      "",
+      "Very long lines make the eye lose its place.",
+      "Too short: the eye jumps lines constantly.",
+      "Far too long to read comfortably."
+     ]
+    },
+    {
+     "kind": "evidence",
+     "prompt": "Read one Google Fonts Knowledge lesson on choosing type, then set a paragraph two ways and say which reads better and why.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: the lesson named (1), two settings shown (1), a reason using today's terms (1).",
+     "url": "https://fonts.google.com/knowledge"
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 4,
+   "position": 1,
+   "title": "Type II: hierarchy — what to read first",
+   "summary": "Size, weight and colour tell the reader what matters most. A clear hierarchy gets the message across in seconds.",
+   "objectives": [
+    "Build a five-level hierarchy",
+    "Use size, weight and colour — not many fonts",
+    "Test a design with the three-second glance"
+   ],
+   "body": "## What to do\n\n- Rank the information on a flyer by importance\n- Give each level its own size and weight\n- Test it: what does a partner remember after three seconds?\n\n## Understand it\n\n**Hierarchy** is the order the eye reads in. Most pages need about five levels:\n\n1. **Headline** — biggest, boldest: what it is.\n2. **Subheading** — supports the headline.\n3. **Key facts** — when, where, how much (often in a coloured block).\n4. **Body** — the details, at a comfortable size.\n5. **Caption / small print** — smallest.\n\nMake each level clearly different: **size** (headline 3× body), **weight** (bold vs regular), **colour** (one accent), and **space** around it. If everything is big and bold, nothing stands out.\n\nThe test: show it to someone for three seconds. They should remember the headline and the key facts.\n\n![Five levels of text](media:core/type-hierarchy.svg)\n\n## Key words\n\n- **Hierarchy:** the order of importance shown by size, weight and colour\n- **Weight:** how thick the letters are: regular, bold\n- **Accent colour:** one colour used to point at what matters\n\n## Read and watch\n\n- [Google Fonts Knowledge](https://fonts.google.com/knowledge) — Short, clear lessons on type: read the one named in the lesson.\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n\n## Practise at home\n\n- Take a cluttered notice and redesign its hierarchy on paper\n- Do the three-second test on a family member\n\n## Make it fit you\n\n- **If this is new to you:** Write the five levels as a list first, then design.\n- **If you already can:** Create the same hierarchy using only weight and space — no size changes.\n\n## Assessed this week\n\n- Put a flyer's text levels in order, from what should be read first.\n- A flyer has every line big, bold and in a different colour. What is the main problem?\n- Redesign a cluttered flyer your instructor gives you with a clear five-level hierarchy.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-04.html",
+     "title": "Slides: Type II: hierarchy — what to read first",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/type-hierarchy.svg",
+     "title": "Five levels of text",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://fonts.google.com/knowledge",
+     "title": "Google Fonts Knowledge",
+     "kind": "link",
+     "guide": "Short, clear lessons on type: read the one named in the lesson."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "order",
+     "prompt": "Put a flyer's text levels in order, from what should be read first.",
+     "points": 3,
+     "options": [
+      "Headline",
+      "Subheading",
+      "Key facts (date, place)",
+      "Body text",
+      "Caption"
+     ]
+    },
+    {
+     "kind": "mcq",
+     "prompt": "A flyer has every line big, bold and in a different colour. What is the main problem?",
+     "points": 1,
+     "options": [
+      "Nothing stands out, so there is no clear order to read",
+      "It uses too little ink",
+      "The font is too small",
+      "It needs more colours"
+     ],
+     "answer": "Nothing stands out, so there is no clear order to read",
+     "whys": [
+      "",
+      "Ink is not the issue; hierarchy is.",
+      "It is the opposite — everything is big.",
+      "More colour makes it worse."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Redesign a cluttered flyer your instructor gives you with a clear five-level hierarchy.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: five clear levels (2), one accent colour (1), passes the three-second test (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 5,
+   "position": 1,
+   "title": "Layout: the grid and four principles",
+   "summary": "Professional pages line up. A grid and four principles — contrast, repetition, alignment, proximity — make any page look designed.",
+   "objectives": [
+    "Use a column grid to place things",
+    "Apply contrast, repetition, alignment and proximity",
+    "Critique a layout with the four principles"
+   ],
+   "body": "## What to do\n\n- Draw a 3-column grid on an A4 page\n- Place a headline, photo and two stories on it\n- Critique a classmate's page with the four principles\n\n## Understand it\n\nA **grid** divides the page into columns with gaps (**gutters**). Everything snaps to the columns, so the page looks orderly even with many parts. A headline might span three columns, a photo two, a sidebar one.\n\nFour principles to check every page:\n\n- **Contrast** — make different things look very different (headline vs body).\n- **Repetition** — repeat fonts, colours and shapes so the page feels like one thing.\n- **Alignment** — every item lines up with something; nothing is placed \"by eye\".\n- **Proximity** — put related things close together and unrelated things apart.\n\nWhite space is not wasted space: it gives the eye somewhere to rest.\n\n![A design editor: tools on the left, the page with its dashed safe area in the middle, exact sizes and positions on the right](media:core/shots/dtp-editor.png)\n\n![A three-column grid](media:core/grid.svg)\n\n![Four principles](media:core/crap.svg)\n\n## Key words\n\n- **Grid:** columns that guide where things go\n- **Gutter:** the gap between columns\n- **White space:** empty space that lets a design breathe\n\n## Read and watch\n\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n- [Scribus](https://www.scribus.net/) — Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free.\n\n## Practise at home\n\n- Find a magazine or newspaper page and draw its grid on it\n- Name one principle it uses well\n\n## Make it fit you\n\n- **If this is new to you:** Turn on the grid or guides in your tool and snap every box to it.\n- **If you already can:** Lay out the same content on a 2-column and a 4-column grid; say which works better and why.\n\n## Assessed this week\n\n- Which principle groups a photo with its own caption, away from other stories?\n- Lay out an A4 page on a 3-column grid with a headline, a photo and two short stories, and label where each principle is used.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-05.html",
+     "title": "Slides: Layout: the grid and four principles",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/grid.svg",
+     "title": "A three-column grid",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/crap.svg",
+     "title": "Four principles",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/shots/dtp-editor.png",
+     "title": "A design editor: tools on the left, the page with its dashed safe area in the middle, exact sizes and positions on the right",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    },
+    {
+     "url": "https://www.scribus.net/",
+     "title": "Scribus",
+     "kind": "link",
+     "guide": "Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which principle groups a photo with its own caption, away from other stories?",
+     "points": 1,
+     "options": [
+      "Proximity",
+      "Repetition",
+      "Contrast",
+      "Alignment"
+     ],
+     "answer": "Proximity",
+     "whys": [
+      "",
+      "Repetition is about reusing styles, not grouping.",
+      "Contrast makes things look different; it does not group them.",
+      "Alignment lines things up; grouping is proximity."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Lay out an A4 page on a 3-column grid with a headline, a photo and two short stories, and label where each principle is used.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: a visible grid used (1), all four principles shown and labelled (3)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 6,
+   "position": 1,
+   "title": "Colour: schemes, contrast, and screen vs print",
+   "summary": "Use few colours, make text readable, and remember that screens and printers make colour differently.",
+   "objectives": [
+    "Build a colour scheme from the colour wheel",
+    "Check text contrast (aim for 4.5:1)",
+    "Explain RGB versus CMYK"
+   ],
+   "body": "## What to do\n\n- Pick a scheme on the colour wheel\n- Test your text colours in a contrast checker\n- Compare a bright screen colour with its printed version\n\n## Understand it\n\n- **Schemes**: pick one main colour, one accent, and neutrals (black, grey, white). Complementary colours (opposite on the wheel) give energy; analogous colours (neighbours) feel calm.\n- **Contrast**: text must stand out from its background. The standard used on the web is at least **4.5:1** for body text. Light yellow text on white fails; dark navy on white passes easily. Check with a contrast checker.\n- **Screen vs print**: screens mix **light** in **RGB** (red, green, blue); printers mix **ink** in **CMYK** (cyan, magenta, yellow, black). Some bright screen colours cannot be printed — they come out duller. For print, design in CMYK or ask the printer for a proof.\n\nColour also carries meaning: never let colour be the ONLY way you show something (some people are colour-blind).\n\n![Light versus ink](media:core/rgb-cmyk.svg)\n\n## Key words\n\n- **RGB:** red, green, blue light — screens\n- **CMYK:** cyan, magenta, yellow, black ink — print\n- **Contrast ratio:** how much text stands out from its background\n\n## Read and watch\n\n- [WebAIM Contrast Checker](https://webaim.org/resources/contrastchecker/) — Type two colours and see if text on them can be read (aim for 4.5:1).\n- [Adobe Color wheel](https://color.adobe.com/create/color-wheel) — Build a colour scheme from the colour wheel.\n\n## Practise at home\n\n- Check the contrast of three signs or flyers you see\n- Find one that fails and suggest a fix\n\n## Make it fit you\n\n- **If this is new to you:** Start with navy text on white and one bright accent; check it, then vary.\n- **If you already can:** Design the same flyer in a complementary and an analogous scheme and test both for contrast.\n\n## Assessed this week\n\n- Test two text-and-background pairs from your design in the WebAIM contrast checker. Paste a screenshot or the ratios, and say which passes 4.5:1.\n- Why might a bright green on your screen print dull?\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-06.html",
+     "title": "Slides: Colour: schemes, contrast, and screen vs print",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/rgb-cmyk.svg",
+     "title": "Light versus ink",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://webaim.org/resources/contrastchecker/",
+     "title": "WebAIM Contrast Checker",
+     "kind": "link",
+     "guide": "Type two colours and see if text on them can be read (aim for 4.5:1)."
+    },
+    {
+     "url": "https://color.adobe.com/create/color-wheel",
+     "title": "Adobe Color wheel",
+     "kind": "link",
+     "guide": "Build a colour scheme from the colour wheel."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "evidence",
+     "prompt": "Test two text-and-background pairs from your design in the WebAIM contrast checker. Paste a screenshot or the ratios, and say which passes 4.5:1.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: two pairs tested (1), ratios given (1), pass/fail judged correctly against 4.5:1 (1).",
+     "url": "https://webaim.org/resources/contrastchecker/"
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Why might a bright green on your screen print dull?",
+     "points": 1,
+     "options": [
+      "Screens mix light (RGB); printers mix ink (CMYK), which cannot make every screen colour",
+      "The printer is low on ink",
+      "Green cannot be printed",
+      "The file was too small"
+     ],
+     "answer": "Screens mix light (RGB); printers mix ink (CMYK), which cannot make every screen colour",
+     "whys": [
+      "",
+      "It happens on a full printer too — it is the colour model.",
+      "Green prints; only some very bright greens are out of range.",
+      "File size affects sharpness, not colour."
+     ]
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 7,
+   "position": 1,
+   "title": "Images: resolution, cropping and rights",
+   "summary": "A picture must be sharp enough to print, cropped with purpose, and yours to use.",
+   "objectives": [
+    "Explain 72 vs 300 ppi",
+    "Crop an image to strengthen it",
+    "Use images legally and credit them"
+   ],
+   "body": "## What to do\n\n- Print the same photo at two resolutions\n- Crop one photo three ways and pick the strongest\n- Find a free-to-use image and write its credit\n\n## Understand it\n\n- **Resolution**: an image is made of pixels. Screens need about 72–150 pixels per inch; **print needs about 300**. A small image from a website looks fine on screen and blurry on paper. Never stretch an image bigger than it is.\n- **Cropping** removes what does not help: cut to the subject, keep eyes on the upper third, leave room in the direction a person is looking.\n- **Rights**: an image online is NOT free to use. Use your own photos, images with a licence that allows it (Creative Commons, Unsplash), and **credit** them. Ask permission before using a photo of a person — especially a child.\n- **Alt text**: on screen, describe the image for people who cannot see it.\n- **AI-made images**: if you generate a picture with an AI tool, check the tool's terms allow your use, say it was AI-made in the credit, look closely for errors (hands, text, signs), and never make a fake photo of a real person.\n\n![72 versus 300 ppi](media:core/resolution.svg)\n\n## Key words\n\n- **Resolution:** how many pixels per inch\n- **Crop:** cut away part of an image\n- **Licence:** the rules for using someone else's work\n- **Alt text:** a description of an image for people who cannot see it\n\n## Read and watch\n\n- [Creative Commons licences](https://creativecommons.org/about/cclicenses/) — What you may and may not do with an image someone else made.\n- [Unsplash licence](https://unsplash.com/license) — Free photos, and the rules for using them.\n\n## Practise at home\n\n- Take three photos of one object and crop each differently\n- Find an image with a Creative Commons licence and write its credit\n\n## Make it fit you\n\n- **If this is new to you:** Use the crop tool's rule-of-thirds grid.\n- **If you already can:** Work out the largest size, in cm, a 1200 × 900 pixel photo can be printed at 300 ppi.\n\n## Assessed this week\n\n- A 600 × 400 pixel logo looks sharp on screen. Printed at A4 width, it looks blurry. Why?\n- You want to use a photo you found on Google Images in your newsletter. What should you check, and what must you add?\n- Show one photo cropped three ways and the version you chose, with a reason.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-07.html",
+     "title": "Slides: Images: resolution, cropping and rights",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/resolution.svg",
+     "title": "72 versus 300 ppi",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://creativecommons.org/about/cclicenses/",
+     "title": "Creative Commons licences",
+     "kind": "link",
+     "guide": "What you may and may not do with an image someone else made."
+    },
+    {
+     "url": "https://unsplash.com/license",
+     "title": "Unsplash licence",
+     "kind": "link",
+     "guide": "Free photos, and the rules for using them."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "A 600 × 400 pixel logo looks sharp on screen. Printed at A4 width, it looks blurry. Why?",
+     "points": 1,
+     "options": [
+      "It has too few pixels for print (print needs about 300 per inch)",
+      "The printer is broken",
+      "Logos cannot be printed",
+      "It was saved in colour"
+     ],
+     "answer": "It has too few pixels for print (print needs about 300 per inch)",
+     "whys": [
+      "",
+      "Every printer would blur it: the file has too few pixels.",
+      "Logos print well from high-resolution or vector files.",
+      "Colour is not the cause."
+     ]
+    },
+    {
+     "kind": "short",
+     "prompt": "You want to use a photo you found on Google Images in your newsletter. What should you check, and what must you add?",
+     "points": 2,
+     "answer": "Check its licence (whether you may use it, e.g. Creative Commons or ask the owner); if allowed, credit the creator. Get consent if it shows a person."
+    },
+    {
+     "kind": "task",
+     "prompt": "Show one photo cropped three ways and the version you chose, with a reason.",
+     "points": 3,
+     "answer": "",
+     "rubric": "Up to 3: three crops (1), a chosen crop (1), a reason using today's ideas (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 8,
+   "position": 1,
+   "title": "Project: an event flyer from brief to print",
+   "summary": "Put it together: a one-page flyer for a real Club event, designed from a brief and checked before printing.",
+   "objectives": [
+    "Work from a client brief",
+    "Apply hierarchy, grid, colour and images together",
+    "Check a design with a proof checklist"
+   ],
+   "body": "## What to do\n\n- Read the brief and list what must be on the flyer\n- Sketch three thumbnails, choose one\n- Design, check, and get feedback\n\n## Understand it\n\nA **brief** says who it is for, what it must say, the size, and the deadline. Designers start with **thumbnails** — tiny quick sketches — before the computer. If you ask an AI tool for headline ideas, treat them as a first draft: check each one against the brief, change what does not fit, and note what you changed.\n\nYour flyer needs: a headline, the key facts (what, when, where, cost), a short body, one strong image, and a call to action (\"Register at …\").\n\nBefore printing, run the **proof checklist**:\n\n1. Spelling, dates and times checked by someone else.\n2. Hierarchy: the three-second test.\n3. Everything aligned to a grid.\n4. Text contrast at least 4.5:1.\n5. Images sharp at print size, and allowed.\n6. Nothing important within 3 mm of the edge.\n\n![Before and after: the same flyer redesigned](media:core/shots/flyer-before-after.png)\n\n## Key words\n\n- **Brief:** what the client needs, written down\n- **Thumbnail:** a tiny quick sketch of a layout\n- **Proof:** a final check copy before printing\n- **Call to action:** what the reader should do next\n\n## Read and watch\n\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n- [WebAIM Contrast Checker](https://webaim.org/resources/contrastchecker/) — Type two colours and see if text on them can be read (aim for 4.5:1).\n\n## Practise at home\n\n- Show your draft to someone who has not seen it; note what they read first\n- Fix one thing they found\n\n## Make it fit you\n\n- **If this is new to you:** Use one template as a starting point, then change it until it fits the brief.\n- **If you already can:** Design a matching square version for WhatsApp from the same content.\n\n## Assessed this week\n\n- Your event flyer: link or upload the final design and your three thumbnails, and say which proof checks you did.\n- Put the flyer process in order.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-08.html",
+     "title": "Slides: Project: an event flyer from brief to print",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/shots/flyer-before-after.png",
+     "title": "Before and after: the same flyer redesigned",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    },
+    {
+     "url": "https://webaim.org/resources/contrastchecker/",
+     "title": "WebAIM Contrast Checker",
+     "kind": "link",
+     "guide": "Type two colours and see if text on them can be read (aim for 4.5:1)."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "project",
+     "prompt": "Your event flyer: link or upload the final design and your three thumbnails, and say which proof checks you did.",
+     "points": 10,
+     "answer": "A flyer that meets the brief with clear hierarchy, grid alignment, readable contrast, legal sharp images and a call to action.",
+     "rubric": "Up to 10: meets the brief (2), hierarchy (2), alignment and grid (2), colour and contrast (2), images and proof checks (2)."
+    },
+    {
+     "kind": "order",
+     "prompt": "Put the flyer process in order.",
+     "points": 3,
+     "options": [
+      "Read the brief",
+      "Sketch thumbnails",
+      "Design the chosen layout",
+      "Run the proof checklist",
+      "Print or share"
+     ]
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 9,
+   "position": 1,
+   "title": "Multi-page documents: the newsletter",
+   "summary": "A newsletter repeats a structure on every page: masthead, columns, styles, page numbers.",
+   "objectives": [
+    "Use paragraph styles so every heading matches",
+    "Set up columns and a masthead",
+    "Keep a multi-page document consistent"
+   ],
+   "body": "## What to do\n\n- Design a masthead for a Club newsletter\n- Set up two-column pages with heading and body styles\n- Add headers, footers and page numbers\n\n## Understand it\n\nWhen a document has many pages, consistency matters more than any one page.\n\n- **Styles**: define Heading, Subheading, Body and Caption once (Google Docs: **Format → Paragraph styles**; Scribus: **Edit → Styles**). Change the style and every heading updates.\n- **Master pages** (Scribus, LibreOffice) or templates hold what repeats: margins, columns, page numbers, the footer.\n- **Masthead**: the newsletter's name and issue date across the top of page one.\n- **Columns**: two or three narrow columns read faster than one wide one.\n- **Continue lines**: \"continued on page 3\" when a story jumps.\n\n![Paragraph styles: change Headline once and every headline in the newsletter changes](media:core/shots/dtp-styles.png)\n\n![A newsletter page: masthead, two columns, a photo with caption](media:core/shots/newsletter-page.png)\n\n## Key words\n\n- **Paragraph style:** a saved set of type settings applied to text\n- **Master page:** a background page holding what repeats\n- **Masthead:** the title block of a newsletter\n\n## Read and watch\n\n- [Scribus](https://www.scribus.net/) — Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free.\n- [LibreOffice Help](https://help.libreoffice.org/) — Free office suite; Draw and Writer can lay out a flyer or newsletter.\n\n## Practise at home\n\n- Collect two newsletters or magazines and compare their mastheads\n- Write one short story for your newsletter\n\n## Make it fit you\n\n- **If this is new to you:** Use Google Docs with a two-column section and three styles only.\n- **If you already can:** Set up a master page in Scribus with columns and automatic page numbers.\n\n## Assessed this week\n\n- You need to change the font of every heading in a 12-page newsletter. What is the fastest reliable way?\n- Show two pages of your newsletter with a masthead, two columns, consistent styles and page numbers.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-09.html",
+     "title": "Slides: Multi-page documents: the newsletter",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/shots/dtp-styles.png",
+     "title": "Paragraph styles: change Headline once and every headline in the newsletter changes",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "media:core/shots/newsletter-page.png",
+     "title": "A newsletter page: masthead, two columns, a photo with caption",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://www.scribus.net/",
+     "title": "Scribus",
+     "kind": "link",
+     "guide": "Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free."
+    },
+    {
+     "url": "https://help.libreoffice.org/",
+     "title": "LibreOffice Help",
+     "kind": "link",
+     "guide": "Free office suite; Draw and Writer can lay out a flyer or newsletter."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "You need to change the font of every heading in a 12-page newsletter. What is the fastest reliable way?",
+     "points": 1,
+     "options": [
+      "Change the Heading paragraph style once",
+      "Select each heading and change it",
+      "Retype the headings",
+      "Change the body font"
+     ],
+     "answer": "Change the Heading paragraph style once",
+     "whys": [
+      "",
+      "Slow, and easy to miss one — then the document is inconsistent.",
+      "Retyping risks new errors and does not change the font.",
+      "That changes the body, not the headings."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show two pages of your newsletter with a masthead, two columns, consistent styles and page numbers.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: masthead (1), columns (1), styles used consistently (1), page numbers (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 10,
+   "position": 1,
+   "title": "Folded work and print preparation: bleed, trim and safe area",
+   "summary": "Printers cut paper, and the cut is never perfect. Bleed, trim and the safe area protect your design.",
+   "objectives": [
+    "Explain bleed, trim and safe area",
+    "Set up a document with 3 mm bleed",
+    "Plan the panel order of a tri-fold brochure"
+   ],
+   "body": "## What to do\n\n- Mark bleed, trim and safe area on a printed page\n- Set up a tri-fold with bleed in Canva or Scribus\n- Fold a paper mock-up to check the panel order\n\n## Understand it\n\nA print shop prints on bigger paper and **cuts** it down — and the blade can move a millimetre or two.\n\n- **Trim**: where the paper is meant to be cut (the finished size).\n- **Bleed**: extend background colours and photos **3 mm beyond the trim**, so a slightly-off cut never leaves a white edge.\n- **Safe area**: keep text and logos at least **3–5 mm inside the trim**, so nothing important is cut off.\n\nIn Canva: **File → Show print bleed**; in Scribus: set bleed in **Document setup**.\n\nA **tri-fold brochure** is one sheet folded into six panels. The front cover is on the outside right; the inside panels read left to right. Always make a **paper mock-up** before printing.\n\n![Bleed, trim and safe area](media:core/page-anatomy.svg)\n\n![Tri-fold panel order](media:core/trifold.svg)\n\n## Key words\n\n- **Bleed:** colour extended 3 mm past the trim\n- **Trim:** the finished size where paper is cut\n- **Safe area:** the zone that keeps text away from the cut\n\n## Read and watch\n\n- [Scribus](https://www.scribus.net/) — Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free.\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n\n## Practise at home\n\n- Fold an A4 sheet into a tri-fold and number the panels\n- Find a printed item with a white edge where the cut went wrong\n\n## Make it fit you\n\n- **If this is new to you:** Fold the mock-up first; number every panel before designing.\n- **If you already can:** Find out what crop marks are and add them to your PDF in Scribus.\n\n## Assessed this week\n\n- Why do designers extend background colour 3 mm past the trim line?\n- Put a tri-fold brochure's panels in reading order for someone picking it up.\n- Show your folded paper mock-up with every panel numbered, and your tri-fold document set up with 3 mm bleed and a safe area.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-10.html",
+     "title": "Slides: Folded work and print preparation: bleed, trim and safe area",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/page-anatomy.svg",
+     "title": "Bleed, trim and safe area",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "media:core/trifold.svg",
+     "title": "Tri-fold panel order",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://www.scribus.net/",
+     "title": "Scribus",
+     "kind": "link",
+     "guide": "Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Why do designers extend background colour 3 mm past the trim line?",
+     "points": 1,
+     "options": [
+      "So a slightly inaccurate cut never leaves a white edge",
+      "To make the page bigger",
+      "Because printers charge less",
+      "So the text can go there"
+     ],
+     "answer": "So a slightly inaccurate cut never leaves a white edge",
+     "whys": [
+      "",
+      "The finished page is still the trim size — the bleed is cut off.",
+      "Cost is not the reason.",
+      "Text belongs in the safe area, away from the cut."
+     ]
+    },
+    {
+     "kind": "order",
+     "prompt": "Put a tri-fold brochure's panels in reading order for someone picking it up.",
+     "points": 3,
+     "options": [
+      "Front cover",
+      "Inside flap",
+      "Left inside panel",
+      "Middle inside panel",
+      "Right inside panel",
+      "Back cover"
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show your folded paper mock-up with every panel numbered, and your tri-fold document set up with 3 mm bleed and a safe area.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: mock-up folded and numbered (1), panel order right (1), 3 mm bleed set (1), text inside the safe area (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 11,
+   "position": 1,
+   "title": "Exporting a print-ready PDF and briefing a printer",
+   "summary": "A design is only finished when a printer can print it right: a PDF with fonts, images and bleed — and a clear brief.",
+   "objectives": [
+    "Export a print-ready PDF with bleed",
+    "Run a final pre-flight check",
+    "Write a print brief for a print shop"
+   ],
+   "body": "## What to do\n\n- Export your flyer as PDF (print) with bleed\n- Pre-flight it: fonts, images, bleed, spelling\n- Write a print brief: size, quantity, paper, deadline, contact\n\n## Understand it\n\nSend printers a **PDF**, never a Word or Canva link: a PDF keeps your fonts, layout and images exactly.\n\n- Canva: **Share → Download → PDF Print**, tick **Crop marks and bleed**.\n- Scribus/LibreOffice: **Export as PDF**, with bleed and high-quality images.\n\n**Pre-flight** before sending: fonts embedded, images 300 ppi at print size, bleed present, colours checked, and the text proofread by someone else. Name the file clearly: `2026-03-14_Showcase-Flyer_A5_v3.pdf`.\n\nA **print brief** tells the print shop: size and orientation, quantity, paper (weight in gsm, matte or gloss), single- or double-sided, finishing (folding, cutting), deadline, budget, and your phone number. Ask for a **proof** before the full run.\n\n![The export window for a print PDF: bleed, crop marks, embedded fonts, full-resolution images](media:core/shots/dtp-pdf-export.png)\n\n## Key words\n\n- **PDF:** a file format that keeps a layout exactly\n- **Pre-flight:** the final technical check before printing\n- **GSM:** paper weight in grams per square metre\n\n## Read and watch\n\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n- [Scribus](https://www.scribus.net/) — Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free.\n\n## Practise at home\n\n- Visit or call a print shop and ask the price of 100 A5 flyers on 130 gsm paper\n- Note what they asked you\n\n## Make it fit you\n\n- **If this is new to you:** Use the pre-flight list as a tick box on paper.\n- **If you already can:** Compare the price of three paper weights and finishes, and recommend one for a budget.\n\n## Assessed this week\n\n- Write a print brief for 200 A5 flyers for the Club showcase.\n- Which file should you send a print shop?\n- Show your print-ready PDF (with bleed) and your completed pre-flight list.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-11.html",
+     "title": "Slides: Exporting a print-ready PDF and briefing a printer",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/shots/dtp-pdf-export.png",
+     "title": "The export window for a print PDF: bleed, crop marks, embedded fonts, full-resolution images",
+     "kind": "image",
+     "guide": "The worked example, step by step."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    },
+    {
+     "url": "https://www.scribus.net/",
+     "title": "Scribus",
+     "kind": "link",
+     "guide": "Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "short",
+     "prompt": "Write a print brief for 200 A5 flyers for the Club showcase.",
+     "points": 4,
+     "answer": "Includes size and orientation, quantity, paper weight/finish, sides, any finishing, deadline, budget and contact, and asks for a proof."
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Which file should you send a print shop?",
+     "points": 1,
+     "options": [
+      "A PDF exported for print, with bleed",
+      "The Canva share link",
+      "A screenshot of the design",
+      "A Word document"
+     ],
+     "answer": "A PDF exported for print, with bleed",
+     "whys": [
+      "",
+      "A link can change and cannot be sent to the printing machine.",
+      "A screenshot is screen resolution and has no bleed.",
+      "Word moves layouts and fonts between computers."
+     ]
+    },
+    {
+     "kind": "task",
+     "prompt": "Show your print-ready PDF (with bleed) and your completed pre-flight list.",
+     "points": 4,
+     "answer": "",
+     "rubric": "Up to 4: PDF with bleed (2), pre-flight complete (1), clear file name (1)."
+    }
+   ]
+  },
+  {
+   "course": "Desktop Publishing",
+   "level": "Year 1 · Foundation",
+   "week": 12,
+   "position": 1,
+   "title": "Project: a four-page Club magazine",
+   "summary": "Design, produce and present a four-page magazine for your centre — everything from the term in one publication.",
+   "objectives": [
+    "Plan a multi-page publication as a team",
+    "Produce consistent pages with styles, grid and images",
+    "Deliver a print-ready file and present it"
+   ],
+   "body": "## What to do\n\n- Plan the four pages as a flat plan\n- Write, photograph and design your pages\n- Pre-flight, export and present to the panel\n\n## Understand it\n\nYour magazine is the term's work in one publication. You need:\n\n- a **flat plan**: a small drawing of all four pages showing what goes where;\n- a **cover** with masthead, a strong image and two cover lines;\n- **three inside pages** on one grid, with consistent styles, at least one story, one photo story and one data graphic (link to Data Appreciation!);\n- **legal images**, credited, with consent for people;\n- a **print-ready PDF** with bleed;\n- a **three-minute presentation**: your choices and why.\n\nGo back to your earlier work before you start: the week 4 hierarchy, the week 5 grid and the week 10 bleed set-up are what this magazine is built from, so use them again.\n\nThe panel will ask about YOUR decisions — the grid, the hierarchy, the colours. That is how they know the work is yours.\n\n![Plan every page on the grid](media:core/grid.svg)\n\n## Key words\n\n- **Flat plan:** a map of every page of a publication\n- **Cover line:** a short teaser for a story inside\n\n## Read and watch\n\n- [Scribus](https://www.scribus.net/) — Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free.\n- [GCFGlobal — Beginning Graphic Design](https://edu.gcfglobal.org/en/beginning-graphic-design/) — Free, short, illustrated lessons on layout, type and colour; no account needed.\n- [WebAIM Contrast Checker](https://webaim.org/resources/contrastchecker/) — Type two colours and see if text on them can be read (aim for 4.5:1).\n\n## Practise at home\n\n- Rehearse your three-minute presentation\n- Get one person to proofread every page\n\n## Make it fit you\n\n- **If this is new to you:** Use a Canva magazine template as the starting grid; replace every element.\n- **If you already can:** Produce a printed copy and a screen version with alt text for every image.\n\n## Assessed this week\n\n- Your four-page magazine: upload the print-ready PDF and your flat plan, and describe your design decisions.\n- Name one design decision you made and why it helps the reader.\n\nYou may be asked to explain your work: the marks are for your own thinking.",
+   "durationMins": 120,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "media:core/decks/dtp-12.html",
+     "title": "Slides: Project: a four-page Club magazine",
+     "kind": "slides",
+     "guide": "The lesson as a presentation — use it in class, or go through it again at home. Arrow keys move; it prints one slide a page."
+    },
+    {
+     "url": "media:core/grid.svg",
+     "title": "Plan every page on the grid",
+     "kind": "image",
+     "guide": "Today's diagram — print it or keep it on your phone."
+    },
+    {
+     "url": "https://www.scribus.net/",
+     "title": "Scribus",
+     "kind": "link",
+     "guide": "Free, professional desktop publishing for Windows, Mac and Linux — what the print trade uses for free."
+    },
+    {
+     "url": "https://edu.gcfglobal.org/en/beginning-graphic-design/",
+     "title": "GCFGlobal — Beginning Graphic Design",
+     "kind": "link",
+     "guide": "Free, short, illustrated lessons on layout, type and colour; no account needed."
+    },
+    {
+     "url": "https://webaim.org/resources/contrastchecker/",
+     "title": "WebAIM Contrast Checker",
+     "kind": "link",
+     "guide": "Type two colours and see if text on them can be read (aim for 4.5:1)."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "project",
+     "prompt": "Your four-page magazine: upload the print-ready PDF and your flat plan, and describe your design decisions.",
+     "points": 10,
+     "answer": "A consistent, well-structured publication with a cover, grid, styles, legal credited images, a data graphic and a print-ready PDF.",
+     "rubric": "Up to 10: flat plan (1), cover (2), consistency of grid and styles (2), images and credits (2), print-ready PDF (1), decisions explained (2)."
+    },
+    {
+     "kind": "short",
+     "prompt": "Name one design decision you made and why it helps the reader.",
+     "points": 2,
+     "answer": "A specific decision (grid, hierarchy, colour, image) with how it helps reading."
+    }
+   ]
+  }
+ ]
+}

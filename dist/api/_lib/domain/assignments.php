@@ -82,6 +82,14 @@ function assignment_matches_member(array $a, array $member, string $currentSessi
         [$want] = member_courses_from_text($track, $ctx);
         foreach ($want as $w) if ($w !== 'Chess' && in_array(mb_strtolower($w), $mine, true)) return true;
     }
+    /* …and an assignment set for a DIVISION ("Tech" — a word that names no course) reaches every member of that
+       division, placed or not. A member nobody has placed takes no course (one course, not a wall — 7 Nov 2026),
+       but they are still in their division, and work set for the whole division is theirs. A course name never
+       widens this way: Coding's work stays Coding's. */
+    if (function_exists('nggc_division_for_track') && function_exists('curriculum_course_canonical') && curriculum_course_canonical($track) === null) {
+        $wantDiv = nggc_division_for_track($track);
+        if ($wantDiv !== '' && function_exists('curriculum_member_division_id') && curriculum_member_division_id($member) === $wantDiv) return true;
+    }
     return false;
 }
 

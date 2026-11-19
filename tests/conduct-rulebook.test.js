@@ -114,6 +114,15 @@ async function pageFor(memberId, viewport) {
     await waitForBoot(P);
     chk('Compliance reads the rulebook: suspended, frog jumps to do, fines owed', await until(() => /Frog jumps to do/.test(document.body.innerText) && /Awaiting management review/.test(document.body.innerText), null, 60000));
     chk('…and lists who owes frog jumps and why', /Frog jumps to do \(24\)/.test(await text()) && /Arrived 09:38 .* — 3 frog jumps/.test(await text()) && /7 frog jumps/.test(await text()));
+    {
+      // One penalty per row: the count column is named for what it counts, each set says what it was for and when,
+      // and an absence's exercise does not repeat the absence fine (that is under Policy fines owed).
+      const heads = await P.evaluate(() => [...document.querySelectorAll('table')].filter(t => /Why/.test(t.innerText)).map(t => [...t.querySelectorAll('th')].map(h => h.innerText.trim().toLowerCase())));
+      const t = await text();
+      chk('the frog-jumps list names its count column for the exercise, not "How many", and says what each set was for',
+        heads.some(h => h.includes('frog jumps') && h.includes('for') && !h.includes('how many')) && /\bLate\b/.test(t) && /\bAbsent\b/.test(t));
+      chk('…and an absence\'s frog jumps do not repeat the fine', /without permission — 7 frog jumps/.test(t) && !/₦1,000 fine and 7 frog jumps/.test(t));
+    }
     await P.screenshot({ path: path.join(SHOTS, 'compliance.png'), fullPage: true });
 
     // Grace's record: suspended, the re-entry fee named.

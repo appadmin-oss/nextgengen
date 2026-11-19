@@ -13,7 +13,7 @@
 
 const CR_GROUPS = [
   { h: null, items: ["home", "inbox", "support", "analytics"] },
-  { h: "People", items: ["members", "mentors", "mentorship", "money"] },
+  { h: "People", items: ["members", "mentors", "mentorship", "money", "shop"] },
   { h: "Programme", items: ["checkin", "summer", "learning", "events"] },
   { h: "Publishing", items: ["content", "community", "comms"] },
   { h: "System", items: ["settings", "wifi"] },
@@ -52,8 +52,10 @@ const CR_PAGES = {
     { id: "courses", label: "Courses", desc: "Every child’s courses: confirm what their record proposes, or choose. Every portal reads what is placed here.", cap: "people" },
     { id: "quality", label: "Data quality", desc: "Gaps and duplicates that break ID cards, reminders and reports.", cap: "people" },
     { id: "families", label: "Families", desc: "Parent and guardian accounts connected to members.", cap: "people" },
-    { id: "centres", label: "Centres", desc: "Where NGG meets.", cap: "people" },
+    { id: "centres", label: "Centres", desc: "Where NGG meets. A centre’s code is the printed ID prefix on Summer School cards (EG-26-001), so it stays once cards are printed.", cap: "people" },
     { id: "idcards", label: "ID cards", desc: "Print queue for member and staff cards.", cap: "people" },
+    { id: "agreements", label: "Agreements", desc: "Membership Agreements (MoU): who has signed, who is waiting, and countersigning as NGG’s representative.", cap: "people" },
+    { id: "reg-checklist", label: "Registration", desc: "Every new member’s registration checklist: what is left, who is helping them at their centre, and the items staff add.", cap: "people" },
     { id: "request-log", label: "Request history", desc: "Every request members and parents have raised — open, approved, declined and withdrawn — and who decided it.", cap: "people" },
     { id: "accounts", label: "Accounts", desc: "Who cannot sign in, and why. Ending a membership is not done here.", cap: "people" },
     { id: "security", label: "Sign-in security", desc: "Who has a second sign-in step, the policy for each kind of person, and letting someone in for ten minutes.", cap: "people" },
@@ -83,8 +85,22 @@ const CR_PAGES = {
     { id: "membership", label: "Membership payments", desc: "Joining invoices: Paystack, and offline payments a second person checks against their evidence.", cap: "fees" },
     { id: "fees", label: "Dues & arrears", desc: "Every naira owed, paid and waived, with the reason kept on the account.", cap: "fees" },
     { id: "volpay", label: "Volunteer pay", desc: "What active volunteers earn for each programme day they are present and active, the rules that decide it, and paying each period.", cap: "fees" },
-    { id: "conduct", label: "Conduct & fines", desc: "The fine rules, uploading fines, the compliance board, the policy and the programme calendars.", cap: ["fees", "people", "summer"] },
+    { id: "conduct", label: "Conduct & fines", desc: "Every rule in one place, uploading fines, the compliance board, the policy and the programme calendars.", cap: ["fees", "people", "summer"] },
     { id: "donations", label: "Donations", desc: "Gifts received through Paystack and bank transfer.", cap: "settings" },
+  ] },
+  /* The NGG shop (domain/shop.php, domain/shop-manage.php, cr-tab-shop.jsx).
+     Two trusts, as the server has them: orders, refunds, table sales, codes,
+     reports and settings are money (`fees`); the catalogue and stock are what
+     NGG shows and keeps (`content`; stock is readable by `fees` too). */
+  shop: { label: "Shop", icon: "storefront", tabs: [
+    { id: "shop-today", label: "Today", desc: "What needs doing in the shop now: orders to pack, refunds due, low stock, and today’s sales.", cap: "fees" },
+    { id: "shop-orders", label: "Orders", desc: "What people bought in the NGG shop: paid, ready, handed over, cancelled or refunded, each with its timeline.", cap: "fees" },
+    { id: "shop-sell", label: "Sell", desc: "Sell at a table or a centre — cash, transfer or POS terminal — from the same stock, and count the drawer at the end.", cap: "fees" },
+    { id: "shop-stock", label: "Stock", desc: "What is left of every size, what is low, every change with who and why, and the stock-take.", cap: ["content", "fees"] },
+    { id: "shop-products", label: "Products", desc: "What the shop sells: price, sizes, stock, picture, pre-orders, and whether it is on sale.", cap: "content" },
+    { id: "shop-codes", label: "Codes", desc: "Discount codes: how much they take off, how often, and for how long.", cap: "fees" },
+    { id: "shop-reports", label: "Reports", desc: "Sales by product and size, Paystack’s fees, refunds and net, for any dates; the orders as CSV.", cap: "fees" },
+    { id: "shop-settings", label: "Settings", desc: "Open or close the shop, delivery, unpaid orders, low stock, and what buyers are told.", cap: "fees" },
   ] },
   checkin: { label: "Check-in", icon: "qr-code", tabs: [
     { id: "checkin", label: "Desks", desc: "Live gate and desk scanners for today’s session.", cap: "checkin" },
@@ -109,7 +125,7 @@ const CR_PAGES = {
     { id: "assignments", label: "Assignments", desc: "Coursework submitted for grading.", cap: "content" },
     { id: "anchor", label: "Anchor Journal", desc: "The weekly reflection every member writes.", cap: "content" },
     { id: "timetable", label: "Timetable", desc: "Which course meets when, where and with whom, at each centre.", cap: "club" },
-    { id: "formation", label: "Saturday formation", desc: "The Saturday schedule every portal reads, block by block, and what each reader is told.", cap: "content" },
+    { id: "formation", label: "Saturday formation", desc: "The Saturday schedule every portal reads: the main day, a centre’s own, one changed Saturday, a Saturday off.", cap: "content" },
     { id: "opps", label: "Opportunities", desc: "Bootcamps, competitions and volunteering shown to members, matched to their age.", cap: "content" },
   ] },
   events: { label: "Events", icon: "calendar-blank", tabs: [

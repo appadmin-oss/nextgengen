@@ -82,8 +82,8 @@ async function as(memberId, admin, viewport) {
         'type' => 'NGG', 'status' => 'active', 'role' => $role, 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]); };
       db_insert('centres', ['centreId' => 'C-EG', 'name' => 'Egbeda', 'code' => 'EGB', 'status' => 'active', 'programmes' => 'ngg', 'slug' => 'egbeda', 'createdAt' => $now]);
       $mk('NGG-MV-ADM', 'Ade Admin', 'super_admin');
-      $mk('NGG-MV-K1', 'Tolu Adebayo', 'member', ['track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-14 years -2 months')), 'school' => 'Egbeda High', 'displayId' => '026-014', 'phone' => '08031234567']);
-      $mk('NGG-MV-K2', 'Ada Okafor', 'member', ['track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-11 years -3 months')), 'school' => 'Egbeda Primary', 'displayId' => '026-015']);
+      $mk('NGG-MV-K1', 'Tolu Adebayo', 'member', ['track' => 'TECH', 'courses' => json_encode(['Coding']), 'dob' => gmdate('Y-m-d', strtotime('-14 years -2 months')), 'school' => 'Egbeda High', 'displayId' => '026-014', 'phone' => '08031234567', 'joinDate' => gmdate('Y-m-d', strtotime('-365 days'))]);
+      $mk('NGG-MV-K2', 'Ada Okafor', 'member', ['track' => 'TECH', 'courses' => json_encode(['Coding']), 'dob' => gmdate('Y-m-d', strtotime('-11 years -3 months')), 'school' => 'Egbeda Primary', 'displayId' => '026-015']);
       $mk('NGG-MV-K3', 'Bayo Lowercase', 'member', ['type' => 'ngg', 'track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-15 years'))]);
       $mk('NGG-MV-MEN', 'Ngozi Eke');
       db_insert('mentors', ['mentorId' => 'MEN-MV-1', 'fullName' => 'Ngozi Eke', 'email' => 'ngozi.eke@mv.example', 'status' => 'active', 'centre' => 'Egbeda', 'tracks' => 'Coding',
@@ -130,10 +130,26 @@ async function as(memberId, admin, viewport) {
     await mb.waitForSelector('.m9-app main', { timeout: 60000 }).catch(async e => { console.error('DEBUG', mb.errs.join('\n'), (await mb.innerText('body')).slice(0, 800)); throw e; });
     await mb.waitForFunction(() => /Good (morning|afternoon|evening), Tolu/.test(document.body.innerText), null, { timeout: 30000 });
     const today = await main(mb);
-    chk('Today: the banner shows the level, the XP to the next one, and one next step', await mb.isVisible('.m9x-hero') && /Level \d/.test(today) && /XP to/.test(today) && /Your next step|All caught up/i.test(today));
+    chk('Today: the banner shows the level, the XP to the next one, and one next step (or defers to the Getting-started list)', await mb.isVisible('.m9x-hero') && /Level \d/.test(today) && /XP to/.test(today) && (/Your next step|All caught up/i.test(today) || await mb.isVisible('.m9x-start')));
     chk('Today: the banner sits inside the page column, under the greeting', await mb.evaluate(() => { const h = document.querySelector('.m9x-hero'); return !!h && !!h.closest('main > div'); }));
     chk('/dashboard opens the Member Portal for an NGG member, by name', /Tolu/.test(today));
-    chk('Today: account, To do, the mentor’s last message and the Leadership Index from the server', /Account/.test(today) && /To do/i.test(today) && /Well done leading the team/.test(today) && /62 \/ 100/.test(today) && /\+8/.test(today));
+    chk('Today: a year to the day with NGG is celebrated, and the welcome line names the tenure', await mb.isVisible('.m9x-celebrate:has-text("One year with NGG")') && /· One year with NGG/.test(await mb.innerText('.m9x-welcome')));
+    await mb.click('.m9x-celebrate-x');
+    chk('Today: putting the celebration away keeps it away', await mb.waitForSelector('.m9x-celebrate', { state: 'detached', timeout: 5000 }).then(() => true, () => false)
+      && /true/.test(q(`db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-MV-K1' AND stateKey = 'mp9.celebrated.tenure-y1'")['stateValue'] ?? ''`)));
+    // A child's Today is not a statement: the account card is there only when something is owed. This
+    // member owes nothing, so Today carries no "To pay now" — the account lives under Money.
+    chk('Today: no account card when nothing is owed', !/To pay now/.test(today));
+    // The page must not contradict itself: open Getting-started steps mean there IS something to do.
+    const startOpen = await mb.evaluate(() => document.querySelectorAll('.m9x-start-i:not(.is-done)').length);
+    chk('Today: never "Nothing waiting" while Getting started still has open steps', !startOpen || (!/Nothing waiting for you/.test(today) && !/all caught up/i.test(today.split(/To do/i)[1] || '')));
+    const firstOpen = await mb.evaluate(() => { const i = document.querySelector('.m9x-start-i:not(.is-done) b'); return i ? i.innerText : ''; });
+    chk('Today: an open step is listed once, not repeated in the banner and To do', !firstOpen || today.split(firstOpen).length - 1 === 1);
+    // One streak: the banner chip and the Streak tile read the same number.
+    const streaks = await mb.evaluate(() => { const t = document.querySelector('main').innerText; const a = (t.match(/(\d+)-day streak/) || [])[1] || (/Start a streak/.test(t) ? '0' : null); const b = (t.match(/Streak\s*\n?\s*(\d+) days?/) || [])[1]; return [a, b]; });
+    chk('Today: the streak chip and the Streak tile agree (' + streaks.join(' / ') + ')', streaks[1] == null || streaks[0] === streaks[1]);
+    chk('Your apps: one "Labs", not a list of Labs or a second "Learn"', await mb.evaluate(() => { const t = document.querySelector('aside').innerText; return /\bLabs\b/.test(t) && !/Maths Lab|Physics Lab/.test(t) && !/Your apps[\s\S]*\bLearn\b/.test(t); }));
+    chk('Today: To do, the mentor’s last message and the Leadership Index from the server', /To do/i.test(today) && /Well done leading the team/.test(today) && /62 \/ 100/.test(today) && /\+8/.test(today));
     await shot(mb, 'today');
     await mb.click('main [role="radiogroup"][aria-label="How are you doing"] button:has-text("Okay")');
     await mb.waitForTimeout(1200);
@@ -259,7 +275,7 @@ async function as(memberId, admin, viewport) {
     chk('Opportunities: Save is the member’s own bookmark', /OPP-FIT/.test(q(`db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-MV-K1' AND stateKey = 'mp9.opps'")['stateValue'] ?? ''`)));
 
     // ── Records: a request to the desk ──
-    await nav(mb, 'Account', 'Records');
+    await nav(mb, 'Account', 'My requests');
     await mb.click('main button[aria-pressed]:has-text("Correct my details")');
     await mb.fill('main label:has-text("What needs changing") input', 'My school is now Egbeda Grammar.');
     await mb.click('main button:has-text("Send")');
@@ -319,8 +335,12 @@ async function as(memberId, admin, viewport) {
     // ── The photo is changed by asking: the child sends one, the desk decides ──
     await kid.click('button:has-text("Edit profile")');
     await kid.waitForSelector('input[aria-label="Choose the photo you want"]', { timeout: 15000 });
-    const png = await kid.evaluate(() => { const c = document.createElement('canvas'); c.width = 240; c.height = 300; const g = c.getContext('2d'); g.fillStyle = '#3a6'; g.fillRect(0, 0, 240, 300); g.fillStyle = '#fc9'; g.beginPath(); g.arc(120, 130, 60, 0, 7); g.fill(); return c.toDataURL('image/png').split(',')[1]; });
-    await kid.setInputFiles('input[aria-label="Choose the photo you want"]', { name: 'me.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+    // A blurred photo is refused before it is sent, in words a child can act on (the photo quality gate).
+    const { testPhoto } = require('./_photo');
+    await kid.setInputFiles('input[aria-label="Choose the photo you want"]', await testPhoto(kid, { blur: 4, name: 'me.jpg' }));
+    chk('Photo: a blurred photo is refused before it is sent, saying why', await kid.waitForFunction(() => /blurry/i.test(document.body.innerText), null, { timeout: 15000 }).then(() => true, () => false)
+      && !(await kid.$('img[alt="The photo you chose"]')));
+    await kid.setInputFiles('input[aria-label="Choose the photo you want"]', await testPhoto(kid, { name: 'me.jpg' }));
     await kid.waitForSelector('img[alt="The photo you chose"]', { timeout: 15000 });
     await kid.fill('input[aria-label="Why you want to change it"]', 'My old one is from last year');
     await kid.waitForFunction(() => { const b = [...document.querySelectorAll('button')].find(x => /Send to the desk/.test(x.textContent)); return b && !b.disabled; }, null, { timeout: 30000 });
@@ -370,6 +390,27 @@ async function as(memberId, admin, viewport) {
     chk('Inbox: approved, the photo the child sent is on their record', q(`db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-MV-K2'")['photoUrl'] ?? ''`) !== ''
       && q(`db_row("SELECT status FROM photo_change_requests WHERE subjectId = 'NGG-MV-K2' ORDER BY id DESC LIMIT 1")['status'] ?? ''`) === 'approved');
     chk('no page errors (admin)', ad.errs.length === 0);
+    /* MP9_AUDIT=dir: every area and every sub-tab, whole pages, desktop and phone — what a child sees. */
+    if (process.env.MP9_AUDIT) {
+      for (const [vw, vh, tag] of [[1280, 2600, 'd'], [390, 2600, 'p']]) {
+        const au = await as('NGG-MV-K1', false, { width: vw, height: vh });
+        await au.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' }); await waitForBoot(au);
+        await au.waitForSelector('.m9-app main', { timeout: 60000 }); await settle(au);
+        const areas = await au.evaluate(t => Array.from(document.querySelectorAll(t === 'd' ? '.m9-app aside nav button' : '.m9-app nav[aria-label="My NGG"] button')).map(b => b.innerText.trim()).filter(Boolean).filter(l => !/Journal$|^Labs$|^Community$/.test(l)), tag);
+        for (const area of areas) {
+          const sel = (tag === 'd' ? '.m9-app aside nav button' : '.m9-app nav[aria-label="My NGG"] button') + ':has-text("' + area + '")';
+          await au.click(sel).catch(() => {}); await settle(au); await au.waitForTimeout(600);
+          const tabs = await au.evaluate(() => Array.from(document.querySelectorAll('main nav button')).map(b => b.innerText.trim()).filter(Boolean));
+          await au.screenshot({ path: process.env.MP9_AUDIT + '/' + tag + '-' + area.replace(/\W+/g, '_') + '.png', timeout: 8000, animations: 'disabled' }).catch(() => {});
+          fs.appendFileSync(process.env.MP9_AUDIT + '/areas.txt', tag + ' ' + area + ' :: tabs ' + JSON.stringify(tabs) + '\n');
+          for (const tb of tabs.slice(1).filter(t => !/↗/.test(t))) {
+            await au.click('main nav button:has-text("' + tb + '")').catch(() => {}); await settle(au); await au.waitForTimeout(500);
+            await au.screenshot({ path: process.env.MP9_AUDIT + '/' + tag + '-' + area.replace(/\W+/g, '_') + '-' + tb.replace(/\W+/g, '_') + '.png', timeout: 8000, animations: 'disabled' }).catch(e => fs.appendFileSync(process.env.MP9_AUDIT + '/areas.txt', 'shot failed ' + tag + ' ' + area + '/' + tb + '\n'));
+          }
+        }
+        fs.appendFileSync(process.env.MP9_AUDIT + '/areas.txt', tag + ' errors ' + JSON.stringify(au.errs) + '\n');
+      }
+    }
     if (ad.errs.length) console.error(ad.errs.join('\n'));
   } catch (e) {
     failed++;

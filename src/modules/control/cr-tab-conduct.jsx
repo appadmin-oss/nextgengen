@@ -21,7 +21,7 @@
    ========================================================================== */
 /** The most fines one register cell may stand for. Mirrors FEES_FINE_COUNT_MAX (fees.php), which refuses past it. */
 const CR_CF_COUNT_MAX = 20;
-const CR_CF_VIEWS = [["", "Fines", ["fees"]], ["compliance", "Compliance", ["people", "summer"]], ["policy", "Policy", ["summer"]], ["calendar", "Calendars", ["summer"]]];
+const CR_CF_VIEWS = [["rules", "Rules", ["fees", "people", "summer"]], ["", "Fines", ["fees"]], ["compliance", "Compliance", ["people", "summer"]], ["policy", "Policy", ["summer"]], ["calendar", "Calendars", ["summer"]]];
 const CR_CF_DOW = [[1, "Mon"], [2, "Tue"], [3, "Wed"], [4, "Thu"], [5, "Fri"], [6, "Sat"], [7, "Sun"]];
 
 /* ── Reading a fines sheet the way a person would ──────────────────────────
@@ -163,14 +163,15 @@ function crCfDay(iso) { return iso ? crDate(String(iso).slice(0, 10) + "T12:00:0
 function crCfAccount(ctx, memberId) { ctx.go("money", "fees", "account/" + encodeURIComponent(memberId)); }
 /** After a write: the rules, the clearance status and the board, refetched quietly. */
 async function crCfRefresh(ctx) {
-  const [rules, once, board, integ, corr] = await Promise.all([
+  const [rules, once, board, integ, corr, rulesPage] = await Promise.all([
     ctx.can("fees") ? NGGApi.admin.fees.fineRules().catch(() => null) : null,
     ctx.can("fees") ? NGGApi.admin.fees.finesClearOnce("status").catch(() => null) : null,
     ctx.can(["people", "summer"]) ? NGGApi.admin.policy.board().catch(() => null) : null,
     ctx.can(["people", "summer"]) ? NGGApi.admin.policy.integrity().catch(() => null) : null,
     ctx.can("people") ? NGGApi.admin.policy.correctives().catch(() => null) : null,
+    ctx.can(["fees", "people", "summer"]) ? NGGApi.admin.policy.rules().catch(() => null) : null,
   ]);
-  ctx.setData(x => Object.assign({}, x, rules ? { rules } : null, once ? { once } : null, board ? { board } : null, integ ? { integ, integErr: null } : null, corr ? { correctives: corr } : null));
+  ctx.setData(x => Object.assign({}, x, rulesPage ? { rulesPage, rulesPageErr: null } : null, rules ? { rules } : null, once ? { once } : null, board ? { board } : null, integ ? { integ, integErr: null } : null, corr ? { correctives: corr } : null));
 }
 
 /* ══ Fines: the upload ═══════════════════════════════════════════════════════ */
@@ -396,15 +397,20 @@ function crCfImportedBlocks(d, ctx) {
 
 /* ══ Fines: the rules ════════════════════════════════════════════════════════ */
 const CR_CF_RULE_ERR = { kind_taken: "Another rule already covers that kind of fine — edit that one.", cap_below_fine: "The cap must be at least the standard amount.",
+  escalate_incomplete: "Say both how many breaches and what they lead to — or neither.", bad_jumps: "At most 200.", bad_escalate_after: "Between 1 and 60.", bad_suspend_days: "Between 1 and 365 days.", bad_reentry: "Enter a whole number of naira.",
   bad_name: "Give the rule a name of at least three letters.", bad_amount: "Enter a whole number of naira.", bad_cap: "Enter a whole number of naira.", not_found: "That rule no longer exists." };
+function crCfJumpWord(R) { return (R && R.rulebook && R.rulebook.jumpWord) || "frog jumps"; }
 function crCfRuleEdit(ctx, R, rule) {
   const kinds = (R.kinds || []).filter(k => !k[2] || (rule && rule.reason === k[0])).map(k => [k[0], k[1]]);
   const whole = v => v === "" || /^\d+$/.test(String(v).trim()) ? "" : "A whole number of naira, or leave it empty.";
+  const count = max => v => v === "" || (/^\d+$/.test(String(v).trim()) && +v <= max) ? "" : "A whole number up to " + max + ", or leave it empty.";
   ctx.form({
     title: rule ? rule.name : "Add a rule", submit: rule ? "Save the rule" : "Add the rule", busyLabel: "Saving…",
-    intro: "A rule says what a kind of fine normally costs and the most it may add up to in a term. Changes apply to fines posted from now on; fines already on accounts keep their amounts.",
-    values: rule ? { name: rule.name, reason: rule.reason, whenText: rule.whenText, amount: rule.amount ? String(rule.amount) : "", capTerm: rule.capTerm ? String(rule.capTerm) : "", active: !!rule.active }
-      : { name: "", reason: "", whenText: "", amount: "", capTerm: "", active: true },
+    intro: "A rule says what breaking it costs — a fine, " + crCfJumpWord(R) + ", or both — what repeating it leads to, and the most it may add up to in a term. Changes apply from now on; what was already charged keeps its amount.",
+    values: rule ? { name: rule.name, reason: rule.reason, whenText: rule.whenText, amount: rule.amount ? String(rule.amount) : "", capTerm: rule.capTerm ? String(rule.capTerm) : "", active: !!rule.active,
+        jumps: rule.jumps ? String(rule.jumps) : "", escalateAfter: rule.escalateAfter ? String(rule.escalateAfter) : "", escalateTo: rule.escalateTo || "",
+        suspendDays: String(rule.suspendDays || 7), reentryFee: rule.reentryFee ? String(rule.reentryFee) : "" }
+      : { name: "", reason: "", whenText: "", amount: "", capTerm: "", active: true, jumps: "", escalateAfter: "", escalateTo: "", suspendDays: "7", reentryFee: "" },
     fields: [
       { id: "name", l: "Rule", req: true, max: 160, ph: "Late attendance" },
       { id: "reason", l: "Applies to", type: "select", ph: "No particular kind — a written rule, fined per case", opts: kinds,
@@ -412,15 +418,23 @@ function crCfRuleEdit(ctx, R, rule) {
       { id: "whenText", l: "When it applies", max: 200, ph: "Arriving after the lateness threshold" },
       { id: "amount", l: "Standard amount (₦)", im: "numeric", max: 9, check: whole, help: "Used when a register ticks or counts a fine instead of pricing it. Empty: set per case." },
       { id: "capTerm", l: "Most per member per term (₦)", im: "numeric", max: 9, check: whole, help: "Fines past it post only what is left. Empty: no cap." },
+      { id: "jumps", l: "Corrective exercise per breach (" + crCfJumpWord(R) + ")", im: "numeric", max: 3, check: count(200), help: "Owed at the centre and ticked off there. Empty: none." },
+      { id: "escalateAfter", l: "When it repeats: after this many breaches in a session", im: "numeric", max: 2, check: count(60), help: "Every time the count reaches it again in the same session, it happens again. Empty: nothing more than each breach's cost." },
+      { id: "escalateTo", l: "…it leads to", type: "select", ph: "Nothing more", opts: [["suspension", "A suspension"], ["review", "A management review"]] },
+      { id: "suspendDays", l: "Suspension length (days)", im: "numeric", max: 3, check: count(365), help: "From the day after the breach that reached the count." },
+      { id: "reentryFee", l: "Re-entry fee after that suspension (₦)", im: "numeric", max: 9, check: whole, help: "Paid before they may check in again. Empty: none." },
       { id: "active", l: "Switched on", type: "switch", help: "Off: fines of this kind are refused, not posted at ₦0 by surprise." },
     ],
     onSubmit: async v => {
+      const n = x => x === "" || x == null ? 0 : parseInt(x, 10);
       try {
         return await NGGApi.admin.fees.fineRuleSave({ ruleId: rule ? rule.ruleId : "", name: v.name.trim(), reason: v.reason || "", whenText: (v.whenText || "").trim(),
-          amount: v.amount === "" ? 0 : parseInt(v.amount, 10), capTerm: v.capTerm === "" ? 0 : parseInt(v.capTerm, 10), active: !!v.active });
+          amount: n(v.amount), capTerm: n(v.capTerm), active: !!v.active, jumps: n(v.jumps), escalateAfter: n(v.escalateAfter), escalateTo: v.escalateTo || "",
+          suspendDays: n(v.suspendDays) || 7, reentryFee: n(v.reentryFee) });
       } catch (e) {
         const c = e && ((e.data && e.data.error) || e.code), m = CR_CF_RULE_ERR[c];
-        const at = { kind_taken: "reason", cap_below_fine: "capTerm", bad_name: "name", bad_amount: "amount", bad_cap: "capTerm" }[c];
+        const at = { kind_taken: "reason", cap_below_fine: "capTerm", bad_name: "name", bad_amount: "amount", bad_cap: "capTerm", escalate_incomplete: "escalateTo",
+          bad_jumps: "jumps", bad_escalate_after: "escalateAfter", bad_suspend_days: "suspendDays", bad_reentry: "reentryFee" }[c];
         if (at) return { fieldErrors: { [at]: m } };
         throw e;
       }
@@ -536,7 +550,7 @@ function crCfFinesBlocks(d, ctx) {
 const CR_CF_STATE = { clear: ["In good standing", "ok"], good: ["In good standing", "ok"], warned: ["Warned", "warn"], dormant: ["Dormant", "warn"],
   suspended: ["Suspended", "bad"], evicted: ["Evicted", "bad"], pending_eviction: ["Eviction proposed", "bad"] };
 const CR_CF_TYPE = { student: "Participant", volunteer: "Volunteer", member: "NGG member" };
-const CR_CF_INFRACTION = { absence: "Absent", absent: "Absent", late: "Late", tardy: "Tardy", half_day: "Half-day — missed the Musing Period", checkout_missing: "No sign-out",
+const CR_CF_INFRACTION = { absence: "Absent", absent: "Absent", late: "Late", tardy: "Tardy", halfday: "Half-day — signed in, no sign-out", no_checkout: "No sign-out",
   idcard_missing: "No ID card", idcard_lost: "Lost ID card", review_missed: "Missed Review Time", misconduct: "Misconduct" };
 function crCfWord(k, map) { return (map && map[k]) || String(k || "").replace(/_/g, " ").replace(/^./, c => c.toUpperCase()); }
 function crCfState(s) { return CR_CF_STATE[s] || [s ? String(s).replace(/_/g, " ").replace(/^./, c => c.toUpperCase()) : "In good standing", "neutral"]; }
@@ -594,12 +608,13 @@ async function crCfPerson(ctx, row) {
         t: s.kind === "corrective" ? crNum(s.amount) + " " + (st.jumpWord || "frog jumps") : s.kind === "review" ? "Management review" : crCfWord(s.kind) + (Number(s.amount) > 0 ? " · " + fmtMoney(s.amount) : ""),
         s: [s.reason, crCfDay(s.issuedAt) + (s.endsAt ? " → " + crCfDay(s.endsAt) : "")].filter(Boolean).join(" · "), m: crCfWord(s.status), act: sanctionAct(s) })) },
       { h: "What they are based on", empty: "Nothing logged.", tip: "Void a wrong entry and everything it caused is lifted immediately.",
-        list: (p.infractions || []).map(i => ({ icon: i.voidedAt ? "prohibit" : "dot-outline", t: crCfWord(i.kind, CR_CF_INFRACTION),
+        list: (p.infractions || []).map(i => ({ icon: i.voidedAt ? "prohibit" : "dot-outline", t: i.label || crCfWord(i.kind, CR_CF_INFRACTION),
           s: i.voidedAt ? "Voided — " + (i.voidReason || "") : i.note || "", m: crCfDay(i.date), act: i.voidedAt ? null : { l: "Void", run: voidOne(i) } })) },
     ],
     actions: [
       { l: "No ID card today", run: log("idcard_missing", "Log: arrived without their ID card") },
       { l: "Lost ID card", run: log("idcard_lost", "Log: lost ID card") },
+      row.personType === "member" && ctx.can("people") ? { l: "Broke a rule…", run: () => crRuleBreach(ctx, [row.personId], "", again) } : null,
       row.personType === "volunteer" ? { l: "Missed Review Time", run: log("review_missed", "Log: missed Review Time") } : null,
       st.state === "evicted" ? { l: "Reinstate…", run: reinstate } : null,
     ],
@@ -638,6 +653,8 @@ function crCfComplianceBlocks(d, ctx) {
   return out;
 }
 
+/** What a set of corrective exercise was for, as the desk's list says it. */
+const CR_CF_FOR = { late: "Late", absence: "Absent" };
 /** "frog jumps" → "Frog jumps". */
 function crCfCap(w) { w = String(w || ""); return w.charAt(0).toUpperCase() + w.slice(1); }
 
@@ -650,12 +667,24 @@ function crCfCorrectiveBlocks(d, ctx, word) {
   const C = d.correctives;
   if (!C || !(C.rows || []).length) return [];
   return [{ type: "table", span: 6, title: crCfCap(word) + " to do (" + crNum(C.total) + ")", search: "Search by name or centre",
-    sub: "Tick them off as they are done at the centre.",
-    cols: ["Member", "Centre", { l: "How many", num: true }, { l: "Why", wrap: true }],
+    /* Both halves of the penalty, side by side. This line used to read "not
+       money; fines are under Policy fines owed" over the jumps alone, which a
+       coordinator read as "fines are not monetary". A late, an absence or a
+       broken rule usually costs BOTH: the fine is money on the member's
+       account, the exercise is done here. Ticking a set off clears the
+       exercise only; the fine stays owed until it is paid or waived. */
+    sub: "Done here at the centre, on top of any fine. The fine for the same incident is money on the member's account (Policy fines owed) — ticking the " + word + " off does not clear it.",
+    /* The count column is named for what it counts. It said "How many" beside a
+       reason that also named the absence fine, so 7 read as if it were money. */
+    cols: ["Member", "Centre", "For", { l: crCfCap(word), num: true }, { l: "Fine for it", num: true }, { l: "Why", wrap: true }],
     rows: C.rows.map(r => ({ key: String(r.id), cells: [
       { k: "person", t: r.fullName, s: r.displayId || r.memberId }, { k: "text", t: r.centre || "—" },
-      { k: "num", t: crNum(r.count), v: r.count }, { k: "text", t: r.reason } ] })),
-    filters: ["Centre"],
+      { k: "text", t: r.for === "rule" ? (r.rule || "A rule") : CR_CF_FOR[r.for] || "Other", s: r.date ? crCfDay(r.date) : "", v: r.date || "" },
+      { k: "num", t: crNum(r.count), v: r.count },
+      { k: "num", t: r.fine ? fmtMoney(r.fine.amount) : "—", v: r.fine ? r.fine.amount : 0,
+        s: r.fine ? ({ pending: "owed", paid: "paid", waived: "waived", cleared: "cleared", lifted: "lifted" }[r.fine.status] || r.fine.status) : "no fine" },
+      { k: "text", t: r.reason } ] })),
+    filters: ["Centre", "For"],
     bulk: [{ l: "Mark done", max: C.max || 500, run: async keys => {
       try { const r = await NGGApi.admin.policy.correctivesDone(keys.map(Number)); ctx.toast(crPlural(r.done, "set") + " of " + word + " done."); crCfRefresh(ctx); }
       catch (e) { ctx.toast(crErr(e, "Couldn’t mark those done."), null, true); return false; }
@@ -1209,22 +1238,30 @@ Object.assign(CR_TAB_DEFS, {
     load: async ctx => {
       const safe = p => p.then(ok => ({ ok }), err => ({ err }));
       const fees = ctx.can("fees"), summer = ctx.can("summer"), board = ctx.can(["people", "summer"]);
-      const [rules, once, pol, brd, integ, corr] = await Promise.all([
+      const [rules, once, pol, brd, integ, corr, rpage] = await Promise.all([
         fees ? safe(NGGApi.admin.fees.fineRules()) : null,
         fees ? safe(NGGApi.admin.fees.finesClearOnce("status")) : null,
         summer ? safe(NGGApi.admin.policy.settings()) : null,
         board ? safe(NGGApi.admin.policy.board()) : null,
         board ? safe(NGGApi.admin.policy.integrity()) : null,
         ctx.can("people") ? safe(NGGApi.admin.policy.correctives()) : null,
+        // Every view of this tab may switch to Rules without a reload (the view is the URL tail), so the rules always come with it.
+        ctx.can(["fees", "people", "summer"]) ? safe(NGGApi.admin.policy.rules()) : null,
       ]);
       const prev = ctx.data || {};
-      return { rules: rules && rules.ok, rulesErr: rules && rules.err, once: once && once.ok, pol: pol && pol.ok, polErr: pol && pol.err,
+      return { rulesPage: rpage && rpage.ok, rulesPageErr: rpage && rpage.err, rules: rules && rules.ok, rulesErr: rules && rules.err, once: once && once.ok, pol: pol && pol.ok, polErr: pol && pol.err,
         board: brd && brd.ok, boardErr: brd && brd.err, integ: integ && integ.ok, integErr: integ && integ.err, correctives: corr && corr.ok,
         freshPlan: prev.freshPlan || null,
         finePlan: prev.finePlan || null, clearPlan: prev.clearPlan || null, repairPlan: prev.repairPlan || null, imported: prev.imported || null };
     },
     actions: (d, ctx) => {
       const v = crCfView(ctx), out = [];
+      if (v === "rules" && d.rulesPage) {
+        const can = d.rulesPage.can || {};
+        if (can.rules) out.push({ l: "Add a rule", icon: "plus", primary: true, run: () => crCfRuleEdit(ctx, d.rulesPage, null) });
+        if (can.breach) out.push({ l: "Record a breach", icon: "flag", run: () => crRuleGoBreach(ctx) });
+        if (ctx.can("content")) out.push({ l: "Announce the rules", icon: "megaphone", run: () => crRulesAnnounce(ctx, d.rulesPage) });
+      }
       if (v === "") {
         out.push({ l: "Upload fines", icon: "upload-simple", primary: true, run: () => crCfFineCheck(ctx) });
         if (d.rules) out.push({ l: "Add a rule", icon: "plus", run: () => crCfRuleEdit(ctx, d.rules, null) });
@@ -1241,6 +1278,14 @@ Object.assign(CR_TAB_DEFS, {
           try { const r = await NGGApi.admin.policy.halfday();
             ctx.toast(r.converted || r.reworked ? crPlural(r.converted, "day") + " made a half-day for " + crPlural(r.people, "person", "people") + (r.reworked ? " · " + crPlural(r.reworked, "person", "people") + "’s fines corrected" : "") + (r.more ? " · more left, press again" : "") + "." : "Nothing to change: every day with no sign-out is already a half-day.");
             crCfRefresh(ctx); } catch (e) { ctx.toast(crErr(e, "Couldn’t apply it."), null, true); } } });
+        /* Lates recorded for arrivals before lateness begins (the older definition)
+           undone now, with their fines refunded — the nightly check does it too. */
+        if (ctx.can("people")) out.push({ l: "Correct lates before the first band", icon: "clock-counter-clockwise", run: async () => {
+          try { const r = await NGGApi.admin.policy.prelate();
+            ctx.toast(r.voided || r.reworded ? [r.voided ? crPlural(r.voided, "late") + " undone for " + crPlural(r.people, "person", "people") : "",
+              r.refunded ? crPlural(r.refunded, "paid fine") + " refunded as credit" : "", r.reworded ? crPlural(r.reworded, "entry", "entries") + " reworded" : "",
+              r.more ? "more left, press again" : ""].filter(Boolean).join(" · ") + "." : "Nothing to correct: every late on record arrived at or after the first band.");
+            crCfRefresh(ctx); } catch (e) { ctx.toast(crErr(e, "Couldn’t correct them."), null, true); } } });
         out.push({ l: "Refresh", icon: "arrows-clockwise", run: () => crCfRefresh(ctx) });
       }
       return out;
@@ -1252,7 +1297,7 @@ Object.assign(CR_TAB_DEFS, {
       const pick = x => { ctx.closeDrawer(); ctx.setSub(x); };
       const opts = views.map(x => [x[0], x[1]]);
       const out = views.length > 1 ? [{ type: "custom", span: 6, render: (c, phone) => <CrSeg label="Conduct view" value={v} options={opts} onChange={pick} full={phone}/> }] : [];
-      const body = v === "compliance" ? crCfComplianceBlocks(d, ctx) : v === "policy" ? crCfPolicyBlocks(d, ctx) : v === "calendar" ? crCfCalendarBlocks(d, ctx) : crCfFinesBlocks(d, ctx);
+      const body = v === "rules" ? crCfRulesBlocks(d, ctx) : v === "compliance" ? crCfComplianceBlocks(d, ctx) : v === "policy" ? crCfPolicyBlocks(d, ctx) : v === "calendar" ? crCfCalendarBlocks(d, ctx) : crCfFinesBlocks(d, ctx);
       return out.concat(body);
     },
     facts: d => [d.rules ? (d.rules.thisTerm.n + " fines this term, " + fmtMoney(d.rules.thisTerm.total) + "; " + (d.rules.rules || []).filter(r => r.active).length + " rules on.") : "",
@@ -1263,5 +1308,152 @@ Object.assign(CR_TAB_DEFS, {
 function crCfView(ctx) {
   const views = CR_CF_VIEWS.filter(x => ctx.can(x[2]));
   const want = views.find(x => x[0] === (ctx.sub || ""));
-  return want ? want[0] : views.length ? views[0][0] : "";
+  /* With no view named, open the desk this person works from (Fines, else the
+     board) — Rules is the reference page you go to, not where a club admin's
+     conduct work lands. */
+  const desk = views.find(x => x[0] !== "rules") || views[0];
+  return want ? want[0] : desk ? desk[0] : "";
+}
+
+/* ══ Rules: every rule in one place ══════════════════════════════════════════
+   The rulebook's own rules (applied from check-ins, absences and assignments)
+   and the written ones (recorded by staff) side by side, each saying what
+   triggers it, what it costs, what repeating it leads to, and its term cap.
+   They used to live in two places — the money desk's "Fine rules" and the
+   Policy settings — that did not mention each other, and only the rulebook's
+   could carry frog jumps or a suspension (admin.policy.rules). */
+function crRuleCost(fine, jumps, word) {
+  return [fine > 0 ? fmtMoney(fine) + " fine" : "", jumps > 0 ? crNum(jumps) + " " + word : ""].filter(Boolean).join(" and ") || "Recorded only";
+}
+function crRuleRepeat(every, to, days, fee) {
+  if (!(every > 0) || !to) return "—";
+  return crNum(every) + " in a session → " + (to === "review" ? "management review" : crNum(days || 7) + "-day suspension" + (fee > 0 ? ", " + fmtMoney(fee) + " to come back" : ""));
+}
+/** Lagos's today, as a date input wants it. */
+function crRuleToday() { return new Date(Date.now() + 3600e3).toISOString().slice(0, 10); }
+
+function crCfRulesBlocks(d, ctx) {
+  if (d.rulesPageErr || !d.rulesPage) return [{ type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the rules.", sub: crErr(d.rulesPageErr, ""), act: { l: "Try again", run: () => ctx.reload() } }];
+  const P = d.rulesPage, rb = P.rulebook || {}, word = rb.jumpWord || "frog jumps", can = P.can || {};
+  const state = on => ({ k: "status", t: on ? "On" : "Off", tone: on ? "ok" : "neutral" });
+  const rbRow = (key, name, s, trig, cost, rep, part) => ({ key, open: () => can.rulebook ? crRbEdit(ctx, P, part) : ctx.toast("Changing the rulebook needs the People permission."),
+    cells: [{ k: "strong", t: name, s }, { k: "text", t: trig }, { k: "text", t: cost }, { k: "text", t: rep }, { k: "text", t: "—" }, { k: "text", t: "—" }, state(P.enabled)] });
+  const bands = (P.bands || []).map(b => b.from + ": " + crRuleCost(b.fine, b.jumps, word)).join(" · ") + (rb.reviewFrom ? " · from " + rb.reviewFrom + ": management review" : "");
+  const rows = [
+    rbRow("rb-late", "Lateness", "Activities begin at " + (rb.resumption || "09:00"), "Automatic — the check-in time", bands, "—", "late"),
+    rbRow("rb-absence", "Absence without permission", "No request, or a request declined", "Automatic — no check-in on a programme day", crRuleCost(rb.absenceFine, rb.absenceJumps, word),
+      crRuleRepeat(rb.suspendAfterAbsences, "suspension", rb.suspendDays, rb.reentryFee), "absence"),
+    rbRow("rb-permission", "Permission to be absent", "Asked from the member or family app", "A request the desk decides",
+      "Up to " + crNum(rb.permittedAbsences) + " a session", "Longer than " + crNum(rb.formalAfterDays) + " days: a written application", "permission"),
+    rbRow("rb-evidence", "Assignment evidence", "A photo or screenshot of each assignment", "Automatic — the due day passes with no evidence", crRuleCost(rb.evidenceFine, 0, word), "—", "evidence"),
+  ].concat((P.written || []).map(r => ({ key: r.ruleId, open: () => can.rules ? crCfRuleEdit(ctx, P, r) : ctx.toast("Changing a written rule needs the Fees permission."),
+    cells: [{ k: "strong", t: r.name, s: r.whenText || "" },
+      { k: "text", t: r.reason ? "Fines of kind “" + (r.reasonLabel || r.reason) + "”, and breaches staff record" : "Recorded by staff" },
+      { k: "text", t: crRuleCost(r.amount, r.jumps, word) }, { k: "text", t: crRuleRepeat(r.escalateAfter, r.escalateTo, r.suspendDays, r.reentryFee) },
+      { k: "num", t: r.capTerm ? fmtMoney(r.capTerm) : "—", v: r.capTerm || 0 },
+      { k: "num", t: r.breaches ? crPlural(r.breaches, "breach", "breaches") : (r.thisTerm && r.thisTerm.n ? crPlural(r.thisTerm.n, "fine") : "—"), v: (r.breaches || 0) + ((r.thisTerm && r.thisTerm.n) || 0) },
+      state(r.active)] })));
+  const out = [{ type: "note", span: 6, icon: "list-checks",
+    text: "Every rule in one place: what triggers it, what it costs, and what repeating it leads to.",
+    sub: (P.enabled ? "Enforcement is on for members. " : "Enforcement is off for members: nothing new is issued. ")
+      + "The first four come from the Management notice and are applied automatically; the rest are written rules staff record. Open a rule to change it — changes apply from now on.",
+    act: can.breach ? { l: "Record a breach", run: () => crRuleGoBreach(ctx) } : null }];
+  out.push({ type: "table", span: 6, title: "Rules", nosel: true, search: "Search rules",
+    cols: [{ l: "Rule", wrap: true }, { l: "Triggered by", wrap: true }, { l: "What it costs", wrap: true }, { l: "When it repeats", wrap: true }, { l: "Cap a term", num: true }, { l: "This term", num: true }, "State"],
+    rows, filters: ["State"], emptyText: "No rules yet." });
+  out.push({ type: "list", span: 6, title: "What members and families are told", sub: "Their app shows these sentences, read from the rules above — so it cannot promise a time or an amount the rules do not use.",
+    empty: "Nothing yet.", rows: (P.lines || []).map(l => ({ icon: String(l[0] || "").replace(/^ph ph-/, "") || "dot-outline", t: l[1] })) });
+  return out;
+}
+
+/** The rulebook's own rules, one part at a time — the People desk's (admin.policy.rulebookSave). */
+function crRbEdit(ctx, P, part) {
+  const rb = P.rulebook || {}, word = rb.jumpWord || "frog jumps", bands = rb.lateBands || [];
+  const int = (lo, hi) => v => { const n = Number(v); return v === "" || !Number.isInteger(n) ? "Enter a whole number." : n < lo ? "At least " + lo + "." : n > hi ? "At most " + crNum(hi) + "." : ""; };
+  const money = int(0, 10000000);
+  let fields = [], values = {};
+  if (part === "late") {
+    values.resumption = rb.resumption || "09:00"; values.reviewFrom = rb.reviewFrom || "";
+    fields.push({ id: "resumption", l: "Activities begin at", type: "time", req: true, help: "Arriving after this and before the first band is seen, not penalised." });
+    for (let i = 0; i < CR_CF_BANDS; i++) {
+      const b = bands[i] || {};
+      values["member.band" + (i + 1) + "From"] = b.from || ""; values["member.band" + (i + 1) + "Fine"] = String(b.fine || 0); values["member.band" + (i + 1) + "Jumps"] = String(b.jumps || 0);
+      fields.push({ id: "member.band" + (i + 1) + "From", l: "Band " + (i + 1) + " — from", type: "time", help: i === 0 ? "Arriving at or after this is late." : "Leave empty to use fewer bands." },
+        { id: "member.band" + (i + 1) + "Fine", l: "Band " + (i + 1) + " fine (₦)", im: "numeric", check: money },
+        { id: "member.band" + (i + 1) + "Jumps", l: "Band " + (i + 1) + " " + word, im: "numeric", check: int(0, 200) });
+    }
+    fields.push({ id: "reviewFrom", l: "Management review from", type: "time", help: "At or after this, a late goes to management with no automatic penalty. Empty: the last band runs on." });
+  } else if (part === "absence") {
+    Object.assign(values, { absenceFine: String(rb.absenceFine || 0), absenceJumps: String(rb.absenceJumps || 0), suspendAfterAbsences: String(rb.suspendAfterAbsences || 3),
+      suspendDays: String(rb.suspendDays || 7), reentryFee: String(rb.reentryFee || 0) });
+    fields = [{ id: "absenceFine", l: "Fine (₦)", im: "numeric", check: money }, { id: "absenceJumps", l: crCfCap(word), im: "numeric", check: int(0, 200) },
+      { id: "suspendAfterAbsences", l: "Absences in a session before a suspension", im: "numeric", check: int(1, 60) },
+      { id: "suspendDays", l: "Suspension length (days)", im: "numeric", check: int(1, 365) },
+      { id: "reentryFee", l: "Re-entry fee (₦)", im: "numeric", check: money, help: "Paid before the child can check in again. 0: none." }];
+  } else if (part === "permission") {
+    Object.assign(values, { permittedAbsences: String(rb.permittedAbsences || 5), formalAfterDays: String(rb.formalAfterDays || 21) });
+    fields = [{ id: "permittedAbsences", l: "Absences with permission accepted in a session", im: "numeric", check: int(0, 60) },
+      { id: "formalAfterDays", l: "Longer than this needs a written application (days)", im: "numeric", check: int(1, 365) }];
+  } else {
+    values.evidenceFine = String(rb.evidenceFine || 0);
+    fields = [{ id: "evidenceFine", l: "Fine when an assignment's due day passes with no evidence (₦)", im: "numeric", check: money, help: "0 switches it off." }];
+  }
+  ctx.form({ title: { late: "Lateness", absence: "Absence without permission", permission: "Permission to be absent", evidence: "Assignment evidence" }[part],
+    submit: "Save", busyLabel: "Saving…", intro: "Applies to what is recorded from now on; what was already charged keeps its amount. Members and families see the new wording at once.",
+    values, fields,
+    onSubmit: v => {
+      const m = {};
+      Object.keys(v).forEach(k => { if (!/^member\.band/.test(k)) m[k] = /^(resumption|reviewFrom)$/.test(k) ? v[k] : parseInt(v[k], 10) || 0; });
+      if (part === "late") { const o = crCfRulebookPack({}, v); m.lateBands = o.member.lateBands; m.reviewFrom = o.member.reviewFrom; }
+      return NGGApi.admin.policy.rulebookSave(m);
+    },
+    done: (v, r) => { crCfRefresh(ctx); return r.unchanged ? "Nothing changed." : "Saved. It applies from now on."; } });
+}
+
+/** "Record a breach" from the Rules page: choose who in the roster, where search and select-all live. */
+function crRuleGoBreach(ctx) {
+  ctx.go("members", "members");
+  ctx.toast("Tick who broke the rule, then press “Broke a rule…” in the bar.");
+}
+
+/** A written rule broken, by these members: one form, one request, an answer per person (admin.policy.ruleBreach). */
+async function crRuleBreach(ctx, ids, ruleId, after) {
+  let R;
+  try { R = await NGGApi.admin.policy.rules(); } catch (e) { ctx.toast(crErr(e, "Couldn’t load the rules."), null, true); return false; }
+  const word = (R.rulebook && R.rulebook.jumpWord) || "frog jumps";
+  const rules = (R.written || []).filter(r => r.active);
+  if (!rules.length) { ctx.toast("No written rule is switched on. Add one under Conduct & fines → Rules.", null, true); return false; }
+  if (ids.length > (R.breachMax || 100)) { ctx.toast("At most " + (R.breachMax || 100) + " members at a time. You selected " + ids.length + ".", null, true); return false; }
+  const ERR = { out_of_scope: "outside your centres", not_found: "not an active member", staff_account: "a staff account", own_account: "your own account" };
+  ctx.form({ title: ids.length === 1 ? "Broke a rule" : "Broke a rule — " + crPlural(ids.length, "member"), submit: "Record it", busyLabel: "Recording…",
+    intro: "What it costs comes from the rule, the same for everybody: their fine goes on the family's account, their " + word + " on the list to do. Recorded wrongly? Void it from their record and everything it caused is lifted.",
+    values: { ruleId: ruleId || rules[0].ruleId, date: crRuleToday(), note: "" },
+    fields: [
+      { id: "ruleId", l: "Which rule", type: "select", req: true, opts: rules.map(r => [r.ruleId, r.name + " — " + crRuleCost(r.amount, r.jumps, word)]) },
+      { id: "date", l: "When", type: "date", req: true, help: "Today, or a day in the last 90." },
+      { id: "note", l: "What happened (optional)", max: 200, ph: "Came without the uniform shirt" },
+    ],
+    onSubmit: async v => {
+      try { return await NGGApi.admin.policy.ruleBreach({ ruleId: v.ruleId, personIds: ids, date: v.date, note: (v.note || "").trim() }); }
+      catch (e) { const f = e && e.data && e.data.error; if (f === "bad_date") return { fieldErrors: { date: e.data.detail } }; throw e; }
+    },
+    done: (v, r) => {
+      if (after) setTimeout(after, 0);
+      const res = r.results || [], same = res.filter(x => x.ok && x.unchanged).length, refused = res.filter(x => !x.ok);
+      const why = {}; refused.forEach(x => { const w = ERR[x.error] || x.error; why[w] = (why[w] || 0) + 1; });
+      return [r.recorded ? "“" + r.rule + "”: recorded for " + crPlural(r.recorded, "member") : "Nothing new recorded",
+        same ? crNum(same) + " already recorded that day" : "", refused.length ? "not for " + Object.keys(why).map(w => crNum(why[w]) + " " + w).join(", ") : ""].filter(Boolean).join(" · ") + ".";
+    } });
+  return false;
+}
+
+/** The rules as a notice: a draft in the editor, for the desk to check and send. */
+async function crRulesAnnounce(ctx, P) {
+  const body = ["These are the rules for every member. What each one costs is the same for everybody.", (P.lines || []).map(l => "- " + l[1]).join("\n"),
+    "Questions about a charge or a suspension go to your centre."].join("\n\n");
+  try {
+    const r = await NGGApi.admin.notices.save({ subject: "Our rules", body, audience: "all", reach: "both", needsAck: true, emailOn: false });
+    ctx.go("comms", "broadcast", r.notice.noticeId + "/edit");
+    ctx.toast("A draft notice with the rules. Check it, then publish — nothing has been sent.");
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t make the notice."), null, true); }
 }

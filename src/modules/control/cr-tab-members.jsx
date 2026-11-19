@@ -916,6 +916,13 @@ function crMbRecBlocks(d, ctx) {
     if (acct.length) out.push({ type: "list", span: 3, title: "Account", rows: acct });
     if ((det.submissions || []).length) out.push({ type: "list", span: 3, title: "Assignment submissions", rows: det.submissions.map(s => ({ icon: "clipboard-text", t: s.title, m: s.status === "graded" ? s.grade + "/" + s.points : s.status })) });
     out.push({ type: "list", span: 3, title: "Recent journal", empty: "No journal entries yet.", rows: (det.journal || []).slice(0, 8).map(j => ({ icon: "notebook", t: (j.body || "").split("\n")[0] || "—", s: "Week " + j.week + " · " + crDate(j.createdAt) })) });
+    const ap = r && r.application;
+    if (ap) out.push({ type: "list", span: 3, title: "In their own words", sub: "From their application, " + crDate(ap.appliedAt), rows: [
+      { icon: "star", t: ap.vision || "—", s: "Their vision" },
+      kv("heart", "What they enjoy", (ap.hobbies || []).join(", ")),
+      kv("flag", "Where they want to lead", (ap.influenceAreas || []).join(", ")),
+      kv("megaphone", "Heard about NGG from", ap.heardFrom),
+    ] });
     if (m.notes) out.push({ type: "note", span: 6, icon: "note", text: m.notes, sub: "Staff notes. The member does not see these." });
     return out;
   }
@@ -966,7 +973,10 @@ function crMbRecBlocks(d, ctx) {
   if (tab === "fees") {
     if (!r.fees) return out.concat([crMbHidden("Money")]);
     const f = r.fees;
-    const items = [{ l: "Outstanding", v: fmtMoney(f.outstanding) }, { l: "Payable now", v: fmtMoney(f.payable) }, { l: "Charged", v: fmtMoney(f.charged) }, { l: "Paid or credited", v: fmtMoney(f.credited) }];
+    /* The account statement's figures (Money › the member's account): Charged − Received = Payable now.
+       "Outstanding" held the training place, which nobody is asked to pay, beside the payable it disagreed with. */
+    const items = [{ l: "Payable now", v: fmtMoney(f.payable) }, { l: "Charged", v: fmtMoney(f.realCharged !== undefined ? f.realCharged : f.charged) },
+      { l: "Received", v: fmtMoney(f.realCredited !== undefined ? f.realCredited : f.credited) }];
     if (f.programmeCost) items.push({ l: "Programme covered", v: fmtMoney(f.programmeCovered) + " of " + fmtMoney(f.programmeCost) });
     const mm = (rec.detail || {}).member || {}, settled = String(mm.feesSettledThrough || "");
     return out.concat([
@@ -996,9 +1006,10 @@ function crMbRecBlocks(d, ctx) {
     ]);
   }
   if (tab === "family") {
-    const g = r.guardian || {}, mt = r.mentorship || {};
+    const g = r.guardian || {}, mt = r.mentorship || {}, ap = r.application || null, g2 = ap && ap.guardian2;
     return out.concat([
-      { type: "list", span: 3, title: "Guardian on the record", empty: "No guardian on the record.", rows: (g.name || g.email || g.phone) ? [{ icon: "user", t: g.name || "—", s: "Name" }, { icon: "phone", t: g.phone || "—", s: "Phone" }, { icon: "envelope-simple", t: g.email || "—", s: "Email" }] : [] },
+      { type: "list", span: 3, title: "Guardian on the record", empty: "No guardian on the record.", rows: (g.name || g.email || g.phone) ? [{ icon: "user", t: g.name || "—", s: ap && ap.guardian1Rel ? "Name · " + ap.guardian1Rel : "Name" }, { icon: "phone", t: g.phone || "—", s: "Phone" }, { icon: "envelope-simple", t: g.email || "—", s: "Email" }] : [] },
+      g2 ? { type: "list", span: 3, title: "Second parent or guardian", sub: "From their application, " + crDate(ap.appliedAt), rows: [{ icon: "user", t: g2.name, s: "Name" + (g2.rel ? " · " + g2.rel : "") }, { icon: "phone", t: g2.phone || "Same number as above", s: "Phone" }] } : null,
       { type: "list", span: 3, title: "Family accounts linked", action: "Open Families", onAction: () => ctx.go("members", "families"), empty: "No family account is linked. A guardian can request a link from the family page.",
         rows: (r.family || []).map(f => ({ icon: "users", t: f.fullName + (f.relationship ? " · " + f.relationship : ""), s: f.email, m: f.status })) },
       mt.mentor ? { type: "kpis", span: 6, items: [{ l: "Mentor", v: mt.mentor }, { l: "Since", v: mt.since ? crDate(mt.since) : "—" }, { l: "Meetings in 90 days", v: crNum(mt.meetings90), tone: mt.meetings90 ? "flat" : "down" }, { l: "Last met", v: mt.lastMet ? crDate(mt.lastMet) : "—" }] }
@@ -1102,7 +1113,7 @@ function crMbDashBlocks(d, ctx) {
   out.push({ type: "bars", span: 2, title: "By centre", empty: "No centres yet.", rows: (o.byCentre || []).map(x => [x.name + " · " + crNum(x.active) + " active", x.total]) });
   out.push({ type: "bars", span: 2, title: "By status", rows: Object.entries(o.byStatus || {}).map(([k, v]) => [crMemStatusLabel(k), v]) });
   out.push({ type: "bars", span: 2, title: "By programme", rows: Object.entries(o.byType || {}).map(([k, v]) => [k === "Summer" ? "Summer School" : "NGG", v]) });
-  if (o.dues) out.push({ type: "kpis", span: 2, title: "Dues", items: [{ l: "People with a balance", v: crNum(o.dues.people) }, { l: "Outstanding", v: fmtMoney(o.dues.outstanding) }] });
+  if (o.dues) out.push({ type: "kpis", span: 2, title: "Dues", items: [{ l: "Families owing", v: crNum(o.dues.people) }, { l: "Payable", v: fmtMoney(o.dues.outstanding) }] });
   if (Object.keys(o.staff || {}).length) out.push({ type: "bars", span: o.dues ? 6 : 2, title: "Staff", rows: Object.entries(o.staff).map(([k, v]) => [String(k).replace(/_/g, " ").replace(/^./, s => s.toUpperCase()), v]) });
   if (o.scoped) out.push({ type: "note", span: 6, icon: "map-pin", text: "These figures cover only the centres you look after." });
   return out;
@@ -1182,6 +1193,7 @@ Object.assign(CR_TAB_DEFS, {
           payload: v => ({ consentType: v.consentType, consentStatus: v.consentStatus }) }) },
         ctx.can("fees") ? { l: "Dues reminders", max: 500, run: crMemBulk(ctx, "remindersOff", "Dues reminders", { id: "off", l: "Monthly reminders", type: "chips", req: true, opts: [["1", "Off — don’t remind these families"], ["0", "On — remind them as normal"]] }, "updated",
           { values: { off: "1" }, intro: "Off is a per-family opt-out. It stops the reminder only; the obligation and the balance are unchanged.", payload: v => ({ off: v.off === "1" ? 1 : 0 }) }) } : null,
+        ctx.can("people") ? { l: "Broke a rule…", max: 100, run: keys => { crRuleBreach(ctx, keys, "", () => ctx.setData(x => Object.assign({}, x, { rev: (x.rev || 0) + 1 }))); return false; } } : null,
         { l: "Export selected", run: async keys => { await crMbExport(ctx, keys); return false; } },
       ].filter(Boolean);
       if (d.suggest) out.push({ key: "suggest", type: "custom", span: 6, render: c => <CrMbSuggest s={d.suggest} ctx={c}/> });
@@ -1236,8 +1248,9 @@ function crMbCentreAdd() {
         if (e.code === "name_taken" || e.code === "bad_name") return { fieldErrors: { name: crErr(e, "That name is already used.") } };
         throw e;
       }
-      if (typeof invalidateCentreOptCache === "function") invalidateCentreOptCache();
-      window.dispatchEvent(new Event("ngg:centres-changed"));
+      /* Like Edit, Remove and Retire: the directory reloads, so the centre is on it at once. Add alone
+         announced the change to everyone else and left this list saying "0 centres" until a refresh. */
+      crCeDone(); ctx.reload();
     },
     done: v => v.name.trim() + " added. Open Edit on its row to add the address, lead and meeting times.",
   });
@@ -1327,7 +1340,7 @@ function crReqDraftApprove(x, parts) {
     case "leave": return "Approved. " + f + " is excused " + (x.toDate && x.toDate !== x.fromDate ? "from " + on(x.fromDate) + " to " + on(x.toDate) : "on " + on(x.fromDate)) + ", so " + (x.toDate && x.toDate !== x.fromDate ? "those days do" : "that day does") + " not count as an absence. We look forward to seeing " + f + " back.";
     case "academic": return "Approved, and good luck with the exams. The Saturdays from " + on(x.fromDate) + " to " + on(x.toDate) + " are not absences: nothing is fined and nothing counts against " + f + "’s allowance.";
     case "idcard": return "Approved. " + f + "’s replacement ID card will be printed and left at the " + (x.centre || "centre") + " desk. We will tell you when it is ready to collect.";
-    case "appeal": return "We have reviewed the charge and your appeal is accepted. Thank you for raising it with us.";
+    case "appeal": return "We have looked at this again and your appeal is upheld. " + (/^fine\b/i.test(x.subject || "") ? "The fine has been taken off " + f + "’s account." : "The decision has been lifted.") + " We are sorry for the trouble, and thank you for raising it with us.";
     case "mentor": return "Approved. We will arrange the change and introduce " + f + "’s new mentor shortly.";
     case "collect": return "Done. The list of people who may collect " + f + " has been updated, and the desk will check it at pick-up.";
     default: return "Thank you — this has been done.";
@@ -1348,7 +1361,8 @@ const CR_REQ_DECLINE_ANY = [["info", "Need more information", x => "We need a li
   ["rules", "Not possible under the rules", x => "We are sorry — this is not something the programme’s rules allow, so we cannot do it."]];
 function crReqDecline(ctx, x, done) {
   const opts = (CR_REQ_DECLINE[x.kind] || []).concat(CR_REQ_DECLINE_ANY);
-  ctx.form({ title: "Decline · " + (x.subject || x.kindLabel), submit: "Decline and send", busyLabel: "Sending…",
+  const lab = x.kind === "payment" ? "Decline" : crReqActs(x)[1];
+  ctx.form({ title: lab + " · " + (x.subject || x.kindLabel), submit: (lab === "Decline" ? "Decline" : lab) + " and send", busyLabel: "Sending…",
     intro: "Pick the reason; they are sent a message in full sentences saying what to do next. Add anything specific below.",
     values: { why: opts[0][0], note: "" },
     fields: [{ id: "why", l: "Why", type: "chips", req: true, opts: opts.map(o => [o[0], o[1]]).concat([["other", "Something else"]]) },
@@ -1400,9 +1414,40 @@ function crReqApplyDetails(ctx, x, done) {
     done: () => { setTimeout(() => done("Changed on the record and approved"), 0); return null; } }));
 }
 
-function crReqOpen(ctx, x) {
+/* WHAT EACH BUTTON DOES, in the words of what it does. "Approve" on a fine
+   appeal reads as agreeing with the fine, and it does the opposite: it
+   upholds the appeal and lifts the fine. So each kind names its two outcomes,
+   and a kind whose "approval" is really an answer (a question, a report) says
+   so. [approve label, decline label, reply required?] */
+const CR_REQ_ACTS = {
+  appeal: x => /^fine\b/i.test(x.subject || "") ? ["Uphold — lift the fine", "Keep the fine", true] : ["Uphold — lift the sanction", "Keep the sanction", true],
+  leave: () => ["Excuse the absence", "Refuse the leave", false],
+  academic: () => ["Approve the exam leave", "Refuse the exam leave", false],
+  idcard: () => ["Print a new card", "Not yet", false],
+  mentor: () => ["Change the mentor", "Keep the mentor", false],
+  collect: () => ["Update who can collect", "Keep the list as it is", false],
+  askmentor: () => ["Answer and close", "Close without answering", true],
+  help: () => ["Reply and close", "Close — nothing to do", true],
+};
+function crReqActs(x) { const f = CR_REQ_ACTS[x.kind]; return f ? f(x) : ["Approve", "Decline", false]; }
+/* The member's OTHER open requests, read before the drawer draws. A family
+   appealing a fine often says "my leave request has been pending since…" —
+   and the desk could not see it from here, so it decided the appeal blind.
+   Bounded: a slow list never holds the drawer for more than a moment. */
+async function crReqOpen(ctx, x) {
+  if (x._related === undefined && x.memberId) {
+    let rel = [];
+    try {
+      const r = await Promise.race([NGGApi.admin.requests.list({ memberId: x.memberId, status: "open" }), new Promise(res => setTimeout(() => res(null), 1500))]);
+      rel = r && r.requests ? r.requests.filter(y => y.requestId !== x.requestId) : [];
+    } catch (e) { rel = []; }
+    x = Object.assign({}, x, { _related: rel });
+  }
+  return crReqDraw(ctx, x);
+}
+function crReqDraw(ctx, x) {
   const st = crReqStatus(x), pay = x.kind === "payment", open = x.status === "open", det = x.kind === "details" || x.kind === "familydetails";
-  const again = y => crReqOpen(ctx, y || x);
+  const again = y => crReqDraw(ctx, Object.assign({ _related: x._related }, y || x));
   const fields = [["Request", x.requestId], ["Kind", x.kindLabel || x.kind], ["Member", (x.fullName || x.memberId) + (x.displayId ? " · " + x.displayId : "")], ["Centre", x.centre || "—"],
     ["Raised", crDate(x.createdAt, true)]];
   const note = pay && !(x.parts && x.parts.length) && crPayIsNote(x.reference);
@@ -1433,11 +1478,15 @@ function crReqOpen(ctx, x) {
       },
       done: v => { const parts = crPayParts(v); setTimeout(() => done(fmtMoney(crPayTotal(parts)) + " posted in " + crPlural(parts.length, "entry", "entries") + " · they have been told"), 0); return null; } });
   };
-  const approvePlain = () => ctx.form({ title: "Approve · " + (x.subject || x.kindLabel), submit: "Approve and send", busyLabel: "Saving…",
-    intro: "A drafted reply — edit it, or send it as it is.",
+  const acts = crReqActs(x);
+  const approvePlain = () => ctx.form({ title: acts[0] + " · " + (x.subject || x.kindLabel), submit: acts[0].replace(/ —.*/, "") + " and send", busyLabel: "Saving…",
+    intro: x.kind === "appeal" ? "Upholding the appeal overturns the decision: " + (/^fine\b/i.test(x.subject || "") ? "the fine comes off the account" : "the sanction is lifted, with any fine or re-entry fee it carried")
+        + ". Say why — the family reads it. You cannot review an appeal against a decision you made yourself."
+      : acts[2] ? "Write the answer; it is sent and the request is closed." : "A drafted reply — edit it, or send it as it is.",
     values: { why: crReqDraftApprove(x) },
-    fields: [{ id: "why", l: "The reply", type: "textarea", rows: 5, max: 2000, help: x.byFamily ? "The family reads this." : "The member reads this." }],
-    onSubmit: v => NGGApi.admin.requests.decide(x.requestId, true, v.why || ""), done: () => { setTimeout(() => done("Approved — they have been told"), 0); return null; } });
+    fields: [{ id: "why", l: x.kind === "appeal" ? "Why it is upheld" : "The reply", type: "textarea", rows: 5, max: 2000, req: acts[2], help: x.byFamily ? "The family reads this." : "The member reads this." }],
+    onSubmit: v => { const t = String(v.why || "").trim(); if (acts[2] && t.length < 5) return { fieldErrors: { why: "Write a sentence or two — they read it." } }; return NGGApi.admin.requests.decide(x.requestId, true, t); },
+    done: () => { setTimeout(() => done(x.kind === "appeal" ? "Appeal upheld — they have been told" : "Done — they have been told"), 0); return null; } });
   const askMissing = rd && rd.asked && rd.asked.length ? () => ctx.form({ title: "Ask for the new " + rd.asked.map(a => a.label.toLowerCase()).join(" and "), submit: "Send", busyLabel: "Sending…",
     intro: "They named what to change but not what to change it to. This asks for it on the request, without deciding it.",
     values: { text: "Thank you. To change " + rd.asked.map(a => "the " + a.label.toLowerCase() + (a.current ? " (it is " + a.current + " on the record now)" : "")).join(" and ") + ", please reply with the new " + (rd.asked.length > 1 ? "details" : rd.asked[0].label.toLowerCase()) + " and we will update it straight away." },
@@ -1450,8 +1499,8 @@ function crReqOpen(ctx, x) {
     if (det) actions.push({ l: rd.changes.length ? "Change it (" + crPlural(rd.changes.length, "field") + ")" : "Change their details", primary: true, run: () => crReqApplyDetails(ctx, x, done) });
     if (askMissing) actions.push({ l: "Ask for the new value", primary: !rd.changes.length && !det, run: askMissing });
     if (pay) actions.push(ctx.can("fees") ? { l: "Approve and post", primary: true, run: approvePay } : { l: "Approving needs the Fees permission", disabled: true });
-    else if (!det) actions.push({ l: "Approve", primary: true, run: approvePlain });
-    actions.push({ l: "Decline", run: () => crReqDecline(ctx, x, done) });
+    else if (!det) actions.push({ l: acts[0], primary: true, run: approvePlain });
+    actions.push({ l: pay || det ? "Decline" : acts[1], run: () => crReqDecline(ctx, x, done) });
   }
   if (x.status !== "withdrawn" && x.memberId) actions.push({ l: "Send a message", run: () => crReqMessage(ctx, x, again) });
   if (x.proofUrl) actions.push({ l: "Open the receipt", run: () => window.open(x.proofUrl, "_blank", "noopener") });
@@ -1468,6 +1517,10 @@ function crReqOpen(ctx, x) {
         .concat(rd.asked.map(a => ({ icon: "question", t: a.label + " — no new value given", s: "On the record now: " + (a.current || "nothing") + ". Ask them for it." }))) } : null,
       note ? { h: "What they wrote about the payment", text: x.reference } : null,
       { h: "What they wrote", text: x.body || "", empty: "Nothing beyond the subject." },
+      (x._related || []).length ? { h: "Their other open requests", list: x._related.map(y => ({ icon: y.kind === "leave" || y.kind === "academic" ? "calendar-x" : "tray",
+          t: (y.subject || y.kindLabel || y.kind), s: (y.kindLabel || y.kind) + " · " + y.requestId + " · raised " + crDate(y.createdAt),
+          act: { l: "Open", run: () => crReqDraw(ctx, Object.assign({ _related: [x].concat(x._related.filter(z => z.requestId !== y.requestId)) }, y)) } })),
+        tip: x.kind === "appeal" && open && x._related.some(y => y.kind === "leave") ? "There is leave waiting. Excusing it does not lift this fine on its own — decide both." : "" } : null,
       (x.comments || []).length ? { h: "Messages", list: x.comments.map(m => ({ icon: "chat-circle-text", t: m.text, s: m.byName + " · " + crDate(m.at, true) })) } : null,
       { h: "The reply", text: x.decision || "", empty: open ? "Not decided yet." : x.status === "withdrawn" ? "Withdrawn before anyone decided it." : "Decided without a written reply." },
     ].filter(Boolean),
@@ -1705,7 +1758,7 @@ Object.assign(CR_TAB_DEFS, {
     skeleton: ["table"],
     load: async () => {
       const r = await NGGApi.admin.registration.centres();
-      return { centres: r.centres || [], leadOptions: r.leadOptions || [], canWrite: r.canWrite !== false, cacentre: !!r.cacentre };
+      return { centres: r.centres || [], leadOptions: r.leadOptions || [], canWrite: r.canWrite !== false, cacentre: !!r.cacentre, cac: r.cacentre || null };
     },
     /* Once CACENTRE's locations list has arrived, centres are added there, not
        here (domain/cac-locations.php): no button the server would refuse. */
@@ -1716,6 +1769,12 @@ Object.assign(CR_TAB_DEFS, {
       if (c && (sub === "map" || sub === "summer") && d.canWrite) return [{ type: "custom", span: 6, render: c2 => <CrCeSubEditor ctx={c2 || ctx} c={c} which={sub}/> }];
       const out = [];
       if (!d.canWrite) out.push({ type: "note", span: 6, icon: "lock-simple", text: "You can see the directory but not change it.", sub: "A centre’s code and colour are printed on member ID cards, so changing one needs the member-desk (people) permission." });
+      /* The old directory said where centres are added once CACENTRE runs the list; moving to this screen
+         dropped the sentence and kept only the missing button, so an admin was left looking for "Add a
+         centre" with nothing to say it lives in CACENTRE now. */
+      if (d.cacentre) out.push({ type: "note", span: 6, icon: "info", cls: "centres-cac-note", text: "Centres come from CACENTRE.",
+        sub: "Its locations list is the only list of places: a location added, renamed or taken off in CACENTRE → Attendance → Desks and settings → Locations is added, renamed (with every record that names it) or retired here within minutes. The code, colour, address, lead and page are still set here."
+          + (d.cac && d.cac.at ? " Last update from CACENTRE: " + fmtDateTime(d.cac.at) + "." : "") });
       const unmappedList = d.centres.filter(x => x.lat == null && x.status !== "retired"), unmapped = unmappedList.length;
       if (unmapped && d.canWrite) out.push({ type: "note", span: 6, icon: "map-pin", tone: "warn", text: crPlural(unmapped, "centre") + " not mapped yet.",
         act: { l: "Map " + unmappedList[0].name, run: () => ctx.setSub(unmappedList[0].centreId + "/map") }, sub: "Without a map the check-in desk cannot confirm someone is at the centre. Open one and choose Map and geo-fence." });
@@ -1729,7 +1788,7 @@ Object.assign(CR_TAB_DEFS, {
         rows: d.centres.map(c2 => ({
           key: c2.centreId,
           cells: [
-            { k: "strong", t: c2.name, s: c2.code },
+            { k: "strong", t: c2.name, s: c2.code + (d.cacentre ? (c2.cacLocationId ? " · From CACENTRE" : " · Not a CACENTRE location") : "") },
             { k: "text", t: c2.area || "—", s: c2.address || "" },
             { k: "text", t: crCeProgLabel(c2) },
             { k: "text", t: [crCeProgs(c2).indexOf("ngg") !== -1 ? (c2.leadName || "No NGG lead") : null, crCeProgs(c2).indexOf("summer") !== -1 ? (c2.summerLeadName ? "Summer · " + c2.summerLeadName : "No Summer lead") : null].filter(Boolean).join(" · ") },
@@ -1914,12 +1973,14 @@ const CR_CP_TONE = { placed: ["Placed", "ok"], unplaced: ["Proposed", "warn"], n
 function crCpWhy(r) {
   if (r.flag === "other_division") return "Their card also names " + (r.dropped || []).slice(0, 3).join(", ") + ((r.dropped || []).length > 3 ? "…" : "") + ", another division. Add it only if they really take both."
     + ((r.courses || []).length > 3 ? " The proposal is a whole division: keep only the courses they take." : "");
+  if (r.flag === "division_only") return "Only their division is known (“" + (r.track || "their record") + "”), so they take its shared foundation course. Choose the course they take.";
+  if (r.flag === "several") return "Their card names more than one course; they take " + ((r.courses || [])[0] || "the first") + " for now. Also named: " + (r.alternatives || []).slice(0, 3).join(", ") + ". Confirm the one they take.";
   if (r.flag === "whole_division") return "A whole division was proposed from “" + (r.track || "their record") + "”. Keep only the courses they take.";
   if (r.flag === "no_match") return "Nothing on their record names a course. Choose theirs.";
+  if (r.status === "unplaced" && r.from === "division_major") return "Only their division is known (“" + (r.track || "their record") + "”), so they start on its major, " + ((r.courses || [])[0] || "its main course") + ". Confirm it, or choose the course they take.";
   if (r.status === "unplaced") return "From their " + (r.from === "interests" ? "interests" : r.from === "division" ? "division" : "track") + ".";
   return r.confirmedAt ? "Placed " + crDate(r.confirmedAt) + "." : "Chosen on their record.";
 }
-const crCpAll = d => (d.catalogue || []).reduce((a, x) => a.concat(x.courses.filter(c => a.indexOf(c) < 0)), []);
 function crCpOpts(d) { return (d.catalogue || []).reduce((a, x) => a.concat(x.courses.filter(c => !a.some(o => o[0] === c)).map(c => [c, c + " · " + x.division])), []); }
 async function crCpRun(ctx, action, keys, extra, verb) {
   const r = await NGGApi.admin.courses.set(action, keys, extra);

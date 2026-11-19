@@ -3,7 +3,8 @@
  * Two-step sign-in (domain/mfa.php) for whoever is signed in: a member, a
  * card-holding volunteer/instructor/mentor, or (?who=family) a guardian.
  * Reachable by a session that still OWES its second step — this is where it
- * pays it — and passing (or a desk's ten-minute let-in) re-signs the cookie.
+ * pays it — and passing (the step, a backup code, or a one-time code from the
+ * desk) re-signs the cookie.
  *
  * GET                       status: kind, methods, enrolled, policy, pending
  * POST action=challenge     what to ask (and sends the email code)
@@ -34,9 +35,15 @@ $clear = function () use ($family, &$f, &$s) {
 };
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'GET') {
+    /* Let in by the desk while this step screen was open: the 10-minute
+       window lets ONE sign-in through, and this waiting session takes it. It
+       used to clear on any status read for the whole window, so every session
+       owing the step was let in; now the first one closes it. */
+    if ($pending !== '' && $pending !== 'enroll') {
+        $w = gs_call('mfa.window', $base);
+        if (!empty($w['taken'])) { $clear(); $pending = ''; }
+    }
     $res = gs_call('mfa.status', $base);
-    // Let in by the desk while this screen was open: nothing is owed any more.
-    if (!empty($res['ok']) && $pending !== '' && (int)($res['bypassUntil'] ?? 0) > time()) { $clear(); $pending = ''; }
     if (!empty($res['ok'])) $res['pending'] = $pending;
 } elseif ($method === 'POST') {
     $b = read_json_body();

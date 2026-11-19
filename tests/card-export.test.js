@@ -81,10 +81,16 @@ function loadChromium() {
        * card sets one heading at 800. So the browser has no reason to have
        * fetched it, and the "before" reading below is the control that keeps
        * the "after" reading from being vacuous. */
-      const fontBefore = document.fonts.check('600 16px "Inter"');
+      /* Read each face's OWN status. document.fonts.check() is not a load test on every
+         Chromium: on the 1243 build it answers true for a face that is still "unloaded"
+         (a system fallback can draw it), which made the control below read "already loaded"
+         when nothing had fetched the 600. ensureFonts() itself calls fonts.load() and never
+         consults check(), so this changes the measurement, not what is under test. */
+      const faceLoaded = w => [...document.fonts].some(f => f.family.replace(/["']/g, '') === 'Inter' && String(f.weight) === String(w) && f.status === 'loaded');
+      const fontBefore = faceLoaded(600);
       await CE.ensureFonts();
-      const fontAfter = document.fonts.check('600 16px "Inter"');
-      const fontHeavyAfter = document.fonts.check('800 42px "Inter"');
+      const fontAfter = faceLoaded(600);
+      const fontHeavyAfter = faceLoaded(800);
 
       /* ── Barcode verification ────────────────────────────────────────────
        * The one export failure that cannot be seen and cannot be fixed after
@@ -458,7 +464,7 @@ function loadChromium() {
     const hung = await hungPage.evaluate(async () => {
       const t = performance.now();
       await window.CardExport.ensureFonts();
-      return { ms: performance.now() - t, loaded: document.fonts.check('600 16px "Inter"') };
+      return { ms: performance.now() - t, loaded: [...document.fonts].some(f => f.family.replace(/["']/g, '') === 'Inter' && String(f.weight) === '600' && f.status === 'loaded') };
     });
     await hungPage.close();
 

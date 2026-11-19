@@ -212,7 +212,7 @@ async function pageFor(cookies, dev, opts) {
     await waitForBoot(A);
     await A.waitForSelector('.ngp-nudge', { timeout: 60000 }).catch(() => {});
     const nudge = await A.$('.ngp-nudge');
-    chk('Control Room: the inbox asks, once, with what it would tell them', !!nudge && /Know when something new lands here/.test(await nudge.innerText()));
+    chk('Control Room: the inbox asks, once, with what it would tell them', !!nudge && /requests and messages/i.test(await nudge.innerText()));   // the compact strip (5568aee) names what it will send
     await A.screenshot({ path: path.join(SHOTS, 'admin-nudge.png') });
     await A.click('.ngp-nudge button:has-text("Turn on")');
     await A.waitForFunction(() => /notifications are on/i.test((document.querySelector('.ngp-nudge') || {}).innerText || ''), null, { timeout: 15000 }).catch(() => {});

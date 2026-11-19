@@ -646,6 +646,8 @@ function community_actor_is_staff(string $actorId): bool {
  * this is the per-author behaviour guard.)
  */
 function community_spam_check(string $memberId, string $body): ?string {
+    // A staff broadcast mirrored by community_announce() is one post per message, deduped by its source.
+    if (!empty($GLOBALS['__community_announce'])) return null;
     $recent = db_all("SELECT createdAt, body FROM community_posts WHERE authorId = ? ORDER BY createdAt DESC LIMIT 20", [$memberId]);
     if (!$recent) return null;
     $now = time();
@@ -1211,6 +1213,57 @@ function community_parse_og(string $html, string $url, string $host): array {
         'image' => mb_substr($img, 0, 1024),
         'site' => mb_substr(trim($site), 0, 80),
     ];
+}
+
+/**
+ * A staff broadcast — a quick message, a club announcement, an official notice —
+ * shown in Community as a pinned Announcement in the commons, by the person who
+ * sent it. Once per source (`sourceRef`, e.g. "ann:ANN-…"): a resend, a cron
+ * retry or a second press finds it there and posts nothing. It goes through
+ * community_post_create(), so the staff-only rule and the safeguarding screen
+ * apply as they do to a post written in the composer. A message for one centre
+ * says so in its first line, because the commons is every centre's.
+ * Money reminders never come here: they are one family's business.
+ *
+ * @return array{ok:bool, postId?:string, existed?:bool, error?:string}
+ */
+function community_announce(string $authorId, string $sourceRef, string $title, string $body, string $centre = '', string $link = ''): array {
+    $sourceRef = mb_substr(trim($sourceRef), 0, 80);
+    if ($authorId === '' || $sourceRef === '') return ['ok' => false, 'error' => 'bad_request'];
+    if ($have = db_row('SELECT postId FROM community_posts WHERE sourceRef = ? LIMIT 1', [$sourceRef])) return ['ok' => true, 'postId' => (string)$have['postId'], 'existed' => true];
+    if (!community_actor_is_staff($authorId)) return ['ok' => false, 'error' => 'not_staff'];
+    $title = trim(preg_replace('/\s+/', ' ', $title));
+    $head = ($centre !== '' && $centre !== 'all' ? 'For ' . $centre . ' centre — ' : '') . ($title !== '' ? $title : 'From NGG');
+    $text = mb_substr($head, 0, 140) . "\n" . trim($body) . ($link !== '' ? "\n\nRead it in full: " . $link : '');
+    $GLOBALS['__community_announce'] = true;
+    try {
+        $r = community_post_create(['memberId' => $authorId, 'data' => ['body' => mb_substr($text, 0, 2000), 'kind' => 'announce', 'channel' => 'commons']]);
+    } finally { unset($GLOBALS['__community_announce']); }
+    if (empty($r['ok']) || empty($r['post']['postId'])) return ['ok' => false, 'error' => (string)($r['error'] ?? 'failed')];
+    db_update('community_posts', ['sourceRef' => $sourceRef], ['postId' => (string)$r['post']['postId']]);
+    return ['ok' => true, 'postId' => (string)$r['post']['postId'], 'queued' => !empty($r['queued'])];
+}
+
+/**
+ * Whether a broadcast to this audience belongs in Community, and the centre its
+ * first line names. Community is the NGG members' space: a Summer School-only
+ * message, or one for guardians only, does not go there.
+ * $audience is an admin_broadcast_audience() key: 'all', 'NGG', 'Summer' or a centre name.
+ * @return array{ok:bool, centre:string, why?:string}
+ */
+function community_announce_fits(string $audience, string $reach = 'both'): array {
+    if ($reach === 'guardians') return ['ok' => false, 'centre' => '', 'why' => 'This goes to guardians only; Community is the members’ space.'];
+    if ($audience === 'Summer') return ['ok' => false, 'centre' => '', 'why' => 'Community is for NGG members; Summer School participants are not in it.'];
+    return ['ok' => true, 'centre' => in_array($audience, ['all', 'NGG', ''], true) ? '' : $audience];
+}
+
+/** A broadcast withdrawn at its source comes down from Community too (status 'removed', as moderation removes). */
+function community_announce_withdraw(string $sourceRef, string $by = ''): bool {
+    $r = db_row("SELECT postId FROM community_posts WHERE sourceRef = ? AND status <> 'removed' LIMIT 1", [$sourceRef]);
+    if (!$r) return false;
+    db_update('community_posts', ['status' => 'removed', 'pinned' => 0, 'updatedAt' => now_iso()], ['postId' => (string)$r['postId']]);
+    audit('community.announce.withdraw', $by ?: 'system', (string)$r['postId'], ['source' => $sourceRef]);
+    return true;
 }
 
 function community_post_create(array $p): array {

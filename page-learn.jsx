@@ -32,7 +32,7 @@
    It does not draw a second lesson. `LearnLesson` is the only renderer for a
    lesson in this app, and it reuses the pieces that already exist and are
    already tested — CurriculumText, CurriculumMaterials, CurCheckField,
-   DashOpeningReview, DashLessonFeedback — rather than forking them
+   DashLessonFeedback, and the exam player LrnExam — rather than forking them
    (CLAUDE.md §11). What is new here is the PLACE, not the parts.
 
    Mobile first, not scaled down: one column, 44px targets, a bottom bar on a
@@ -41,14 +41,58 @@
    ========================================================================== */
 
 const LRN_NAV = [
-  { id: "week",    path: "/learn",         label: "This week", icon: "ph ph-calendar-check" },
-  { id: "courses", path: "/learn/courses", label: "My courses", icon: "ph ph-books" },
+  /* `phone`: on the phone's bottom bar. Seven did not fit 360px — labels wrapped and the first was clipped
+     — so the four used most stay on the bar and the rest open from "More". The rail shows all seven. */
+  { id: "week",    path: "/learn",         label: "This week", icon: "ph ph-calendar-check", phone: true },
+  { id: "courses", path: "/learn/courses", label: "My courses", short: "Courses", icon: "ph ph-books", phone: true },
   { id: "timetable", path: "/learn/timetable", label: "Timetable", icon: "ph ph-clock" },
   { id: "plan",    path: "/learn/plan",    label: "School",     icon: "ph ph-exam" },
-  { id: "review",  path: "/learn/review",  label: "Review",     icon: "ph ph-target" },
+  { id: "review",  path: "/learn/review",  label: "Review",     icon: "ph ph-target", phone: true },
   { id: "notes",   path: "/learn/notes",   label: "Notes",      icon: "ph ph-note-pencil" },
-  { id: "helper",  path: "/learn/helper",  label: "Helper",     icon: "ph ph-sparkle" },
+  { id: "helper",  path: "/learn/helper",  label: "Helper",     icon: "ph ph-sparkle", phone: true },
 ];
+
+/**
+ * The nav: a rail on a wide screen with every place, and on a phone a bottom bar of the four used most plus
+ * "More", which opens the rest in a small sheet (Escape or a tap outside closes it; focus returns to More).
+ */
+function LearnNav({ here }) {
+  const [more, setMore] = React.useState(false);
+  const btn = React.useRef(null), sheet = React.useRef(null);
+  const extra = LRN_NAV.filter(n => !n.phone);
+  const extraOn = extra.some(n => n.id === here);
+  React.useEffect(() => { setMore(false); }, [here]);
+  React.useEffect(() => {
+    if (!more) return;
+    const key = e => { if (e.key === "Escape") { setMore(false); btn.current && btn.current.focus(); } };
+    const away = e => { if (sheet.current && !sheet.current.contains(e.target) && btn.current && !btn.current.contains(e.target)) setMore(false); };
+    document.addEventListener("keydown", key); document.addEventListener("pointerdown", away);
+    const first = sheet.current && sheet.current.querySelector("a"); if (first) first.focus();
+    return () => { document.removeEventListener("keydown", key); document.removeEventListener("pointerdown", away); };
+  }, [more]);
+  const item = (n, cls) => (
+    <a key={n.id} href={n.path} aria-current={here === n.id ? "page" : undefined}
+       className={cls + (here === n.id ? " is-on" : "") + (n.phone ? "" : " is-extra") + (n.short ? " has-short" : "")}
+       onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); setMore(false); lrnGo(n.path); }}>
+      <i className={here === n.id ? n.icon.replace("ph ", "ph-fill ") : n.icon} aria-hidden="true"/>
+      <span className="lrn-rail-label">{n.label}</span>
+      {n.short && <span className="lrn-rail-short" aria-hidden="true">{n.short}</span>}
+    </a>);
+  return (
+    <nav className="lrn-rail" aria-label="Learn">
+      {LRN_NAV.map(n => item(n, "lrn-rail-item"))}
+      <button ref={btn} type="button" className={"lrn-rail-item lrn-rail-more" + (extraOn || more ? " is-on" : "")}
+        aria-expanded={more} aria-haspopup="true" aria-controls="lrn-more" onClick={() => setMore(v => !v)}>
+        <i className={extraOn || more ? "ph-fill ph-dots-three-circle" : "ph ph-dots-three-circle"} aria-hidden="true"/><span>More</span>
+      </button>
+      {more && <div ref={sheet} id="lrn-more" className="lrn-more" role="menu" aria-label="More in Learn">
+        {extra.map(n => <a key={n.id} role="menuitem" href={n.path} aria-current={here === n.id ? "page" : undefined}
+          className={"lrn-more-item" + (here === n.id ? " is-on" : "")}
+          onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); setMore(false); lrnGo(n.path); }}>
+          <i className={n.icon} aria-hidden="true"/><span>{n.label}</span></a>)}
+      </div>}
+    </nav>);
+}
 
 /** A course name → the slug its address uses, and back. */
 function lrnSlug(course) {
@@ -735,6 +779,8 @@ function LearnCourse({ d, slug, aw, onAim, tt }) {
           );
         })}
       </ol>
+      {/* Mastery, Starter to God, the Trial and the course's certificates (lrn-exam.jsx). */}
+      {name !== "Whole Club" && <LrnMastery course={name}/>}
       <LearnAwards aw={aw} course={name} onAim={onAim} onRetry={onAim}/>
     </div>
   );
@@ -904,6 +950,84 @@ function LearnNote({ unitId, mine, onSaved }) {
   );
 }
 
+/* ── The lesson in steps (owner, 14 Nov 2026: "the learn lessons for the younger is kinda not easy for
+   them to comprehend") ─────────────────────────────────────────────────────────────────────────────────
+   Measured: the Foundation lessons read at about grade 5 by formula, with ten-word sentences, so the words
+   were never the problem. A lesson was about 450 words in ONE scroll, with its key words AFTER the
+   explanation that uses them and research papers beside the teaching. Two of the best-replicated findings
+   in multimedia learning answer exactly that: SEGMENTING (learner-paced chunks beat one continuous text,
+   most for novices) and PRE-TRAINING (meeting the names of the key ideas before the explanation that uses
+   them) (Mayer & Pilegard; Mayer 2009). Children's UX says the same: chunk content, short steps, progress
+   you can see (UXmatters, "UX design for kids", 2020).
+   So the lesson is shown one step at a time, the key words first, a long explanation cut into pieces of
+   about LRN_STEP_WORDS words (a picture stays with the text it shows), the further reading last and marked
+   optional. Every other section keeps the author's order. A lesson with no sections, or a short one, is
+   shown whole, as before; and anybody may switch to the whole lesson on one page (remembered), because the
+   same scaffolding that helps a beginner gets in an experienced reader's way (expertise reversal). */
+const LRN_STEP_WORDS = 110;
+function lrnLessonSteps(body) {
+  const src = String(body || "").replace(/\r\n?/g, "\n").trim();
+  const words = t => (String(t).replace(/```[\s\S]*?```/g, " ").match(/[A-Za-z0-9’']+/g) || []).length;
+  if (!src || words(src) < 160) return null;
+  const parts = src.split(/^##[ \t]+(.+)$/m);   // [intro, h1, body1, h2, body2, …]
+  if (parts.length < 5) return null;           // fewer than two sections: not a lesson in parts
+  const secs = [];
+  if (parts[0].trim()) secs.push({ h: "Before we start", md: parts[0].trim() });
+  for (let i = 1; i < parts.length; i += 2) secs.push({ h: parts[i].trim(), md: (parts[i + 1] || "").trim() });
+  const isKey = x => /^key (words|terms)|^words you/i.test(x.h), isMore = x => /^(read and watch|going further|further reading)/i.test(x.h);
+  // Key words before the first explanation; further reading last.
+  const keys = secs.filter(isKey), more = secs.filter(isMore), rest = secs.filter(x => !isKey(x) && !isMore(x));
+  const firstExplain = rest.findIndex(x => /^understand|^how it works|^the idea/i.test(x.h));
+  const ordered = firstExplain >= 0 ? rest.slice(0, firstExplain).concat(keys, rest.slice(firstExplain)) : keys.concat(rest);
+  const out = [];
+  ordered.concat(more).forEach(x => {
+    if (!x.md) return;
+    const h = isKey(x) ? "Words you’ll meet" : isMore(x) ? "Going further (optional)" : x.h;
+    // Cut a long section at paragraph breaks, never inside a code block; a picture or list joins the text before it.
+    const blocks = /```/.test(x.md) ? [x.md] : x.md.split(/\n{2,}/);
+    const chunks = []; let cur = [], n = 0;
+    blocks.forEach(b => {
+      const lead = /^!\[|^\s*[-*]\s|^\s*\d+[.)]\s/.test(b);
+      // A picture or a list stays with a SHORT lead-in ("Bias gets in several ways:"), never with a full step.
+      if (cur.length && n + words(b) > LRN_STEP_WORDS && !(lead && n < LRN_STEP_WORDS * 0.5)) { chunks.push(cur.join("\n\n")); cur = []; n = 0; }
+      cur.push(b); n += words(b);
+    });
+    if (cur.length) chunks.push(cur.join("\n\n"));
+    chunks.forEach((md, k) => out.push({ h: chunks.length > 1 ? h + " (" + (k + 1) + " of " + chunks.length + ")" : h, md, optional: isMore(x) }));
+  });
+  return out.length >= 2 ? out : null;
+}
+function lrnWholePref() { try { return localStorage.getItem("lrn.wholeLesson") === "1"; } catch (_) { return false; } }
+function LearnSteps({ steps, body, unitId }) {
+  const [i, setI] = React.useState(0);
+  const [whole, setWhole] = React.useState(lrnWholePref);
+  const hRef = React.useRef(null), moved = React.useRef(false);
+  React.useEffect(() => { setI(0); moved.current = false; }, [unitId]);
+  React.useEffect(() => { if (moved.current && hRef.current) { hRef.current.focus({ preventScroll: true }); hRef.current.scrollIntoView({ block: "start", behavior: "smooth" }); } }, [i]);
+  const setWholePref = on => { setWhole(on); try { localStorage.setItem("lrn.wholeLesson", on ? "1" : "0"); } catch (_) {} };
+  const go = k => { moved.current = true; setI(Math.max(0, Math.min(steps.length - 1, k))); };
+  const toggle = <button type="button" className="lrn-step-whole" aria-pressed={whole} onClick={() => setWholePref(!whole)}>
+    <i className={whole ? "ph ph-list-numbers" : "ph ph-article"} aria-hidden="true"/>{whole ? "Show it step by step" : "Whole lesson on one page"}</button>;
+  if (whole) return <>
+    <div className="lrn-sec-bar"><h2 className="lrn-sec-h">The lesson</h2><span className="lrn-step-tools"><LearnReadAloud text={body} label="the lesson"/>{toggle}</span></div>
+    <CurriculumText text={body}/>
+  </>;
+  const st = steps[i], last = i === steps.length - 1;
+  return <>
+    <div className="lrn-sec-bar"><h2 className="lrn-sec-h">The lesson</h2><span className="lrn-step-tools"><LearnReadAloud text={st.md} label="this step"/>{toggle}</span></div>
+    <div className="lrn-step-progress" role="progressbar" aria-label="How far through the lesson" aria-valuemin="1" aria-valuemax={steps.length} aria-valuenow={i + 1} aria-valuetext={"Step " + (i + 1) + " of " + steps.length}>
+      <span style={{ width: Math.round((i + 1) / steps.length * 100) + "%" }}/></div>
+    <p className="lrn-note lrn-step-count" aria-hidden="true">Step {i + 1} of {steps.length}</p>
+    <h3 className="lrn-step-h" ref={hRef} tabIndex={-1}>{st.h}</h3>
+    <CurriculumText text={st.md}/>
+    <div className="lrn-step-nav">
+      <button type="button" className="lrn-btn is-ghost" onClick={() => go(i - 1)} disabled={i === 0}><i className="ph ph-arrow-left" aria-hidden="true"/> Back</button>
+      {last ? <p className="lrn-step-done" role="status"><i className="ph-fill ph-check-circle" aria-hidden="true"/> You’ve read the whole lesson. The questions are below.</p>
+        : <button type="button" className="lrn-btn" onClick={() => go(i + 1)}>{steps[i + 1].optional ? "Going further (optional)" : "Next"} <i className="ph ph-arrow-right" aria-hidden="true"/></button>}
+    </div>
+  </>;
+}
+
 function LearnLesson({ unitId, onDone, units }) {
   const [saved, setSaved] = React.useState(false);
   const [marking, setMarking] = React.useState(false);
@@ -987,7 +1111,9 @@ function LearnLesson({ unitId, onDone, units }) {
         {p && p.stale && <p className="lrn-note">This lesson's questions have changed since you sat them — your earlier score was on the older ones.</p>}
       </header>
 
-      {!opened && <DashOpeningReview review={d.review} onDone={() => setStarted(true)} onSkip={() => setStarted(true)}/>}
+      {/* The session exam (lrn-exam.jsx) — standard, timed, on by default. It comes FIRST and today's
+          teaching waits behind it; a learner who was away may skip, and it stays due. */}
+      {!opened && <LrnExam start={{ unitId }} onDone={() => setStarted(true)} onSkip={() => setStarted(true)}/>}
 
       {opened && u.objectives.length > 0 && (
         <section className="lrn-sec">
@@ -998,11 +1124,13 @@ function LearnLesson({ unitId, onDone, units }) {
 
       {opened && (u.body || u.materials.length > 0) && (
         <section className="lrn-sec">
-          <div className="lrn-sec-bar">
-            <h2 className="lrn-sec-h">The lesson</h2>
-            <LearnReadAloud text={u.body} label="the lesson"/>
-          </div>
-          <CurriculumText text={u.body}/>
+          {lrnLessonSteps(u.body) ? <LearnSteps steps={lrnLessonSteps(u.body)} body={u.body} unitId={unitId}/> : <>
+            <div className="lrn-sec-bar">
+              <h2 className="lrn-sec-h">The lesson</h2>
+              <LearnReadAloud text={u.body} label="the lesson"/>
+            </div>
+            <CurriculumText text={u.body}/>
+          </>}
           <CurriculumMaterials materials={u.materials} fileUrl={curMemberFile}/>
         </section>
       )}
@@ -1016,7 +1144,8 @@ function LearnLesson({ unitId, onDone, units }) {
           <h2 className="lrn-sec-h">Next session's review</h2>
           <p className="lrn-note">
             You'll be asked {u.checks.length === 1 ? "this" : "these"} at the start of your next session, from memory.
-            Have a go now if you like — it is the remembering a week later that makes it stick. Pass mark {u.passMark}%.
+            Have a go now if you like — passing today still finishes the lesson, and you will be asked again from memory, because it is the remembering a week later that makes it stick.
+            Pass mark {u.passMark}%. A wrong answer is marked, not given away: the answers appear once you pass, or after {(p && p.revealAfter) || 3} tries.
             {p && p.attempts > 0 ? " Attempts so far: " + p.attempts + "." : ""}
           </p>
           {u.checks.map((c, i) => (
@@ -1347,10 +1476,14 @@ function LearnNotes({ d }) {
 function LearnReview({ d }) {
   if (!d) return <div className="lrn-wait" role="status" aria-label="Loading"/>;
   const units = (d.units || []);
-  /* A lesson carries the questions you are asked about it a week later. What
-     is waiting is every lesson you have not finished that has questions on
-     it — which is exactly what the next session will open with. */
-  const waiting = units.filter(u => u.checks > 0 && (!u.progress || u.progress.status !== "completed"));
+  /* A lesson carries the questions you are asked about it a week later, from
+     memory. Two different things wait: lessons not finished at all, and
+     lessons passed on the day — with the lesson still above the questions —
+     that have not yet been answered from memory. The second used to be
+     counted as done, which is how the week-later review stopped happening. */
+  const asked = units.filter(u => u.checks > 0 && !(u.progress && u.progress.recalled));
+  const waiting = asked.filter(u => !u.progress || u.progress.status !== "completed");
+  const recall = asked.filter(u => u.progress && u.progress.status === "completed");
   const marked = units.filter(u => u.progress && u.progress.pending);
   return (
     <div className="lrn-stack">
@@ -1366,14 +1499,21 @@ function LearnReview({ d }) {
           <ul className="lrn-list">{marked.map(u => <LearnLessonCard key={u.unitId} u={u} showCourse/>)}</ul>
         </section>
       )}
+      {recall.length > 0 && (
+        <section className="lrn-group" aria-label="Passed on the day">
+          <h2 className="lrn-group-h">Passed on the day — still to remember</h2>
+          <p className="lrn-note">You got these right with the lesson in front of you. You will be asked them again from memory at your next session in that course.</p>
+          <ul className="lrn-list">{recall.map(u => <LearnLessonCard key={u.unitId} u={u} showCourse/>)}</ul>
+        </section>
+      )}
       {waiting.length > 0 ? (
         <section className="lrn-group" aria-label="To be asked">
           <h2 className="lrn-group-h">You will be asked about these</h2>
           <ul className="lrn-list">{waiting.map(u => <LearnLessonCard key={u.unitId} u={u} showCourse/>)}</ul>
         </section>
-      ) : (
+      ) : recall.length > 0 ? null : (
         <div className="lrn-empty"><i className="ph-fill ph-check-circle" aria-hidden="true"/>
-          <h2>Nothing waiting.</h2><p>You have finished every lesson that has questions on it.</p></div>
+          <h2>Nothing waiting.</h2><p>You have answered every lesson's questions from memory.</p></div>
       )}
     </div>
   );
@@ -1456,16 +1596,7 @@ function LearnApp() {
         <a className="lrn-exit" href="/dashboard"><i className="ph ph-arrow-u-up-left" aria-hidden="true"/><span>My portal</span></a>
       </header>
 
-      <nav className="lrn-rail" aria-label="Learn">
-        {LRN_NAV.map(n => (
-          <a key={n.id} href={n.path} aria-current={here === n.id ? "page" : undefined}
-             className={"lrn-rail-item" + (here === n.id ? " is-on" : "")}
-             onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); lrnGo(n.path); }}>
-            <i className={here === n.id ? n.icon.replace("ph ", "ph-fill ") : n.icon} aria-hidden="true"/>
-            <span>{n.label}</span>
-          </a>
-        ))}
-      </nav>
+      <LearnNav here={here}/>
 
       <main className={"lrn-main" + (view === "week" ? " is-wide" : "")}>
         {err && err !== "not_ngg_member" && view !== "lesson"

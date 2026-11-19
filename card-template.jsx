@@ -774,7 +774,7 @@ const TPL_SYSTEM = [
         color: "#6B7280", letterSpacing: 2.6 },
       { id: "idvalue", type: "text", x: 320, y: 786, w: 206, text: "{{displayId}}", size: 18, weight: 500,
         color: "#0B1F51", font: "monospace" },
-      { id: "mark", type: "image", x: 66, y: 832, w: 120, h: 40, fit: "contain", src: "/assets/logo.png" },
+      { id: "mark", type: "image", x: 66, y: 832, w: 120, h: 40, fit: "contain", src: "/assets/logo-1080.png" },
     ],
   },
 ];
@@ -831,7 +831,7 @@ const TPL_BRAND = {
   logos: [
     { name: "NGG lockup", url: "/assets/idcard/logo-lockup.png" },
     { name: "Street-To-Stardom", url: "/assets/idcard/logo-sts.svg" },
-    { name: "NGG mark", url: "/assets/logo.png" },
+    { name: "NGG mark", url: "/assets/logo-1080.png" },
   ],
 };
 
@@ -1105,7 +1105,8 @@ function MemberIDCard(props) {
         h("div", { key: "n", style: { fontWeight: 800, fontSize: 17, lineHeight: 1.15 } }, name),
         h("div", { key: "id", style: { fontFamily: "ui-monospace,Menlo,monospace", fontSize: 12, color: MUT, marginTop: 2 } }, m.memberId || ""),
         h("div", { key: "chips" }, [
-          m.centre ? chip("CACENTRE " + m.centre, "c") : null,
+          /* An online member's home is "NGG Online", not a CACENTRE building: the chip says just that. */
+          m.centre ? chip(/^ngg online$/i.test(String(m.centre).trim()) ? m.centre : "CACENTRE " + m.centre, "c") : null,
           m.track ? chip(m.track, "t") : null,
         ]),
       ]),
@@ -1308,7 +1309,7 @@ function NggcMemberCard(props) {
         h("span", { key: "c", style: { fontSize: pt(S.capPt), letterSpacing: ".16em", color: CAP } }, "SCAN TO VERIFY"),
       ]),
     ]),
-    h("img", { key: "logo", src: "/assets/logo.png", alt: "Next Generation Genius", crossOrigin: "anonymous", style: { width: mm(S.logoW), display: "block" } }),
+    h("img", { key: "logo", src: "/assets/logo-1080.png", alt: "Next Generation Genius", crossOrigin: "anonymous", style: { width: mm(S.logoW), display: "block" } }),
   ]);
 
   return h("div", { style: { width: mm(S.W), height: mm(S.H), background: "#fff", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", padding: "0 " + mm(S.padX) + " " + mm(S.padB), boxSizing: "border-box", fontFamily: "'Poppins',sans-serif", WebkitFontSmoothing: "antialiased" } }, [

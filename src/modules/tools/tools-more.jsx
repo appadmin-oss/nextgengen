@@ -178,7 +178,7 @@ function SttCalc() {
         <label className="stt-label" htmlFor="stt-calc-in">Sum</label>
         <input id="stt-calc-in" ref={ref} className="stt-input stt-calc-in" value={expr} onChange={e => { setErr(""); setExpr(e.target.value); }}
           placeholder="e.g. 2 × (3 + 4)^2 or sin(30)" autoComplete="off" spellCheck="false" inputMode="text" aria-describedby="stt-calc-out"/>
-        {/x/i.test(expr.replace(/max|exp/gi, "")) ? <button type="button" className="stt-link" onClick={() => sttGo("maths", "graph", { fn: expr })}><i className="ph ph-chart-line" aria-hidden="true"/>This has x in it — plot it as a graph</button> : null}
+        {/x/i.test(expr.replace(/max|exp/gi, "")) ? <button type="button" className="stt-link" onClick={() => sttGo("tools", "graph", { fn: expr })}><i className="ph ph-chart-line" aria-hidden="true"/>This has x in it — plot it as a graph</button> : null}
         <p id="stt-calc-out" className={"stt-calc-out" + (err ? " is-err" : "")} aria-live="polite">
           {err ? err : live && live.ok ? "= " + sttFormat(live.value) : ans != null ? "ans = " + sttFormat(ans) : " "}
         </p>

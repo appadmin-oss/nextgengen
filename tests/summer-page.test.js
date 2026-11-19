@@ -122,6 +122,8 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
       + `'pageStatus'=>'published','slug'=>'ijaiye','area'=>'Ijaiye · Lagos','tagline'=>'The room on Ijaiye Road','capacity'=>2,'createdAt'=>now_iso()]);`
       + `db_insert('centres', ['centreId'=>'CTR-EG','name'=>'Egbeda','code'=>'EG','color'=>'#3B5BDB','status'=>'active',`
       + `'pageStatus'=>'published','slug'=>'egbeda','area'=>'Egbeda · Lagos','tagline'=>'Where it started','capacity'=>0,'createdAt'=>now_iso()]);`
+      // Egbeda's own public sign-up link: /join?program=summer forwards to the live link for the centre.
+      + `db_insert('gate_links', ['gateId'=>'G-EG-SELF','name'=>'Egbeda sign-up','cohortId'=>'SUM-2026','kind'=>'self','centreId'=>'CTR-EG','status'=>'active','createdAt'=>now_iso()]);`
       // A group, so "Piano runs at Ijaiye" is a fact and not a hope.
       + `db_insert('summer_groups', ['groupId'=>'SG-PIA','cohortId'=>'SUM-2026','name'=>'Ijaiye · Piano · Morning',`
       + `'code'=>'IJ-PIA','centreId'=>'CTR-IJ','faculty'=>'Music','track'=>'Piano','status'=>'active','createdAt'=>now_iso()]);`
@@ -227,29 +229,33 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
         if (b) { b.click(); return; }
       }
     });
-    await page.waitForTimeout(1200);
+    /* "Apply here" goes through /join?program=summer, which forwards to the centre's own live
+       sign-up link (public.summer.signup) — Egbeda's, seeded above — carrying what was pressed. */
+    await page.waitForFunction(() => /^\/apply\?g=/.test(location.pathname + location.search), null, { timeout: 15000 }).catch(() => {});
     let url = await page.evaluate(() => window.location.pathname + window.location.search);
-    chk('"Apply here" opens the application form (' + url + ')', /^\/join\?/.test(url));
+    chk('"Apply here" opens that centre\'s own Summer School sign-up (' + url + ')', /^\/apply\?g=G-EG-SELF\b/.test(url));
     chk('…carrying the centre it was clicked on', /centre=Egbeda/.test(url));
-    chk('…and the Summer School programme, not the flagship', /program=summer/.test(url));
-    chk('…and the form actually opens with that centre chosen',
-      await page.evaluate(() => {
-        const sels = Array.from(document.querySelectorAll('select'));
-        return sels.some(s => s.value === 'Egbeda');
-      }));
+    const chosen = () => page.evaluate(() => Array.from(document.querySelectorAll('select')).map(s => s.value).filter(Boolean));
+    await page.waitForFunction(() => document.querySelectorAll('select').length > 0, null, { timeout: 20000 }).catch(() => {});
+    let picked = await chosen();
+    chk('…and the form opens with that centre chosen (' + picked.join(', ') + ')', picked.includes('Egbeda') || /Centre\s*·?\s*Egbeda/.test(await text()));
 
     // Back to the promotion page for the course CTA.
     await page.goto(BASE + '/summer', { waitUntil: 'domcontentloaded' });
     await waitForBoot(page);
     await page.waitForSelector('.summer-course', { timeout: 30000 });
     await page.waitForTimeout(1200);
+    await page.evaluate(() => { try { Object.keys(localStorage).filter(k => /selfreg|apply/i.test(k)).forEach(k => localStorage.removeItem(k)); } catch (_) {} });
     await page.evaluate(() => {
       const li = Array.from(document.querySelectorAll('.summer-course')).filter(x => /Piano/.test(x.innerText))[0];
       if (li) { const b = li.querySelector('button'); if (b) b.click(); }
     });
-    await page.waitForTimeout(1200);
+    await page.waitForFunction(() => /^\/apply\?g=/.test(location.pathname + location.search), null, { timeout: 15000 }).catch(() => {});
     url = await page.evaluate(() => window.location.pathname + window.location.search);
-    chk('"Apply for this" on a course carries the course (' + url + ')', /track=Piano/.test(url));
+    chk('"Apply for this" on a course carries the course to the sign-up (' + url + ')', /track=Piano/.test(url));
+    await page.waitForFunction(() => document.querySelectorAll('select').length > 0, null, { timeout: 20000 }).catch(() => {});
+    picked = await chosen();
+    chk('…and the form opens with that course (and its faculty) chosen, not asking again (' + picked.join(', ') + ')', picked.includes('Piano') && picked.includes('Music'));
 
     console.log('\n── A failed read is a failure, not an empty programme ───────');
     /* The old page did `.catch(() => setCohort([]))`, so a 500 rendered "the

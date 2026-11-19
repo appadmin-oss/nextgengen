@@ -80,7 +80,7 @@ function CrPill({ tone, t }) {
 /** Initials, or the photograph when there is one. */
 function CrAvatar({ name, photo, className }) {
   const [bad, setBad] = React.useState(false);
-  return <span className={className || "cr-ini"}>{photo && !bad ? <img src={photo} alt="" loading="lazy" onError={() => setBad(true)}/> : crInitials(name)}</span>;
+  return <span className={className || "cr-ini"}>{photo && !bad ? <img src={nggImg(photo, "avatar")} alt="" loading="lazy" onError={() => setBad(true)}/> : crInitials(name)}</span>;
 }
 
 /**
@@ -231,15 +231,6 @@ function crDownloadCsv(name, header, rows) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-/** Read a chosen file as a data URL (uploads go through the existing API as base64). */
-function crReadFile(file) {
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onload = () => resolve(fr.result);
-    fr.onerror = () => reject(new Error("read_failed"));
-    fr.readAsDataURL(file);
-  });
-}
 
 /* ── A v1 panel, mounted as a tab (page-admin.jsx) ─────────────────────────
    A tab not yet rebuilt as blocks mounts the panel that served it in v1, so

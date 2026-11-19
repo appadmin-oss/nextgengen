@@ -78,7 +78,9 @@ AddDefaultCharset UTF-8
   Header always set X-Content-Type-Options "nosniff"
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
   Header always set X-Frame-Options "SAMEORIGIN"
-  Header always set Permissions-Policy "geolocation=(), camera=(self), microphone=(), payment=(), interest-cohort=()"
+  # microphone=(self), not (): the member portal's voice notes and the English Lab's "Hear and say" step
+  # record from this site's own pages. A denied capability fails silently in the browser (6 Nov 2026).
+  Header always set Permissions-Policy "geolocation=(), camera=(self), microphone=(self), payment=(), interest-cohort=()"
   Header always set X-DNS-Prefetch-Control "on"
 
   # Strict-Transport-Security — uncomment AFTER HTTPS is verified and you're
@@ -131,7 +133,7 @@ AddDefaultCharset UTF-8
   # (files.example.org) must be added to connect-src and frame-src here by
   # hand, or uploads and printed photos fail with a CSP error in the console.
   Header always set Content-Security-Policy "default-src 'self'; \
-script-src 'self' 'sha256-ASeAsjmszLOr0kt3B2Fj+iQMh8bualLheARFcxKRI9I=' 'sha256-iv77ohL5NoZDmB5bgMtRdV+ze+tfKu5T4myH2jhEUgA=' 'sha256-mKIF9SO7F9PdewecOKNZgV6Rxs27qr2vGcMQWtIUTDI=' 'sha256-1kg2x4XteKTODYzGnkjEe1nQJYOSvlvJY4fdtuKo6OQ=' 'sha256-xHa/pnm6+KO5RpKF+7KJ2uoALZHW93H0tKhWCmyOsas=' 'sha256-0oum4Q4hYuyjH6H7YRlAYOwOsMf5vXmTkbTw7FVaheI=' 'unsafe-hashes' 'sha256-MguIPR6qNR8D3B+eAlK+bIRTZe8t3wkOY4B/56Me9FU=' 'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc='; \
+script-src 'self' 'sha256-YjP3q340SssGzfDxgdsVZsI24XcgHIdAU3UDhygHUp0=' 'sha256-ASeAsjmszLOr0kt3B2Fj+iQMh8bualLheARFcxKRI9I=' 'sha256-wTtV1fZ1LDkHeQLSubl2Dm/5+Ut1tJdcipzYHpbUkCc=' 'sha256-mKIF9SO7F9PdewecOKNZgV6Rxs27qr2vGcMQWtIUTDI=' 'sha256-1kg2x4XteKTODYzGnkjEe1nQJYOSvlvJY4fdtuKo6OQ=' 'sha256-xHa/pnm6+KO5RpKF+7KJ2uoALZHW93H0tKhWCmyOsas=' 'sha256-0oum4Q4hYuyjH6H7YRlAYOwOsMf5vXmTkbTw7FVaheI=' 'unsafe-hashes' 'sha256-MguIPR6qNR8D3B+eAlK+bIRTZe8t3wkOY4B/56Me9FU=' 'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc='; \
 style-src 'self' 'unsafe-inline'; \
 img-src 'self' data: https: blob:; \
 font-src 'self' data:; \
@@ -179,7 +181,7 @@ object-src 'none'"
   # MUST come after the generic .js/.css rules so it wins for these names.
   # (Basenames also match the Journal PWA's copies under /journal/ — app.min.js,
   # app.css, index.html, manifest.webmanifest.)
-  <FilesMatch "^(index\.html|app\.min\.js|app\.css|api-client\.js|outbox\.js|data\.js|photos\.js|styles\.css|styles-app\.css|manifest\.webmanifest)$">
+  <FilesMatch "^(index\.html|app\.min\.js|app-more\.min\.js|app\.css|api-client\.js|outbox\.js|data\.js|photos\.js|styles\.css|styles-app\.css|manifest\.webmanifest)$">
     Header set Cache-Control "no-cache, must-revalidate"
     Header unset Expires
   </FilesMatch>
@@ -284,14 +286,24 @@ object-src 'none'"
   # Don't rewrite known asset paths or the API tree (its own .htaccess wins)
   # Sitemap is generated (static pages + published posts).
   RewriteRule ^sitemap\.xml$ api/public/sitemap.php [L]
+  # A Lab address is served with its own title, description, canonical, JSON-LD and readable
+  # content (api/_lib/domain/lab-seo.php), not the bare shell every SPA address otherwise gets.
+  # Any /study/<x> address goes there; one that is not a Lab gets the plain shell back, so the Lab
+  # registry (domain/labs.php) stays the only list of Labs.
+  RewriteRule ^study/[a-z]+(/.*)?$ api/public/lab-page.php [L]
   # The Timetable Maker's landing is one prerendered file, not a folder: a
   # timetable/ directory would turn the maker's own /timetable into a directory.
   RewriteRule ^timetable/about/?$ timetable-about.html [L]
+  # A document's QR opens /verify/<number>?c=<check code> (domain/documents.php).
+  # Only an NGG document number takes this road: /verify?t=… stays the SPA's
+  # parent-consent page.
+  RewriteRule ^verify/(NGG-[A-Za-z0-9-]+)/?$ api/public/doc-verify.php?no=$1 [QSA,L]
   RewriteRule ^(assets|uploads|api|vendor|apps-script|docs)/ - [L]
 
-  # Everything else → index.html (SPA fallback)
-  RewriteRule ^ index.html [L]
+  # Everything else → the app shell, with the page's own head and a real 404 for an
+  # unknown address (api/public/spa.php; SEO audit, 8 Nov 2026).
+  RewriteRule ^ api/public/spa.php [L]
 </IfModule>
 
 # ErrorDocument fallbacks point back at the SPA
-ErrorDocument 404 /index.html
+ErrorDocument 404 /api/public/spa.php

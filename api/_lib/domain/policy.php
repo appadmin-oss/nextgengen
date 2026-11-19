@@ -300,6 +300,11 @@ function member_calendar_for(?array $member, ?array $base = null, ?array $centre
     $cfg = $base ?? member_programme_settings();
     $centre = mb_strtolower(trim((string)($member['centre'] ?? '')));
     if ($centre === '') return $cfg;
+    /* An online member (docs/ONLINE-MEMBERS-PLAN.md) has no meeting days: the calendar stays ON with no
+       weekday and no extra day, so no day is ever theirs to attend — never "off", which would make EVERY
+       day a programme day (programme_is_day). The absence sweep, the outage brake, the at-risk rate and
+       the registers all read this, so none of them can mark an online member absent. */
+    if (centre_is_online($centre)) { $cfg['weekdays'] = []; $cfg['extraDays'] = []; $cfg['weekdaysFrom'] = 'online'; $cfg['online'] = true; return $cfg; }
     if ($centreDays !== null) $days = $centreDays[$centre] ?? [];
     else { $c = db_row('SELECT meetDays FROM centres WHERE lower(name) = ? LIMIT 1', [$centre]); $days = $c ? centre_meet_weekdays((string)$c['meetDays']) : []; }
     if ($days) { $cfg['weekdays'] = $days; $cfg['weekdaysFrom'] = 'centre'; }
@@ -722,6 +727,36 @@ const POLICY_T_REVIEW      = 900000;    // + day: a late at or after reviewFrom
 const POLICY_T_SUSPENSION  = 30000000;  // + session start day × 10 + n: the nth suspension that session
 const POLICY_T_REENTRY     = 40000000;  // same suffix: that suspension's re-entry fee
 
+/* Written rules' sanctions (policy_apply_rules): base + the rule's row id × 100000
+   + the day number, so each rule, each day, has its own key. Row ids above
+   POLICY_RULE_SEQ_MAX would collide with the next base, so such a rule issues
+   nothing (999 rules is far past what one programme writes). All under 2^31:
+   sanctions.tier is an INT on MySQL. */
+const POLICY_T_RULE_FINE    = 100000000;  // + seq×1e5 + day: the breach's fine
+const POLICY_T_RULE_JUMPS   = 200000000;  // + seq×1e5 + day: the breach's corrective exercise
+const POLICY_T_RULE_ESC     = 300000000;  // + seq×1e5 + the triggering breach's day: a suspension or a review
+const POLICY_T_RULE_REENTRY = 400000000;  // same suffix as the escalation: its re-entry fee
+const POLICY_T_RULE_END     = 500000000;
+const POLICY_RULE_SEQ_MAX   = 999;
+
+/** [base, seq, day] for a written rule's tier, or null. */
+function policy_rule_tier_parts(int $tier): ?array {
+    if ($tier < POLICY_T_RULE_FINE || $tier >= POLICY_T_RULE_END) return null;
+    $base = intdiv($tier, 100000000) * 100000000; $rest = $tier - $base;
+    return [$base, intdiv($rest, 100000), $rest % 100000];
+}
+/** Every written rule by row id and by ruleId, read once per request. */
+function policy_rules_index(bool $reset = false): array {
+    static $idx = null;
+    if ($reset) { $idx = null; return []; }
+    if ($idx !== null) return $idx;
+    $idx = ['byId' => [], 'bySeq' => []];
+    try { foreach (db_all('SELECT * FROM conduct_rules ORDER BY id') as $r) { $idx['byId'][(string)$r['ruleId']] = $r; $idx['bySeq'][(int)$r['id']] = $r; } } catch (\Throwable $e) {}
+    return $idx;
+}
+/** The infraction kind a breach of this rule is logged as. */
+function policy_rule_kind(string $ruleId): string { return 'rule:' . $ruleId; }
+
 /** Is this person type on the session rulebook? */
 function policy_is_session(string $type): bool {
     return $type === 'member' && (string)(policy_for('member')['rulebook'] ?? 'session') === 'session';
@@ -746,18 +781,56 @@ function policy_late_bands(array $cfg): array {
     unset($b);
     return $out;
 }
-/** What a late at $minute earns: a band, or ['review' => true]. */
+/**
+ * What a late at $minute earns: a band, ['review' => true], or — before the
+ * first band — ['before' => true], which is not a late at all and costs
+ * nothing. It used to answer the FIRST BAND for any minute below it, so a
+ * late logged by an older definition (the ladder's "past resumption + grace",
+ * before the rulebook of 30 Oct 2026) was re-read by the rulebook and
+ * charged under a band its own arrival time contradicts: "Arrived 09:21
+ * (09:45 to before 10:00) — 3 frog jumps". Every caller now asks `before`.
+ */
 function policy_band_for(array $cfg, int $minute): array {
     $bands = policy_late_bands($cfg);
     $review = (string)($cfg['reviewFrom'] ?? '');
-    if ($review !== '' && $minute >= policy_minutes($review)) return ['review' => true, 'from' => $review, 'fine' => 0, 'jumps' => 0, 'to' => ''];
+    if ($review !== '' && $minute >= policy_minutes($review)) return ['review' => true, 'before' => false, 'from' => $review, 'fine' => 0, 'jumps' => 0, 'to' => ''];
+    if ($minute < $bands[0]['min']) return ['review' => false, 'before' => true, 'from' => $bands[0]['from'], 'min' => $bands[0]['min'], 'fine' => 0, 'jumps' => 0, 'to' => ''];
     $pick = $bands[0];
     foreach ($bands as $b) if ($b['min'] <= $minute) $pick = $b;
-    return $pick + ['review' => false];
+    return $pick + ['review' => false, 'before' => false];
 }
-/** "₦500 and 3 frog jumps", "5 frog jumps", or "" — one phrase, used everywhere a penalty is written down. */
+/** "₦500 and 3 frog jumps", "5 frog jumps", or "" — for a RULE (what a band or an absence costs in all). A sanction row names only its own penalty: see policy_session_reason. */
 function policy_penalty_text(int $fine, int $jumps, string $word): string {
     return implode(' and ', array_filter([$fine > 0 ? policy_naira($fine) . ' fine' : '', $jumps > 0 ? $jumps . ' ' . $word : '']));
+}
+
+/**
+ * The words on one rulebook sanction row, built from its kind and tier — so
+ * the issue, the repair of an older row and the ledger note say the same
+ * thing. ONE PENALTY PER ROW: a fine says money and nothing else (the same
+ * words become the fee-ledger note a family pays against), the exercise says
+ * the exercise. They used to share one sentence — the fine row read "₦500
+ * fine and 3 frog jumps" and the exercise row of an absence "₦1,000 fine and
+ * 7 frog jumps" beside a count of 7, so the desk's "How many" column read as
+ * if it counted money. Null for a tier this does not word.
+ */
+function policy_session_reason(string $personId, string $kind, int $tier, int $amount, array $cfg): ?string {
+    $word = (string)($cfg['jumpWord'] ?? 'frog jumps');
+    $late = static function (string $d) use ($personId, $cfg): string {
+        $min = policy_arrival_minute($personId, $d);
+        $at = $min !== null ? sprintf('%02d:%02d', intdiv($min, 60), $min % 60) : 'late';
+        if ($min === null) return 'Late on ' . policy_day_text($d);
+        $b = policy_band_for($cfg, $min);
+        $band = $b['review'] ? 'at or after ' . $b['from'] : ($b['before'] ? 'before ' . $b['from'] : $b['from'] . ($b['to'] !== '' ? ' to before ' . $b['to'] : ' or later'));
+        return 'Arrived ' . $at . ' on ' . policy_day_text($d) . ' (' . $band . ')';
+    };
+    if ($kind === 'fine' && $tier >= POLICY_T_LATE_FINE && $tier < POLICY_T_LATE_JUMPS)
+        return $late(policy_day_of($tier - POLICY_T_LATE_FINE)) . ' — ' . policy_naira($amount) . ' lateness fine.';
+    if ($kind === 'corrective' && $tier >= POLICY_T_LATE_JUMPS && $tier < POLICY_T_ABS_JUMPS)
+        return $late(policy_day_of($tier - POLICY_T_LATE_JUMPS)) . ' — ' . $amount . ' ' . $word . '.';
+    if ($kind === 'corrective' && $tier >= POLICY_T_ABS_JUMPS && $tier < POLICY_T_REVIEW)
+        return 'Absent on ' . policy_day_text(policy_day_of($tier - POLICY_T_ABS_JUMPS)) . ' without permission — ' . $amount . ' ' . $word . '.';
+    return null;
 }
 /** Local minute of the person's arrival that day, from their attendance row; null when there is none. */
 function policy_arrival_minute(string $personId, string $date): ?int {
@@ -867,6 +940,94 @@ function policy_nosignout_to_halfday(int $max = 40): array {
     return $out;
 }
 
+const POLICY_PRELATE_TAG = 'Not late under the rulebook';
+
+/**
+ * Lates recorded for arrivals BEFORE lateness begins, undone. Two definitions
+ * of "late" ran side by side: the older ladder logged a member late from
+ * resumption + grace (09:01, 09:21), the rulebook (30 Oct 2026) only from
+ * its first band (09:30). The rulebook then re-read every late on record and,
+ * for an arrival before its first band, charged the first band anyway — fines
+ * on the account and frog jumps on the desk's list, under a band the arrival
+ * time on the same line contradicts.
+ *
+ * Per person, in ONE transaction (the half-day repair's lesson: a person is
+ * corrected and re-worked together or not at all): each such late is voided
+ * with the reason, the day is kept as `tardy` (they did come after
+ * resumption — seen, costs nothing), and the person is re-worked, so the
+ * band's fine is lifted off the account — a paid one stands as credit — and
+ * exercise still owed is lifted. Exercise already DONE stays done: that
+ * happened, and is not undone by a record. Also rewrites the words of older
+ * rulebook rows to one penalty per row (policy_session_reason), and the fee
+ * ledger's note with them. Bounded: at most $max people a call, `more` says
+ * the next call carries on. Only while the member rulebook is `session`.
+ *
+ * @return array{voided:int, people:int, refunded:int, reworded:int, more:bool}
+ */
+function policy_prelate_repair(int $max = 40): array {
+    $out = ['voided' => 0, 'people' => 0, 'refunded' => 0, 'reworded' => 0, 'more' => false];
+    if (!policy_is_session('member')) return $out;
+    $cfg = policy_for('member');
+    $first = policy_late_bands($cfg)[0];
+    $res = (string)$cfg['resumption'];
+    $byPerson = [];
+    foreach (db_all("SELECT i.id, i.personId, i.date, a.checkInAt FROM infractions i JOIN attendance a ON a.studentId = i.personId AND a.date = i.date
+                     WHERE i.kind = 'late' AND i.personType = 'member' AND (i.voidedAt IS NULL OR i.voidedAt = '') AND a.checkInAt IS NOT NULL AND a.checkInAt <> ''
+                     ORDER BY i.personId, i.date") as $r) {
+        $t = strtotime((string)$r['checkInAt']); if (!$t) continue;
+        $min = attendance_minutes_at((int)$t);
+        if ($min < $first['min']) $byPerson[(string)$r['personId']][] = ['id' => (int)$r['id'], 'date' => (string)$r['date'], 'min' => $min];
+    }
+    if (count($byPerson) > $max) { $out['more'] = true; $byPerson = array_slice($byPerson, 0, $max, true); }
+    foreach ($byPerson as $id => $rows) {
+        $id = (string)$id;
+        [$n, $refunded] = db_tx(static function () use ($id, $rows, $first, $res) {
+            $paidBefore = (int)(db_row("SELECT COUNT(*) c FROM sanctions WHERE personId = ? AND kind = 'fine' AND status = 'paid' AND tier >= ? AND tier < ?", [$id, POLICY_T_LATE_FINE, POLICY_T_LATE_JUMPS])['c'] ?? 0);
+            foreach ($rows as $r) {
+                $at = sprintf('%02d:%02d', intdiv($r['min'], 60), $r['min'] % 60);
+                db_update('infractions', ['voidedAt' => now_iso(), 'voidedBy' => 'system',
+                    'voidReason' => POLICY_PRELATE_TAG . ': arrived ' . $at . ', and lateness begins at ' . $first['from'] . '.'], ['id' => $r['id']]);
+                if ($r['min'] > policy_minutes($res)) policy_log($id, 'member', 'tardy', $r['date'], 'Arrived ' . $at . ' — after ' . $res . ', before lateness begins at ' . $first['from'] . ': seen, costs nothing.');
+            }
+            policy_relift($id, 'member');
+            $paidAfter = (int)(db_row("SELECT COUNT(*) c FROM sanctions WHERE personId = ? AND kind = 'fine' AND status = 'paid' AND tier >= ? AND tier < ?", [$id, POLICY_T_LATE_FINE, POLICY_T_LATE_JUMPS])['c'] ?? 0);
+            return [count($rows), $paidBefore - $paidAfter];
+        });
+        $out['voided'] += $n; $out['refunded'] += $refunded; $out['people']++;
+    }
+    /* One penalty per row: older rulebook rows said the fine and the exercise in
+       one sentence. Reworded from the row's own tier and amount; a fine's ledger
+       note moves with it, because that note is what the family reads. */
+    $word = (string)$cfg['jumpWord'];
+    $old = db_all("SELECT id, personId, kind, tier, amount, reason FROM sanctions WHERE issuedBy = 'system' AND (
+                     (kind = 'fine' AND tier >= ? AND tier < ? AND reason LIKE ?) OR (kind = 'corrective' AND tier >= ? AND tier < ? AND reason LIKE ?)) LIMIT 201",
+                  [POLICY_T_LATE_FINE, POLICY_T_LATE_JUMPS, '%' . $word . '%', POLICY_T_ABS_JUMPS, POLICY_T_REVIEW, '%₦%']);
+    if (count($old) > 200) { $out['more'] = true; $old = array_slice($old, 0, 200); }
+    foreach ($old as $s) {
+        $why = policy_session_reason((string)$s['personId'], (string)$s['kind'], (int)$s['tier'], (int)$s['amount'], $cfg);
+        if ($why === null || $why === (string)$s['reason']) continue;
+        db_update('sanctions', ['reason' => substr($why, 0, 240)], ['id' => (int)$s['id']]);
+        if ((string)$s['kind'] === 'fine') db_exec("UPDATE member_ledger SET note = ? WHERE memberId = ? AND kind = 'fine' AND periodKey = ?",
+            [mb_strcut('Policy fine — ' . $why, 0, 255, 'UTF-8'), (string)$s['personId'], 'sanction-' . (int)$s['id']]);
+        $out['reworded']++;
+    }
+    if ($out['voided'] || $out['reworded']) audit('policy.prelate_repair', 'system', '', $out);
+    return $out;
+}
+
+/** admin.policy.prelate.run — apply the correction now, and say what changed. */
+function admin_policy_prelate_run(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $t0 = microtime(true); $sum = ['voided' => 0, 'people' => 0, 'refunded' => 0, 'reworded' => 0, 'more' => false];
+    do {
+        $r = policy_prelate_repair(40);
+        foreach (['voided', 'people', 'refunded', 'reworded'] as $k) $sum[$k] += $r[$k];
+        $sum['more'] = $r['more'];
+    } while ($r['more'] && microtime(true) - $t0 < 20);
+    audit('policy.prelate.run', (string)$g['requester']['memberId'], '', $sum, (string)($p['ip'] ?? ''));
+    return ['ok' => true] + $sum;
+}
+
 /** admin.policy.halfday.run — apply the half-day rule to past days now, and say what changed. */
 function admin_policy_halfday_run(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
@@ -891,7 +1052,8 @@ const POLICY_INFRACTIONS = ['absence', 'late', 'tardy', 'halfday', 'no_checkout'
 /** Record a fact. One row per person per kind per day — a second scan, or a
  *  re-run of the nightly sweep, is a no-op rather than a second strike. */
 function policy_log(string $personId, string $type, string $kind, string $date, string $note = '', string $byId = 'system'): bool {
-    if ($personId === '' || !in_array($kind, POLICY_INFRACTIONS, true)) return false;
+    // A written rule's breach is 'rule:<ruleId>' (policy_rule_kind); the column holds 32 characters.
+    if ($personId === '' || (!in_array($kind, POLICY_INFRACTIONS, true) && !preg_match('/^rule:[A-Za-z0-9_-]{2,26}$/', $kind))) return false;
     try {
         db_insert('infractions', [
             'personId' => $personId, 'personType' => in_array($type, ['student', 'volunteer', 'member'], true) ? $type : 'student',
@@ -1124,12 +1286,36 @@ function policy_fine_to_ledger(string $personId, string $type, int $sanctionId, 
     if ($type !== 'member' || $amount <= 0 || $sanctionId <= 0) return;
     if (!function_exists('fees_post')) return;
     if (!db_row('SELECT id FROM members WHERE memberId = ? LIMIT 1', [$personId])) return;
-    fees_post($personId, 'fine', $amount, [
+    /* The fine NAMES its conduct rule, from what the sanction is (its tier),
+       never from its wording: a late band's fine is a lateness fine, an absence
+       fine an absence fine, anything else (a re-entry fee, an ID card) is under
+       no conduct cap. */
+    $tier = (int)(db_row('SELECT tier FROM sanctions WHERE id = ?', [$sanctionId])['tier'] ?? 0);
+    $rule = ($tier >= POLICY_T_LATE_FINE && $tier < POLICY_T_LATE_JUMPS) || ($tier > 0 && $tier < 1000) ? 'late'
+          : ($tier >= 500000 && $tier < POLICY_T_LATE_FINE ? 'absent' : '');
+    /* A written rule's fine falls under that rule's KIND when it has one, so the
+       kind's switch and term cap apply on the ledger; a re-entry fee never does. */
+    if (($parts = policy_rule_tier_parts($tier)) && $parts[0] === POLICY_T_RULE_FINE) {
+        $rule = (string)(policy_rules_index()['bySeq'][$parts[1]]['reason'] ?? '');
+    }
+    $row = fees_post($personId, 'fine', $amount, [
         // The sanction id IS the period key: one ledger row per sanction, ever.
         'periodKey' => 'sanction-' . $sanctionId,
         'note' => 'Policy fine' . ($reason !== '' ? ' — ' . $reason : ''),
-        'by' => 'policy',
+        'by' => 'policy', 'rule' => $rule,
+        // A sanction issued again after it was lifted owes again (fees_post).
+        'reissue' => true,
     ]);
+    /* A conduct rule switched off, or its term cap reached, posts less than
+       the sanction says — or nothing. The sanction says the same, or the
+       conduct board goes on asking for money the account never charged. */
+    $posted = $row ? (int)$row['amount'] : 0;
+    if ($posted <= 0) {
+        db_update('sanctions', ['status' => 'lifted', 'clearedAt' => now_iso(), 'clearedBy' => 'rule',
+            'reason' => mb_substr(trim($reason . ' Not charged: the ' . ($rule !== '' ? $rule : 'conduct') . ' rule is off or its term cap is reached.'), 0, 240)], ['id' => $sanctionId]);
+    } elseif ($posted < $amount) {
+        db_update('sanctions', ['amount' => $posted, 'reason' => mb_substr(trim($reason . ' Reduced to ' . policy_naira($posted) . ' by the term cap.'), 0, 240)], ['id' => $sanctionId]);
+    }
 }
 
 /**
@@ -1251,7 +1437,8 @@ function policy_states_for(array $personIds, string $type = 'student'): array {
             $state = 'clear'; $until = ''; $owed = 0; $proposed = []; $jumps = 0; $reentry = 0;
             foreach ($live[$id] ?? [] as $s) {
                 $kind = (string)$s['kind'];
-                if ($kind === 'fine') { $owed += (int)$s['amount']; continue; }
+                // Owed is active or pending, exactly as policy_state() reads it — a proposed fine is not owed yet.
+                if ($kind === 'fine') { if (in_array((string)$s['status'], ['active', 'pending'], true)) $owed += (int)$s['amount']; continue; }
                 if ($kind === 'corrective') { if ((string)$s['status'] === 'pending') $jumps += (int)$s['amount']; continue; }
                 if ((string)$s['status'] === 'proposed') { $proposed[] = ['kind' => $kind, 'reason' => (string)$s['reason']]; continue; }
                 if ($kind === 'eviction') { $state = 'evicted'; }
@@ -1300,6 +1487,8 @@ function policy_apply(string $personId, string $type): array {
 
     $session = policy_is_session($type);
     if ($session) $issued = array_merge($issued, policy_apply_session($personId, $type, $cfg, $grave));
+    // Written rules apply under either rulebook: a breach is a breach.
+    if ($type === 'member') $issued = array_merge($issued, policy_apply_rules($personId, $type, $cfg, $grave));
     // §1.1 Attendance — strike 1 warning, strike 2 dormancy, strike 3 eviction. (The ladder rulebook only.)
     $limit = (int)$cfg['absenceLimit'];
     $abs = $session ? 0 : (int)$counts['absenceEquivalent'];
@@ -1435,6 +1624,9 @@ function policy_apply_session(string $personId, string $type, array $cfg, string
         $d = (string)$l['date']; $n = policy_day_number($d);
         $min = policy_arrival_minute($personId, $d);
         $b = policy_band_for($cfg, $min ?? policy_late_bands($cfg)[0]['min']);
+        /* Arrived before lateness begins: not a late under this rulebook, so
+           nothing is issued (policy_prelate_repair voids the entry itself). */
+        if ($b['before']) continue;
         $at = $min !== null ? sprintf('%02d:%02d', intdiv($min, 60), $min % 60) : 'late';
         $when = 'Arrived ' . $at . ' on ' . policy_day_text($d);
         if ($b['review']) {
@@ -1442,12 +1634,10 @@ function policy_apply_session(string $personId, string $type, array $cfg, string
                 'reason' => $when . ' — at or after ' . $b['from'] . ': for management review and appropriate disciplinary action.'])) $issued[] = 'review';
             continue;
         }
-        $band = $b['from'] . ($b['to'] !== '' ? ' to before ' . $b['to'] : ' or later');
-        $all = policy_penalty_text($b['fine'], $b['jumps'], $word);
         if ($b['fine'] > 0 && policy_issue($personId, $type, 'fine', POLICY_T_LATE_FINE + $n, ['amount' => $b['fine'], 'status' => 'pending',
-            'reason' => $when . ' (' . $band . ') — ' . $all . '.'])) $issued[] = 'fine';
+            'reason' => policy_session_reason($personId, 'fine', POLICY_T_LATE_FINE + $n, $b['fine'], $cfg)])) $issued[] = 'fine';
         if ($b['jumps'] > 0 && policy_issue($personId, $type, 'corrective', POLICY_T_LATE_JUMPS + $n, ['amount' => $b['jumps'], 'status' => 'pending',
-            'reason' => $when . ' (' . $band . ') — ' . $b['jumps'] . ' ' . $word . '.'])) $issued[] = 'corrective';
+            'reason' => policy_session_reason($personId, 'corrective', POLICY_T_LATE_JUMPS + $n, $b['jumps'], $cfg)])) $issued[] = 'corrective';
     }
     $jumps = (int)$cfg['absenceJumps']; $fine = (int)($cfg['absenceFine'] ?? 0);
     $unexcused = [];
@@ -1457,7 +1647,7 @@ function policy_apply_session(string $personId, string $type, array $cfg, string
         if (in_array($cover, ['approved', 'academic', 'open'], true)) continue;
         $unexcused[] = $d;
         if ($jumps > 0 && policy_issue($personId, $type, 'corrective', POLICY_T_ABS_JUMPS + policy_day_number($d), ['amount' => $jumps, 'status' => 'pending',
-            'reason' => 'Absent on ' . policy_day_text($d) . ' without permission — ' . policy_penalty_text($fine, $jumps, $word) . '.'])) $issued[] = 'corrective';
+            'reason' => policy_session_reason($personId, 'corrective', POLICY_T_ABS_JUMPS + policy_day_number($d), $jumps, $cfg)])) $issued[] = 'corrective';
     }
     // Per session: every N absences without permission is a suspension, and its re-entry fee.
     $every = max(1, (int)$cfg['suspendAfterAbsences']);
@@ -1492,6 +1682,91 @@ function policy_apply_session(string $personId, string $type, array $cfg, string
 }
 
 /**
+ * A written rule's consequences for one member, derived from their recorded
+ * breaches every time (each keyed by its tier, so nothing is issued twice and
+ * voiding a breach lifts what it caused — policy_rulebook_holds):
+ *
+ *   each breach    the rule's fine (within its term cap) and its corrective
+ *                  exercise
+ *   the Nth breach of the rule in one session (and every Nth after it):
+ *                  a suspension of the rule's length, with its re-entry fee —
+ *                  or a management review
+ *
+ * A rule switched off issues nothing new; what it already issued stands until
+ * its breach is voided, because the breach happened under the rule as it was.
+ */
+function policy_apply_rules(string $personId, string $type, array $cfg, string $grave): array {
+    $issued = []; $word = (string)($cfg['jumpWord'] ?? 'frog jumps');
+    $rows = db_all("SELECT kind, date FROM infractions WHERE personId = ? AND kind LIKE 'rule:%' AND (voidedAt IS NULL OR voidedAt = '') ORDER BY date", [$personId]);
+    if (!$rows) return [];
+    $R = policy_rules_index();
+    $byRule = [];
+    foreach ($rows as $b) $byRule[substr((string)$b['kind'], 5)][] = (string)$b['date'];
+    foreach ($byRule as $rid => $days) {
+        $r = $R['byId'][$rid] ?? null;
+        if (!$r || !(int)$r['active']) continue;
+        $seq = (int)$r['id']; if ($seq < 1 || $seq > POLICY_RULE_SEQ_MAX) continue;
+        $name = (string)$r['name'];
+        foreach ($days as $d) {
+            $n = policy_day_number($d);
+            $amount = (int)$r['amount'];
+            /* A rule of no particular kind is capped here (a kind's own cap is
+               the ledger's, fees_post): what this rule's fines this term have
+               come to already, from the record, before adding another. */
+            if ($amount > 0 && (int)$r['capTerm'] > 0 && (string)$r['reason'] === '') {
+                [$tf, $tt] = function_exists('cp_term_bounds') ? cp_term_bounds('') : [gmdate('Y-01-01'), gmdate('Y-12-31')];
+                $lo = POLICY_T_RULE_FINE + $seq * 100000; $hi = $lo + 100000;
+                $have = db_row("SELECT 1 FROM sanctions WHERE personId = ? AND kind = 'fine' AND tier = ?", [$personId, $lo + $n]);
+                if (!$have) {
+                    $used = (int)(db_row("SELECT COALESCE(SUM(amount),0) s FROM sanctions WHERE personId = ? AND kind = 'fine' AND tier >= ? AND tier < ? AND status IN ('pending','paid','active')", [$personId, $lo, $hi])['s'] ?? 0);
+                    if ($d >= $tf && $d <= $tt) $amount = max(0, min($amount, (int)$r['capTerm'] - $used));
+                }
+            }
+            $when = $name . ' on ' . policy_day_text($d);
+            if ($amount > 0 && policy_issue($personId, $type, 'fine', POLICY_T_RULE_FINE + $seq * 100000 + $n, ['amount' => $amount, 'status' => 'pending',
+                'reason' => $when . ' — ' . policy_naira($amount) . ' fine.'])) $issued[] = 'fine';
+            if ((int)$r['jumps'] > 0 && policy_issue($personId, $type, 'corrective', POLICY_T_RULE_JUMPS + $seq * 100000 + $n, ['amount' => (int)$r['jumps'], 'status' => 'pending',
+                'reason' => $when . ' — ' . (int)$r['jumps'] . ' ' . $word . '.'])) $issued[] = 'corrective';
+        }
+        // Repeats: every Nth breach of this rule in one session escalates.
+        $every = (int)$r['escalateAfter']; $to = (string)$r['escalateTo'];
+        if ($every < 1 || !in_array($to, ['suspension', 'review'], true)) continue;
+        foreach (policy_rule_triggers($personId, $days, $every) as [$nth, $trigger]) {
+            $sfx = $seq * 100000 + policy_day_number($trigger);
+            if ($to === 'review') {
+                if (policy_issue($personId, $type, 'review', POLICY_T_RULE_ESC + $sfx, ['status' => 'proposed',
+                    'reason' => $nth . ' breaches of “' . $name . '” this session (the last on ' . policy_day_text($trigger) . ') — for management review.'])) $issued[] = 'review';
+                continue;
+            }
+            $from = gmdate('Y-m-d', (int)strtotime($trigger . ' 00:00:00 UTC') + 86400);
+            $till = gmdate('Y-m-d', (int)strtotime($from . ' 00:00:00 UTC') + (max(1, (int)$r['suspendDays']) - 1) * 86400);
+            $fee = (int)$r['reentryFee'];
+            if (policy_issue($personId, $type, 'suspension', POLICY_T_RULE_ESC + $sfx, ['status' => $grave, 'startsAt' => $from, 'endsAt' => $till,
+                'reason' => $nth . ' breaches of “' . $name . '” this session (the last on ' . policy_day_text($trigger) . ') — suspended ' . policy_day_text($from) . ' to ' . policy_day_text($till)
+                    . ($fee > 0 ? '; may resume after that on payment of the ' . policy_naira($fee) . ' re-entry fee.' : '.')])) $issued[] = 'suspension';
+            if ($fee > 0 && policy_issue($personId, $type, 'fine', POLICY_T_RULE_REENTRY + $sfx, ['amount' => $fee, 'status' => 'pending',
+                'reason' => 'Re-entry fee after the suspension from ' . policy_day_text($from) . ' (“' . $name . '”) — ' . policy_naira($fee) . ', paid before resuming.'])) $issued[] = 'fine';
+        }
+    }
+    return $issued;
+}
+/**
+ * The breaches that reached N, 2N, … within their session, as [[nth, day], …]
+ * (at most nine escalations a session, as the rulebook's own). nth is the
+ * running count in that session, for the wording; the tier is keyed on the day.
+ */
+function policy_rule_triggers(string $personId, array $days, int $every): array {
+    $bySession = [];
+    foreach ($days as $d) { [$a] = policy_session_bounds($personId, $d); $bySession[$a][] = $d; }
+    $out = [];
+    foreach ($bySession as $ds) {
+        sort($ds);
+        for ($j = 1; $j * $every <= count($ds) && $j <= 9; $j++) $out[] = [$j * $every, $ds[$j * $every - 1]];
+    }
+    return $out;
+}
+
+/**
  * The rulebook in sentences a family reads — from the settings, so a screen
  * cannot promise a time or an amount the engine does not use. [[icon, text]].
  */
@@ -1503,33 +1778,61 @@ function policy_member_rule_lines(): array {
     $out[] = ['ph ph-calendar-x', 'An absence without permission: ' . (policy_penalty_text((int)($c['absenceFine'] ?? 0), (int)$c['absenceJumps'], $w) ?: 'recorded') . '. '
         . (int)$c['suspendAfterAbsences'] . ' in a session is a ' . (int)$c['suspendDays'] . '-day suspension' . ((int)$c['reentryFee'] > 0 ? ', and ' . policy_naira((int)$c['reentryFee']) . ' to come back' : '') . '.'];
     if ((int)$c['evidenceFine'] > 0) $out[] = ['ph ph-camera', 'Upload a photo or screenshot of each assignment to the dashboard by its due day, or it is a ' . policy_naira((int)$c['evidenceFine']) . ' fine.'];
+    // The written rules, from the same rows the desk records breaches against.
+    foreach (policy_rules_index()['byId'] as $r) if ((int)$r['active'] && ($line = policy_rule_sentence($r, $w)) !== '') $out[] = ['ph ph-list-checks', $line];
     return $out;
+}
+/** One written rule as a family reads it: what, what it costs, what repeats lead to. '' for a rule that costs nothing. */
+function policy_rule_sentence(array $r, string $word = 'frog jumps'): string {
+    $cost = policy_penalty_text((int)$r['amount'], (int)($r['jumps'] ?? 0), $word);
+    $every = (int)($r['escalateAfter'] ?? 0); $to = (string)($r['escalateTo'] ?? '');
+    $rep = $every > 0 && $to === 'suspension' ? $every . ' in a session is a ' . max(1, (int)($r['suspendDays'] ?? 7)) . '-day suspension'
+        . ((int)($r['reentryFee'] ?? 0) > 0 ? ', and ' . policy_naira((int)$r['reentryFee']) . ' to come back' : '')
+        : ($every > 0 && $to === 'review' ? $every . ' in a session goes to management for review' : '');
+    if ($cost === '' && $rep === '') return '';
+    $when = trim((string)($r['whenText'] ?? ''));
+    return rtrim((string)$r['name'], '.') . ($when !== '' ? ' (' . rtrim($when, '.') . ')' : '') . ': ' . ($cost !== '' ? $cost : 'recorded') . ($rep !== '' ? '. ' . $rep : '') . '.';
 }
 
 /** A session suspension's re-entry fee still owed: the fine row, or null. */
 function policy_reentry_owed(array $sanctions, array $suspension): ?array {
     $t = (int)$suspension['tier'];
-    if ($t < POLICY_T_SUSPENSION || $t >= POLICY_T_REENTRY) return null;
-    foreach ($sanctions as $f) if ((string)$f['kind'] === 'fine' && (int)$f['tier'] === $t - POLICY_T_SUSPENSION + POLICY_T_REENTRY && (string)$f['status'] === 'pending') return $f;
+    // A written rule's suspension has its fee at the same suffix in the rule re-entry range.
+    $feeTier = $t >= POLICY_T_RULE_ESC && $t < POLICY_T_RULE_REENTRY ? $t - POLICY_T_RULE_ESC + POLICY_T_RULE_REENTRY
+             : ($t >= POLICY_T_SUSPENSION && $t < POLICY_T_REENTRY ? $t - POLICY_T_SUSPENSION + POLICY_T_REENTRY : 0);
+    if (!$feeTier) return null;
+    foreach ($sanctions as $f) if ((string)$f['kind'] === 'fine' && (int)$f['tier'] === $feeTier && (string)$f['status'] === 'pending') return $f;
     return null;
 }
 
 /**
- * A payment or waiver landed: a re-entry fee the account now covers is marked
- * paid, which is what lets the child back in. Read the way every screen reads
- * the account — payments against the oldest charges first.
+ * A payment, a waiver or a refund landed: the account decides which policy
+ * fines are settled. Every member fine is a charge on the fee ledger, and
+ * payments go to the oldest charges first — the way every money screen reads
+ * the account. A fine the account now covers is marked paid (which is what
+ * lets a child back in after a suspension's re-entry fee); one this sync had
+ * marked paid that the account no longer covers (a payment voided) is owed
+ * again. Only the RE-ENTRY fee used to be read this way, so a family who paid
+ * a late or absence fine online saw ₦0 on their account while the conduct
+ * board went on saying "Fines owed" and freezing awards — two ledgers
+ * disagreeing about the same money. A fine settled by hand (clearedBy is a
+ * person) is that person's decision and is left alone.
  */
-function policy_reentry_sync(string $memberId): int {
-    $due = db_all("SELECT id, tier FROM sanctions WHERE personId = ? AND kind = 'fine' AND status = 'pending' AND tier >= ?", [$memberId, POLICY_T_REENTRY]);
+function policy_fines_sync(string $memberId): int {
+    $due = db_all("SELECT id, status, clearedBy FROM sanctions WHERE personId = ? AND kind = 'fine' AND (status = 'pending' OR (status = 'paid' AND clearedBy = 'ledger'))", [$memberId]);
     if (!$due || !function_exists('fees_entry_left')) return 0;
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]); if (!$m) return 0;
     $n = 0;
     foreach ($due as $f) {
         $left = fees_entry_left($m, 'sanction-' . (int)$f['id']);
-        if ($left === 0) { db_update('sanctions', ['status' => 'paid', 'clearedAt' => now_iso(), 'clearedBy' => 'ledger'], ['id' => (int)$f['id']]); $n++; }
+        if ($left === null) continue;   // not on the ledger: nothing to read it by
+        if ((string)$f['status'] === 'pending' && $left === 0) { db_update('sanctions', ['status' => 'paid', 'clearedAt' => now_iso(), 'clearedBy' => 'ledger'], ['id' => (int)$f['id']]); $n++; }
+        elseif ((string)$f['status'] === 'paid' && $left > 0) { db_update('sanctions', ['status' => 'pending', 'clearedAt' => '', 'clearedBy' => ''], ['id' => (int)$f['id']]); $n++; }
     }
     return $n;
 }
+/** The older name, kept for any caller still using it. */
+function policy_reentry_sync(string $memberId): int { return policy_fines_sync($memberId); }
 
 // ── Check-in enforcement ────────────────────────────────────────────────────
 
@@ -1630,6 +1933,7 @@ function policy_on_checkin(string $personId, string $type, string $date, array $
  */
 function policy_sweep_absences(?string $upto = null): array {
     policy_nosignout_to_halfday();
+    policy_prelate_repair();
     $pol = policy_settings();
     if (empty($pol['enabled'])) return ['ok' => true, 'skipped' => 'policy_disabled'];
     $cfg = programme_settings();
@@ -1713,6 +2017,7 @@ function policy_sweep_absences(?string $upto = null): array {
  */
 function policy_sweep_member_absences(?string $upto = null): array {
     policy_nosignout_to_halfday();
+    policy_prelate_repair();
     if (!policy_enabled_for('member')) return ['ok' => true, 'skipped' => 'member_policy_disabled'];
     $cal = member_programme_settings();
     if (empty($cal['enabled'])) return ['ok' => true, 'skipped' => 'no_member_calendar'];
@@ -1901,7 +2206,7 @@ function admin_policy_person(array $p): array {
     return ['ok' => true,
         'personId' => $id, 'personType' => $type,
         'state' => policy_state($id, $type),
-        'infractions' => absence_reasons_attach(db_all('SELECT * FROM infractions WHERE personId = ? ORDER BY date DESC, id DESC LIMIT 200', [$id])),
+        'infractions' => policy_rule_labels(absence_reasons_attach(db_all('SELECT * FROM infractions WHERE personId = ? ORDER BY date DESC, id DESC LIMIT 200', [$id]))),
         'sanctions' => db_all('SELECT * FROM sanctions WHERE personId = ? ORDER BY issuedAt DESC LIMIT 100', [$id]),
     ];
 }
@@ -1927,6 +2232,100 @@ function admin_policy_infraction(array $p): array {
     $temporaryCard = $kind === 'idcard_missing' && (int)$counts['idcard_missing'] === 1;
     return ['ok' => true, 'logged' => $logged, 'alreadyLogged' => !$logged, 'issued' => $issued,
             'temporaryCard' => $temporaryCard, 'state' => policy_state($id, $type)];
+}
+
+/** A written rule's breach named by its rule ("Broke a rule: No uniform"), so the record does not read "rule:RULE-3F2A". */
+function policy_rule_labels(array $rows): array {
+    $R = policy_rules_index()['byId'];
+    foreach ($rows as &$i) if (str_starts_with((string)$i['kind'], 'rule:')) {
+        $r = $R[substr((string)$i['kind'], 5)] ?? null;
+        $i['label'] = 'Broke a rule: ' . ($r ? (string)$r['name'] : 'a rule since removed');
+    }
+    unset($i);
+    return $rows;
+}
+
+const POLICY_BREACH_MAX = 100;   // members one "Record a breach" may name — named in the refusal
+
+/**
+ * admin.policy.ruleBreach — {ruleId, personIds[], date?, note?}: a written
+ * rule broken, recorded for one member or several (a group in the same
+ * incident). The whole request is checked before anything is written; each
+ * member is answered on their own (recorded, already recorded that day, out of
+ * scope, not a member); one audit event for the run. What the breach costs is
+ * the engine's (policy_apply_rules), so this records a fact, never a penalty.
+ */
+function admin_policy_rule_breach(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $by = (string)$g['requester']['memberId'];
+    $rid = trim((string)($p['ruleId'] ?? ''));
+    $r = $rid !== '' ? (policy_rules_index(true) ?: policy_rules_index())['byId'][$rid] ?? null : null;
+    if (!$r) return ['ok' => false, 'error' => 'no_rule', 'detail' => 'Choose the rule that was broken.'];
+    if (!(int)$r['active']) return ['ok' => false, 'error' => 'rule_off', 'detail' => 'That rule is switched off. Switch it on first, or choose another.'];
+    if ((int)$r['id'] > POLICY_RULE_SEQ_MAX) return ['ok' => false, 'error' => 'rule_unusable'];
+    $ids = array_values(array_unique(array_filter(array_map(static fn($x) => trim((string)$x), (array)($p['personIds'] ?? (isset($p['personId']) ? [$p['personId']] : []))))));
+    if (!$ids) return ['ok' => false, 'error' => 'nobody', 'detail' => 'Choose who broke the rule.'];
+    if (count($ids) > POLICY_BREACH_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => POLICY_BREACH_MAX, 'detail' => 'At most ' . POLICY_BREACH_MAX . ' members at a time.'];
+    $today = attendance_today();
+    $date = trim((string)($p['date'] ?? '')) ?: $today;
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || $date > $today || $date < gmdate('Y-m-d', strtotime($today . ' -90 days'))) return ['ok' => false, 'error' => 'bad_date', 'detail' => 'The date must be today or within the last 90 days.'];
+    $note = trim(mb_substr((string)($p['note'] ?? ''), 0, 200));
+    $kind = policy_rule_kind($rid);
+    $results = []; $recorded = 0;
+    foreach ($ids as $id) {
+        $m = db_row('SELECT memberId, role, status, centre FROM members WHERE memberId = ? LIMIT 1', [$id]);
+        if (!$m || (string)$m['status'] !== 'active') { $results[] = ['personId' => $id, 'ok' => false, 'error' => 'not_found']; continue; }
+        if (is_admin_role((string)$m['role'])) { $results[] = ['personId' => $id, 'ok' => false, 'error' => 'staff_account']; continue; }
+        if (!admin_centre_allowed($g['requester'], (string)($m['centre'] ?? ''))) { $results[] = ['personId' => $id, 'ok' => false, 'error' => 'out_of_scope']; continue; }
+        if ($id === $by) { $results[] = ['personId' => $id, 'ok' => false, 'error' => 'own_account']; continue; }
+        $logged = policy_log($id, 'member', $kind, $date, $note !== '' ? $note : (string)$r['name'], $by);
+        if (!$logged) { $results[] = ['personId' => $id, 'ok' => true, 'unchanged' => true]; continue; }
+        $issued = policy_apply($id, 'member');
+        $results[] = ['personId' => $id, 'ok' => true, 'issued' => $issued]; $recorded++;
+    }
+    audit('policy.rule.breach', $by, $rid, ['rule' => (string)$r['name'], 'date' => $date, 'asked' => count($ids), 'recorded' => $recorded,
+        'refused' => count(array_filter($results, static fn($x) => empty($x['ok'])))], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'recorded' => $recorded, 'results' => $results, 'rule' => (string)$r['name']];
+}
+
+/**
+ * admin.policy.rules — every rule in one place, for the Rules page: the
+ * rulebook's own (applied automatically from check-ins and assignments) and
+ * the written ones (recorded by staff), each with what triggers it, what it
+ * costs, what repeats lead to, and who may change it. A READ, so any of the
+ * desks that live with the rules may open it; each write is gated on its own.
+ */
+function admin_policy_rules(array $p): array {
+    $g = admin_cap_gate_any($p, ['people', 'fees', 'summer']); if (!$g['ok']) return $g;
+    $caps = member_effective_caps($g['requester']);
+    $c = policy_for('member');
+    $written = function_exists('fees_fine_rules_data') ? fees_fine_rules_data() : ['rules' => [], 'kinds' => []];
+    return ['ok' => true, 'enabled' => policy_enabled_for('member'), 'rulebook' => $c, 'bands' => policy_late_bands($c),
+        'lines' => policy_member_rule_lines(), 'written' => $written['rules'] ?? [], 'kinds' => $written['kinds'] ?? [],
+        'term' => $written['term'] ?? null, 'amountMax' => $written['amountMax'] ?? 0,
+        'can' => ['rules' => in_array('fees', $caps, true), 'rulebook' => in_array('people', $caps, true), 'breach' => in_array('people', $caps, true)],
+        'breachMax' => POLICY_BREACH_MAX];
+}
+
+/**
+ * admin.policy.rulebookSave — {member: {...}}: the NGG member rulebook from the
+ * Rules page. The rulebook governs MEMBERS, so it is the people desk's to
+ * change (ownership follows the data); the full policy settings — Summer
+ * School's calendars and thresholds — stay behind `summer` (admin.policy.save).
+ * Only the member block is read; everything else keeps its current value.
+ */
+function admin_policy_rulebook_save(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $m = is_array($p['member'] ?? null) ? $p['member'] : null;
+    if (!$m) return ['ok' => false, 'error' => 'nothing_sent'];
+    $keep = array_flip(['resumption', 'lateBands', 'reviewFrom', 'absenceFine', 'absenceJumps', 'suspendAfterAbsences', 'suspendDays', 'reentryFee',
+                        'permittedAbsences', 'formalAfterDays', 'evidenceFine', 'jumpWord']);
+    $before = policy_for('member');
+    $clean = policy_settings_save(['member' => array_intersect_key($m, $keep)], (string)$g['requester']['memberId']);
+    $after = $clean['member'];
+    $changed = array_values(array_filter(array_keys($keep), static fn($k) => json_encode($before[$k] ?? null) !== json_encode($after[$k] ?? null)));
+    audit('policy.rulebook.set', (string)$g['requester']['memberId'], '', ['changed' => $changed], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'member' => $after, 'changed' => $changed, 'unchanged' => !$changed];
 }
 
 /** Void a wrongly logged fact. Everything it caused is re-derived, so a bad
@@ -2026,6 +2425,24 @@ function policy_rulebook_holds(string $personId, string $kind, int $tier, array 
         return (bool)db_row("SELECT 1 FROM infractions WHERE personId = ? AND kind = ? AND date = ? AND (voidedAt IS NULL OR voidedAt = '')", [$personId, $k, $d]);
     };
     $excused = static fn(string $d): bool => function_exists('member_absence_cover') && in_array(member_absence_cover($personId, $d), ['approved', 'academic'], true);
+    /* A written rule's (policy_apply_rules) — read first: its tiers sit above
+       every rulebook range, and the re-entry check below would claim them. */
+    if ($parts = policy_rule_tier_parts($tier)) {
+        [$base, $seq, $day] = $parts;
+        $r = policy_rules_index()['bySeq'][$seq] ?? null;
+        if (!$r) return false;   // the rule is gone: nothing it caused can still be owed
+        $kindOf = policy_rule_kind((string)$r['ruleId']);
+        if ($base === POLICY_T_RULE_FINE || $base === POLICY_T_RULE_JUMPS) return $live($kindOf, policy_day_of($day));
+        if ($base === POLICY_T_RULE_REENTRY) {
+            $sus = db_row("SELECT status FROM sanctions WHERE personId = ? AND kind = 'suspension' AND tier = ?", [$personId, $tier - POLICY_T_RULE_REENTRY + POLICY_T_RULE_ESC]);
+            return $sus && !in_array((string)$sus['status'], ['lifted', 'waived'], true);
+        }
+        // An escalation holds while its day is still the Nth breach of its session.
+        $days = array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind = ? AND (voidedAt IS NULL OR voidedAt = '')", [$personId, $kindOf]), 'date');
+        $every = (int)$r['escalateAfter'];
+        if ($every < 1) return false;
+        return in_array(policy_day_of($day), array_column(policy_rule_triggers($personId, $days, $every), 1), true);
+    }
     if ($kind === 'fine' && $tier >= POLICY_T_REENTRY) {
         // A re-entry fee stands while its suspension does.
         $s = db_row("SELECT status FROM sanctions WHERE personId = ? AND kind = 'suspension' AND tier = ?", [$personId, $tier - POLICY_T_REENTRY + POLICY_T_SUSPENSION]);
@@ -2084,8 +2501,11 @@ function admin_policy_sanction_update(array $p): array {
     }
     /* A session suspension overturned takes its re-entry fee with it: a fee
        for re-entering after a suspension that did not happen is not owed. */
-    if ((string)$s['kind'] === 'suspension' && (int)$s['tier'] >= POLICY_T_SUSPENSION && (int)$s['tier'] < POLICY_T_REENTRY && in_array($status, ['waived', 'lifted'], true)) {
-        $fee = db_row("SELECT id FROM sanctions WHERE personId = ? AND kind = 'fine' AND tier = ? AND status = 'pending'", [(string)$s['personId'], (int)$s['tier'] - POLICY_T_SUSPENSION + POLICY_T_REENTRY]);
+    $st = (int)$s['tier'];
+    $feeTier = $st >= POLICY_T_RULE_ESC && $st < POLICY_T_RULE_REENTRY ? $st - POLICY_T_RULE_ESC + POLICY_T_RULE_REENTRY
+             : ($st >= POLICY_T_SUSPENSION && $st < POLICY_T_REENTRY ? $st - POLICY_T_SUSPENSION + POLICY_T_REENTRY : 0);
+    if ((string)$s['kind'] === 'suspension' && $feeTier && in_array($status, ['waived', 'lifted'], true)) {
+        $fee = db_row("SELECT id FROM sanctions WHERE personId = ? AND kind = 'fine' AND tier = ? AND status = 'pending'", [(string)$s['personId'], $feeTier]);
         if ($fee) {
             db_update('sanctions', ['status' => 'lifted', 'clearedAt' => now_iso(), 'clearedBy' => (string)$g['requester']['memberId']], ['id' => (int)$fee['id']]);
             policy_fine_void_ledger((string)$s['personId'], (int)$fee['id'], 'The suspension was overturned — no re-entry fee is owed');
@@ -2604,7 +3024,8 @@ function policy_fresh_start_run(array $members, string $asOf, bool $imported, st
                 $mrow = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$e['memberId']]);
                 $left = $mrow ? (int)(fees_entry_left($mrow, (string)$e['periodKey']) ?? 0) : 0;
                 if ($left <= 0) continue;
-                fees_post((string)$e['memberId'], 'waiver', $left, ['periodKey' => 'fresh-start:' . $asOf . ':' . (string)$e['periodKey'], 'by' => $by, 'note' => mb_substr($why . ' (imported fine)', 0, 240)]);
+                // Counted only when the waiver actually landed: the report used to count waivers that were never posted.
+                if (!fees_post((string)$e['memberId'], 'waiver', $left, ['periodKey' => 'fresh-start:' . $asOf . ':' . (string)$e['periodKey'], 'by' => $by, 'note' => mb_substr($why . ' (imported fine)', 0, 240)])) continue;
                 $imp++; $impTotal += $left; $people[(string)$e['memberId']] = true;
             }
         }
@@ -2651,13 +3072,40 @@ const POLICY_CORRECTIVE_MAX = 500;
 function admin_policy_correctives(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $rows = [];
-    foreach (db_all("SELECT s.id, s.personId, s.amount, s.reason, s.issuedAt, m.fullName, m.displayId, COALESCE(m.centre,'') centre
+    foreach (db_all("SELECT s.id, s.personId, s.tier, s.amount, s.reason, s.issuedAt, m.fullName, m.displayId, COALESCE(m.centre,'') centre
                      FROM sanctions s JOIN members m ON m.memberId = s.personId
-                     WHERE s.kind = 'corrective' AND s.status = 'pending' ORDER BY m.centre, m.fullName, s.issuedAt LIMIT 3000") as $r) {
+                     WHERE s.kind = 'corrective' AND s.status = 'pending' ORDER BY m.centre, m.fullName, s.tier LIMIT 3000") as $r) {
         if (!admin_centre_allowed($g['requester'], (string)$r['centre'])) continue;
+        /* The day and what it was for, from the tier: a rulebook row is keyed
+           by its day, so the desk can sort and read "Absent · Sat 17 Oct"
+           without parsing a sentence. Older or hand-issued rows have neither. */
+        $t = (int)$r['tier'];
+        [$for, $day] = $t >= POLICY_T_LATE_JUMPS && $t < POLICY_T_ABS_JUMPS ? ['late', policy_day_of($t - POLICY_T_LATE_JUMPS)]
+            : ($t >= POLICY_T_ABS_JUMPS && $t < POLICY_T_REVIEW ? ['absence', policy_day_of($t - POLICY_T_ABS_JUMPS)] : ['other', '']);
+        $ruleName = '';
+        if (($parts = policy_rule_tier_parts($t)) && $parts[0] === POLICY_T_RULE_JUMPS) {
+            $for = 'rule'; $day = policy_day_of($parts[2]); $ruleName = (string)(policy_rules_index()['bySeq'][$parts[1]]['name'] ?? '');
+        }
+        /* The FINE for the same incident, keyed the way policy_apply_* keys it:
+           a late band's fine, the absent day's fine, a rule breach's fine. The
+           desk used to see the jumps alone under a line saying "not money", and
+           read it as the punishment instead of a fine — when it is both. */
+        $fineTier = $for === 'late' ? POLICY_T_LATE_FINE + ($t - POLICY_T_LATE_JUMPS)
+            : ($for === 'absence' ? 500000 + ($t - POLICY_T_ABS_JUMPS)
+            : ($for === 'rule' ? POLICY_T_RULE_FINE + ($t - POLICY_T_RULE_JUMPS) : 0));
         $rows[] = ['id' => (int)$r['id'], 'memberId' => (string)$r['personId'], 'fullName' => (string)$r['fullName'], 'displayId' => (string)$r['displayId'],
-                   'centre' => (string)$r['centre'], 'count' => (int)$r['amount'], 'reason' => (string)$r['reason'], 'issuedAt' => (string)$r['issuedAt']];
+                   'centre' => (string)$r['centre'], 'count' => (int)$r['amount'], 'for' => $for, 'rule' => $ruleName, 'date' => $day, 'reason' => (string)$r['reason'], 'issuedAt' => (string)$r['issuedAt'],
+                   'fineTier' => $fineTier, 'fine' => null];
     }
+    // The fines, in one query per 500 people — never one per row.
+    $ids = array_values(array_unique(array_column(array_filter($rows, static fn($x) => $x['fineTier'] > 0), 'memberId')));
+    $fines = [];
+    foreach (array_chunk($ids, 500) as $chunk) {
+        foreach (db_all("SELECT personId, tier, amount, status FROM sanctions WHERE kind = 'fine' AND personId IN (" . implode(',', array_fill(0, count($chunk), '?')) . ')', $chunk) as $f)
+            $fines[(string)$f['personId'] . '|' . (int)$f['tier']] = ['amount' => (int)$f['amount'], 'status' => (string)$f['status']];
+    }
+    foreach ($rows as &$x) { $x['fine'] = $x['fineTier'] > 0 ? ($fines[$x['memberId'] . '|' . $x['fineTier']] ?? null) : null; unset($x['fineTier']); }
+    unset($x);
     return ['ok' => true, 'rows' => $rows, 'total' => array_sum(array_column($rows, 'count')), 'word' => (string)policy_for('member')['jumpWord'], 'max' => POLICY_CORRECTIVE_MAX];
 }
 /** admin.policy.correctives.done — {ids}: marked done at the centre, each answered, one audit event. */

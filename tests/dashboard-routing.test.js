@@ -61,7 +61,7 @@ function loadChromium() {
 <script src="/dist/vendor/react-dom.production.min.js"></script>
 <script src="/dist/data.js"></script><script src="/dist/photos.js"></script>
 <script>window.NGGApi = { admin: {}, public: {} };</script>
-<script src="/dist/app.min.js"></script>
+<script src="/dist/app.min.js"></script><script src="/dist/app-study.min.js"></script><script src="/dist/app-more.min.js"></script>
 <script>
 var e = React.createElement;
 /* Put the address bar where the test asked BEFORE the router reads it, so this

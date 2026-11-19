@@ -30,7 +30,7 @@ function sms_smsgate_on(): bool {
 
 function sms_enabled(): bool {
     $c = sms_config();
-    return (function_exists('telegram_on') && telegram_on()) || sms_smsgate_on() || !empty($c['textbee']['api_key']) || !empty($c['termii']['api_key']) || (!empty($c['twilio']['sid']) && !empty($c['twilio']['token']));
+    return (function_exists('telegram_on') && telegram_on()) || (function_exists('kapso_on') && kapso_on()) || sms_smsgate_on() || !empty($c['textbee']['api_key']) || !empty($c['termii']['api_key']) || (!empty($c['twilio']['sid']) && !empty($c['twilio']['token']));
 }
 
 /**
@@ -177,7 +177,9 @@ function sms_send_twilio(string $to, string $text): array {
  * otherwise, and falls through to the other provider on failure.
  * Returns ['ok'=>bool, 'provider'=>…, 'to'=>…] — audited either way.
  */
-function sms_send(string $rawTo, string $text): array {
+/* $opt['noWhatsApp']: keep this one off WhatsApp — sign-in codes (their WhatsApp template is a different,
+   "authentication" category) and the SMS fallback for a WhatsApp message that failed. */
+function sms_send(string $rawTo, string $text, array $opt = []): array {
     $to = sms_normalize($rawTo);
     if ($to === '') return ['ok' => false, 'error' => 'bad_number'];
     if (!sms_enabled()) return ['ok' => false, 'error' => 'sms_disabled'];
@@ -190,6 +192,15 @@ function sms_send(string $rawTo, string $text): array {
         if (!empty($tg['ok'])) {
             try { audit('sms.sent', null, $to, ['provider' => 'telegram', 'chars' => mb_strlen($text)] + (!empty($tg['ref']) ? ['ref' => $tg['ref']] : []), ''); } catch (Throwable $e) {}
             return ['ok' => true, 'provider' => 'telegram', 'to' => $to];
+        }
+    }
+    /* WhatsApp next, through Kapso (domain/kapso.php): the approved template carries the message. Refused,
+       it falls through to SMS; accepted but later undelivered, Kapso's "failed" webhook sends it by SMS. */
+    if (empty($opt['noWhatsApp']) && function_exists('kapso_on') && kapso_on()) {
+        $wa = kapso_send_template($to, $text);
+        if (!empty($wa['ok'])) {
+            try { audit('sms.sent', null, $to, ['provider' => 'whatsapp', 'chars' => mb_strlen($text), 'ref' => (string)$wa['id']], ''); } catch (Throwable $e) {}
+            return ['ok' => true, 'provider' => 'whatsapp', 'to' => $to];
         }
     }
     $last = ['ok' => false, 'error' => 'sms_disabled'];

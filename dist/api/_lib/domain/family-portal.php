@@ -82,23 +82,40 @@ function family_fees_view(array $m): ?array {
     $entries = array_map(static function ($e) use ($place) {
         $at = substr((string)$e['createdAt'], 0, 10);
         return ['id' => (string)($e['entryId'] ?? ''), 'date' => $at, 'month' => $at !== '' ? gmdate('F Y', strtotime($at . 'T12:00:00Z')) : '',
-            'kind' => (string)$e['kind'], 'note' => (string)$e['note'], 'amount' => (int)$e['amount'],
+            'kind' => (string)$e['kind'], 'note' => (string)$e['note'], 'amount' => (int)$e['amount'], 'period' => (string)($e['period'] ?? ''),
             'dir' => (string)$e['direction'] === 'credit' ? 'credit' : 'charge', 'void' => !empty($e['void']), 'place' => $place((string)$e['kind'])];
     }, (array)$a['entries']);
-    // What the payable is made of: the open charges, newest first, until they add up to it.
-    $lines = []; $left = (int)$a['payable'];
-    foreach ($entries as $e) {
-        if ($left <= 0) break;
-        if ($e['dir'] !== 'charge' || $e['void'] || $e['place']) continue;
-        $amt = min($left, $e['amount']); $left -= $amt;
-        $lines[] = ['label' => $e['note'] !== '' ? $e['note'] : ucfirst($e['kind']), 'kind' => $e['kind'], 'amount' => $amt, 'detail' => $e['date']];
+    /* The balance after each entry, real money only (the training place and a
+       cancelled line move nothing), so a month on the statement can close on a
+       figure instead of leaving a parent to add twelve rows. Entries arrive
+       newest first; the running sum is taken oldest first. */
+    $run = 0;
+    for ($i = count($entries) - 1; $i >= 0; $i--) {
+        $e = $entries[$i];
+        if (!$e['void'] && !$e['place']) $run += $e['dir'] === 'charge' ? $e['amount'] : -$e['amount'];
+        $entries[$i]['balance'] = $run;
     }
+    /* What the payable is made of: each charge with something left on it, read
+       the way the account is (fees_charges_left — payments to the oldest
+       first), newest first on screen. A part-paid charge says what it was
+       (`of`), so "Membership ₦2,000" is not read as the price of membership. */
+    /* What the payable is made of — one server answer (fees_owed_made) shared
+       with the member's Money screen and Who owes: grouped, oldest first, a
+       part-paid charge saying what it was, and the training place when it
+       became owed on leaving (it is on no charge, so a list built from charges
+       alone came up short by exactly that). */
+    $lines = fees_owed_made($m, $cfg)['lines'];
     $inv = db_row("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' ORDER BY id DESC LIMIT 1", [$mid]);
+    /* What is still to come in the next two months, after what was paid ahead: the commitment fee on the 1st
+       and a renewal on the joining anniversary (dues_coming_charges — the notices read the same answer). */
     $next = [];
-    if ((int)$cfg['monthlyDues'] > 0) {
-        $first = gmdate('Y-m-01', strtotime(gmdate('Y-m-01') . 'T12:00:00Z') + 32 * 86400);
-        $next[] = ['label' => 'Commitment fee · ' . gmdate('F', strtotime($first . 'T12:00:00Z')), 'date' => $first, 'amount' => (int)$cfg['monthlyDues']];
+    if (function_exists('dues_coming_charges') && !empty($cfg['enabled'])) {
+        $today = function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d');
+        foreach (dues_coming_charges($m, $cfg, $today, 62, 3) as $c)
+            $next[] = ['label' => $c['kind'] === 'dues' ? 'Commitment fee · ' . gmdate('F', strtotime($c['key'] . '-01T12:00:00Z')) : 'Membership renewal',
+                'date' => (string)$c['due'], 'amount' => (int)$c['amount'], 'kind' => (string)$c['kind']];
     }
+    $ch = function_exists('dues_notice_channels') ? dues_notice_channels($cfg) : [];
     $t = (array)($a['training'] ?? []);
     $cost = (int)($t['chargedAmount'] ?? 0); $covered = (int)($t['covered'] ?? 0);
     $start = (string)(($a['tenure']['start'] ?? '') ?: '');
@@ -106,11 +123,18 @@ function family_fees_view(array $m): ?array {
     $pay = function_exists('membership_pay_settings') ? membership_pay_settings() : ['bankName' => '', 'accountName' => '', 'accountNumber' => ''];
     return [
         'payable' => (int)$a['payable'], 'outstanding' => (int)$a['outstanding'], 'payOnline' => !empty($a['payOnline']),
+        /* Paystack's charge on paying online, borne by the family (fees.payFeeOn) — shown before they go to Paystack. */
+        'payFee' => !empty($a['payOnline']) && function_exists('paystack_family_charge') ? paystack_family_charge($inv ? (int)$inv['total'] : (int)$a['payable'], $cfg) : 0,
         'offlinePending' => (bool)db_row("SELECT 1 FROM member_requests WHERE memberId = ? AND kind = 'payment' AND status = 'open' LIMIT 1", [$mid]),
         'lines' => $lines, 'next' => $next, 'entries' => $entries,
         'joining' => $inv ? ['invoiceId' => (string)$inv['invoiceId'], 'start' => (string)$inv['startDate'], 'total' => (int)$inv['total'],
             'items' => array_map(static fn($i) => ['label' => (string)($i['label'] ?? ''), 'detail' => (string)($i['detail'] ?? ''), 'amount' => (int)($i['amount'] ?? 0), 'kind' => (string)($i['kind'] ?? 'membership')], membership_items($inv))] : null,
-        'terms' => ['membershipFee' => (int)$cfg['membershipFee'], 'monthly' => (int)$cfg['monthlyDues'], 'remindEvery' => (int)$cfg['remindEveryDays']],
+        /* How the family will be told, from the settings that decide it — so the Fees screen never
+           promises an email reminder that is switched off, or forgets the notice before a due date. */
+        'terms' => ['membershipFee' => (int)$cfg['membershipFee'], 'monthly' => (int)$cfg['monthlyDues'],
+            'remindEvery' => !empty($cfg['remindEnabled']) ? (int)$cfg['remindEveryDays'] : 0,
+            'noticeDays' => !empty($cfg['noticeEnabled']) ? (int)$cfg['noticeDaysBefore'] : 0,
+            'channels' => array_values(array_filter([!empty($ch['app']) ? 'app' : '', !empty($ch['email']) ? 'email' : '', !empty($ch['telegram']) ? 'telegram' : '', !empty($ch['sms']) ? 'sms' : '']))],
         'programme' => ['phase' => (string)($t['phase'] ?? 'unknown') === 'unknown' ? 'starting' : (string)$t['phase'], 'cost' => $cost, 'covered' => $covered,
             'pct' => $cost > 0 ? (int)floor(100 * $covered / $cost) : 0, 'months' => (int)($t['months'] ?? 0), 'servedMonths' => (int)($t['servedMonths'] ?? 0),
             'trainingMonths' => $tm, 'serviceMonths' => $sm, 'serviceStarts' => (string)($t['trainingEndsAt'] ?? ''),
@@ -254,11 +278,13 @@ function family_inbox(array $p): array {
         $c = family_notice_cat($n);
         if ($cat !== '' && $cat !== $c) continue;
         $out[] = ['id' => (string)$n['noticeId'], 'cat' => $c, 'wardLinkId' => $links[(string)($n['memberId'] ?? '')] ?? null,
-            'icon' => ['report' => 'file-text', 'alert' => 'warning-circle', 'centre' => 'megaphone'][$c],
+            'icon' => str_starts_with((string)$n['kind'], 'dues-') ? 'wallet' : ['report' => 'file-text', 'alert' => 'warning-circle', 'centre' => 'megaphone'][$c],
             'title' => (string)$n['title'], 'body' => (string)$n['body'], 'from' => (string)$n['fromName'], 'at' => (string)$n['createdAt'],
             'unread' => (string)$n['readAt'] === '', 'sign' => (int)($n['sign'] ?? 0) === 1, 'signedAt' => (string)($n['signedAt'] ?? '') ?: null,
             // An official notice opens in full on its own page (domain/notices.php).
-            'href' => (string)$n['kind'] === 'notice' ? '/notice/' . rawurlencode((string)$n['refId']) : null];
+            'href' => (string)$n['kind'] === 'notice' ? '/notice/' . rawurlencode((string)$n['refId']) : null,
+            // A money notice (domain/dues-notices.php) is acted on in Fees, for that child — not just read and closed.
+            'act' => in_array((string)$n['kind'], ['dues-upcoming', 'dues-arrears', 'dues-claim_decided'], true) ? 'money' : null];
         $last = (int)$n['id'];
         if (count($out) >= FAMILY_INBOX_PAGE) break;
     }
@@ -505,6 +531,9 @@ function admin_member_collectors(array $p): array {
  * refId) index makes a second run a no-op, so the job is safe to re-run.
  */
 function family_reports_run(?string $today = null, int $limit = 200): array {
+    /* The formal report (domain/parent-reports.php) replaces this short note: the same inbox notice, signable, keyed
+       the same way, plus the full report by email and a printable copy sealed on file. */
+    if (function_exists('preport_monthly_run')) return preport_monthly_run($today, $limit);
     $today = $today ?: attendance_today();
     if ((int)substr($today, 8, 2) > 3) return ['ok' => true, 'made' => 0, 'skipped' => 'not_the_start_of_a_month'];
     $month = gmdate('Y-m', strtotime(substr($today, 0, 7) . '-01T12:00:00Z') - 86400);

@@ -222,6 +222,8 @@ const VENDOR_LIBS = {
      its own TensorFlow.js; the models load from /vendor/human/models/. */
   human: { js: ["/vendor/human/human.js"], global: "Human" },
   qrcode: { js: ["/vendor/qrcode.min.js"], global: "qrcode" },
+  // KaTeX 0.16.11 — maths typesetting for the Maths Lab (woff2 fonts only).
+  katex: { js: ["/vendor/katex/katex.min.js"], css: ["/vendor/katex/katex.min.css"], global: "katex" },
   // Filerobot 5.0.0 — the photo editor. Built by vendor-build.js with React
   // aliased to our page globals, so it must load AFTER React (it always does:
   // React is in the document head, this is fetched from a click).
@@ -701,7 +703,7 @@ function TopNav({ page, setPage }) {
       { id: "club",    label: "NGGC",             desc: "Identity society",         icon: "◐" },
       { id: "book",    label: "The Anchor book", desc: "Field manual",              icon: "▢" },
     ]},
-    { id: "stay", kind: "mega", label: "The room", match: ["about","community","blog","media","volunteers","parents","contact","timetable"], items: [
+    { id: "stay", kind: "mega", label: "The room", match: ["about","community","blog","media","volunteers","parents","contact","timetable","shop","shop-order"], items: [
       { id: "about",      label: "About NGGC",      desc: "The 2040 formation brief", icon: "◆", badge: "2040" },
       { id: "community",  label: "Community",        desc: "The movement, live",      icon: "◈" },
       { id: "blog",       label: "The Journal",     desc: "Stories + essays",        icon: "✎" },
@@ -710,6 +712,7 @@ function TopNav({ page, setPage }) {
       { id: "volunteers", label: "Become a mentor", desc: "Volunteer with NGG",      icon: "✚" },
       { id: "parents",    label: "For parents",     desc: "Safeguarding · FAQ",      icon: "♡" },
       { id: "timetable",  label: "Timetable maker", desc: "Design yours, download it", icon: "▦", badge: "FREE" },
+      { id: "shop",       label: "Shop",            desc: "Souvenirs and merchandise", icon: "◇" },
       { id: "contact",    label: "Contact",         desc: "Talk to a human",         icon: "✆" },
     ]},
   ];
@@ -1111,6 +1114,7 @@ function Footer({ setPage, page }) {
         { label: "The Anchor book", page: "book" },
         { label: "The Journal", page: "blog" },
         { label: "Media room", page: "media" },
+        { label: "Shop", page: "shop" },
         { label: "Member dashboard", page: "dashboard", needsAuth: true },
       ],
     },
@@ -1348,7 +1352,7 @@ function humanizeError(message, code) {
    THE ADMIN ACTION LAYER — one selection primitive, one bulk bar, one runner.
 
    Every screen in this console had rolled its own. There were at least six
-   variants of "tick some rows and do a thing to them": AdminApplications kept a
+   variants of "tick some rows and do a thing to them": the old applications screen (removed) kept a
    Set and awaited a loop, SummerPending kept a Set called `ticked` with its own
    bar, the review desk kept `picked` and passed an `onBulk` up, the assessment
    screen kept an object map, the mentor sheet took an array of ids, and the two
@@ -1398,6 +1402,25 @@ function humanizeError(message, code) {
  * clears whenever the identity of the list changes, so a filter or a page turn
  * can never leave rows selected that the operator can no longer see.
  */
+/* ── Leave notice (owner, 14 Nov 2026) ─────────────────────────────────────────────────────────────
+   A leave request sent less than 24 hours before the day it excuses is not approved, unless it is an
+   emergency the centre can check, and it is still allowed to send. This is the server's rule
+   (member_leave_notice in domain/member-self.php) worked out in the browser so the warning appears while
+   the date is being chosen; the server decides and records it when the request is sent. Measured from the
+   first meeting day on or after `fromIso` (Saturday unless told otherwise), at the arrival time, Lagos time. */
+const NGG_LEAVE_NOTICE_HOURS = 24;
+function nggLeaveNotice(fromIso, redline, weekdays) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromIso || "")) return { short: false };
+  const wd = (weekdays && weekdays.length ? weekdays : [6]).map(Number), rl = /^\d{2}:\d{2}$/.test(redline || "") ? redline : "09:00";
+  let d = new Date(fromIso + "T12:00:00Z");
+  for (let i = 0; i < 7 && wd.indexOf(d.getUTCDay() === 0 ? 7 : d.getUTCDay()) < 0; i++) d = new Date(d.getTime() + 864e5);
+  const first = d.toISOString().slice(0, 10), starts = new Date(first + "T" + rl + ":00+01:00").getTime();
+  return { short: Date.now() > starts - NGG_LEAVE_NOTICE_HOURS * 36e5, first, day: new Date(starts).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "Africa/Lagos" }) };
+}
+function nggLeaveNoticeText(n, who) {
+  return "This is less than 24 hours before " + n.day + ". Leave asked for this late is not approved, unless it is an emergency the centre can check, such as illness or a family emergency. You can still send it: say what happened, and keep any proof" + (who ? " " + who : "") + " can show, such as a hospital note.";
+}
+
 function useAdminSelection(rows, key) {
   const list = rows || [];
   const getKey = key || ((r) => r && (r.id || r.memberId || r.studentId));
@@ -2038,11 +2061,105 @@ function ImageLightbox({ url, alt, onClose }) {
   }, [onClose]);
   if (!url) return null;
   return (
-    <div onClick={onClose} role="dialog" aria-modal="true" aria-label={alt || "Photo"} style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(6,9,20,0.86)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "grid", placeItems: "center", padding: 24 }}>
+    <div onClick={onClose} role="dialog" aria-modal="true" aria-label={alt || "Photo"} style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(6,9,20,0.86)", backdropFilter: "var(--lite-blur, blur(4px))", WebkitBackdropFilter: "var(--lite-blur, blur(4px))", display: "grid", placeItems: "center", padding: 24 }}>
       <button type="button" onClick={onClose} aria-label="Close" style={{ position: "absolute", top: 18, right: 18, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: "var(--rs-fsize-1, 22px)", cursor: "pointer", lineHeight: 1 }}>✕</button>
       <img src={url} alt={alt || "Photo"} onClick={e => e.stopPropagation()} style={{ maxWidth: "min(92vw, 620px)", maxHeight: "88vh", width: "auto", height: "auto", objectFit: "contain", borderRadius: 14, boxShadow: "0 30px 80px -20px rgba(0,0,0,0.7)" }}/>
     </div>
   );
+}
+
+/* ── The photo quality gate, browser half ───────────────────────────────
+   NGG does not take low-quality photos. These are the rules of
+   api/_lib/domain/photo-quality.php, run here first so a family is told at
+   once and can retake; the server measures again and is the one that decides.
+   PHOTO_QA_RULES must equal PHOTO_QA there (tests/photo-quality.test.js).
+   Exposure is judged on the face zone, so a passport photo on a white wall
+   passes; sharpness is the Crete et al. blur score (0 sharp … 1 blurred). */
+const PHOTO_QA_RULES = { minShort: 600, minLong: 800, workWidth: 600, zone: [0.18, 0.08, 0.82, 0.62], inner: [0.35, 0.20, 0.65, 0.50],
+  minMean: 50, maxMean: 215, maxClipped: 0.30, minStd: 22, maxBlur: 0.58, blurKernel: 9 };
+const PHOTO_QA_WORDS = {
+  too_small: "This photo is too small to print sharply. Use the camera, not a WhatsApp forward or a screenshot.",
+  too_dark: "The face is too dark. Stand facing a window or a light and retake.",
+  too_bright: "The face is washed out. Move out of direct sunlight or away from the flash and retake.",
+  clipped: "Part of the face is pure white or black. Even out the light and retake.",
+  low_contrast: "The photo looks flat or foggy. Wipe the lens and retake in better light.",
+  blurry: "The photo is blurry. Hold the phone steady, tap the face to focus, and retake.",
+  unreadable: "We could not open this photo. Take it again as a JPG or PNG.",
+  unavailable: "We could not check the photo just now. Try again in a minute.",
+};
+/** Crete et al. blur score of a row-major luma array (w × h): the worse axis. */
+function photoQaBlur(L, w, h) {
+  if (w < 12 || h < 12) return 1;
+  const k = PHOTO_QA_RULES.blurKernel, r = k >> 1, B = new Float32Array(w * h), out = [];
+  for (const horiz of [true, false]) {
+    if (horiz) {
+      for (let y = 0; y < h; y++) {
+        const row = y * w; let acc = 0;
+        for (let i = -r; i <= r; i++) acc += L[row + Math.min(w - 1, Math.max(0, i))];
+        for (let x = 0; x < w; x++) { B[row + x] = acc / k; acc += L[row + Math.min(w - 1, x + r + 1)] - L[row + Math.max(0, x - r)]; }
+      }
+    } else {
+      for (let x = 0; x < w; x++) {
+        let acc = 0;
+        for (let i = -r; i <= r; i++) acc += L[Math.min(h - 1, Math.max(0, i)) * w + x];
+        for (let y = 0; y < h; y++) { B[y * w + x] = acc / k; acc += L[Math.min(h - 1, y + r + 1) * w + x] - L[Math.max(0, y - r) * w + x]; }
+      }
+    }
+    const step = horiz ? 1 : w; let sF = 0, sV = 0;
+    for (let y = horiz ? 0 : 1; y < h; y++) for (let x = horiz ? 1 : 0; x < w; x++) {
+      const i = y * w + x, dF = Math.abs(L[i] - L[i - step]), dB = Math.abs(B[i] - B[i - step]);
+      sF += dF; if (dF > dB) sV += dF - dB;
+    }
+    out.push(sF > 0 ? (sF - sV) / sF : 1);
+  }
+  return Math.max(out[0], out[1]);
+}
+/** Measure a canvas already at the working size (600 wide, never enlarged). */
+function photoQaMeasure(canvas) {
+  const w = canvas.width, h = canvas.height, R = PHOTO_QA_RULES;
+  const x0 = Math.floor(w * R.zone[0]), y0 = Math.floor(h * R.zone[1]), x1 = Math.floor(w * R.zone[2]), y1 = Math.floor(h * R.zone[3]);
+  const ix0 = Math.floor(w * R.inner[0]), iy0 = Math.floor(h * R.inner[1]), ix1 = Math.floor(w * R.inner[2]), iy1 = Math.floor(h * R.inner[3]);
+  const zw = x1 - x0, zh = y1 - y0;
+  const d = canvas.getContext("2d", { willReadFrequently: true }).getImageData(x0, y0, zw, zh).data;
+  const L = new Float32Array(zw * zh); let sum = 0, sq = 0, clip = 0, inner = 0;
+  for (let y = 0; y < zh; y++) for (let x = 0; x < zw; x++) {
+    const i = y * zw + x, v = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    L[i] = v; sum += v; sq += v * v;
+    const ax = x + x0, ay = y + y0;
+    if (ax >= ix0 && ax < ix1 && ay >= iy0 && ay < iy1) { inner++; if (v <= 8 || v >= 247) clip++; }
+  }
+  const n = Math.max(1, zw * zh), mean = sum / n;
+  return { mean: Math.round(mean * 10) / 10, std: Math.round(Math.sqrt(Math.max(0, sq / n - mean * mean)) * 10) / 10,
+    clipped: inner ? Math.round(clip / inner * 1000) / 1000 : 0, blur: Math.round(photoQaBlur(L, zw, zh) * 1000) / 1000 };
+}
+/** The issues, in the order a family should fix them. `srcW`/`srcH` are the ORIGINAL's pixels for the part kept. */
+function photoQaJudge(m, srcW, srcH) {
+  const R = PHOTO_QA_RULES, out = [];
+  if (Math.min(srcW, srcH) < R.minShort || Math.max(srcW, srcH) < R.minLong) out.push("too_small");
+  if (m.mean < R.minMean) out.push("too_dark");
+  if (m.mean > R.maxMean) out.push("too_bright");
+  if (m.clipped > R.maxClipped) out.push("clipped");
+  if (m.std < R.minStd) out.push("low_contrast");
+  if (m.blur > R.maxBlur) out.push("blurry");
+  return out;
+}
+/** Judge a chosen file before it is uploaded: { issues, words } (issues empty = it passes here; the server checks again). */
+async function photoQaCheckFile(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    const w = img.naturalWidth, h = img.naturalHeight, cw = Math.min(w, PHOTO_QA_RULES.workWidth), ch = Math.max(1, Math.round(h * cw / w));
+    const c = document.createElement("canvas"); c.width = cw; c.height = ch;
+    const g = c.getContext("2d", { willReadFrequently: true }); g.imageSmoothingQuality = "high"; g.drawImage(img, 0, 0, cw, ch);
+    const issues = photoQaJudge(photoQaMeasure(c), w, h);
+    return { issues, words: issues.slice(0, 2).map(i => PHOTO_QA_WORDS[i]).join(" ") };
+  } catch (_) { return { issues: ["unreadable"], words: PHOTO_QA_WORDS.unreadable }; }
+  finally { URL.revokeObjectURL(url); }
+}
+/** The server's refusal (`photo_low_quality`) in the family's words. */
+function photoQaServerWords(e) {
+  const d = (e && e.data) || {}, issues = Array.isArray(d.issues) ? d.issues : [];
+  return issues.length ? issues.slice(0, 2).map(i => PHOTO_QA_WORDS[i] || "").join(" ").trim() : (d.message || PHOTO_QA_WORDS.blurry);
 }
 
 function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
@@ -2221,7 +2338,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   // so it never jumps straight to the little circle.
   if (mode === "camera") {
     return (
-      <div role="dialog" aria-modal="true" aria-label="Take a photo" style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(6,9,20,0.94)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20, gap: 16 }}>
+      <div role="dialog" aria-modal="true" aria-label="Take a photo" style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(6,9,20,0.94)", backdropFilter: "var(--lite-blur, blur(4px))", WebkitBackdropFilter: "var(--lite-blur, blur(4px))", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20, gap: 16 }}>
         <button type="button" onClick={closeCamera} aria-label="Close" style={{ position: "absolute", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: "var(--rs-fsize-1, 22px)", lineHeight: 1, cursor: "pointer" }}>✕</button>
         <div style={{ color: "#fff", fontFamily: "'Sora',sans-serif", fontWeight: 700, fontSize: 18 }}>{shot ? "Use this photo?" : "Take your photo"}</div>
         <div style={{ position: "relative", width: "100%", maxWidth: 360, aspectRatio: "4 / 5", borderRadius: 18, overflow: "hidden", background: "#0b1020", boxShadow: "0 24px 70px -24px rgba(0,0,0,0.75)" }}>
@@ -2640,7 +2757,20 @@ function Uploader({ kind = "proof", accept, onUploaded, compact }) {
    localStorage and are applied to <html> via data attributes (see styles.css).
    An inline bootstrap in index.html applies them before first paint. */
 const A11Y_KEY = "ngg.a11y";
-const A11Y_DEFAULTS = { contrast: false, motion: false, readable: false, underline: false };
+const A11Y_DEFAULTS = { contrast: false, motion: false, readable: false, underline: false, lite: null };
+
+/* LITE (owner, 7 Nov 2026: "the site cannot run on low end devices … create a lite version"). One
+   site, drawn more cheaply: no animations or transitions, no backdrop blur, no scroll effects — the
+   work a cheap phone's GPU and CPU stall on. `lite` is true/false when chosen, null for AUTOMATIC:
+   on when the phone reports ≤ 2 GB of memory or ≤ 2 cores, asks to save data, or is on 2G/3G. The
+   same test runs before first paint in index.html; keep the two in step. */
+function nggLiteAuto() {
+  try {
+    const n = navigator, c = n.connection || {};
+    return !!((n.deviceMemory && n.deviceMemory <= 2) || (n.hardwareConcurrency && n.hardwareConcurrency <= 2) || c.saveData || /(^|-)(2g|3g)$/.test(c.effectiveType || ""));
+  } catch (_) { return false; }
+}
+function nggLiteOn(s) { return s.lite === true || (s.lite == null && nggLiteAuto()); }
 
 function applyA11y(s) {
   const root = document.documentElement;
@@ -2648,6 +2778,7 @@ function applyA11y(s) {
   root.setAttribute("data-motion", s.motion ? "reduce" : "auto");
   root.setAttribute("data-font", s.readable ? "readable" : "default");
   root.setAttribute("data-links", s.underline ? "underline" : "default");
+  root.setAttribute("data-lite", nggLiteOn(s) ? "on" : "off");
 }
 
 // Read the visitor's OS accessibility preferences so we can honour them by
@@ -2703,6 +2834,8 @@ function A11ySettingsPanel({ heading }) {
       <A11yToggle label="Reduce motion" desc="Stop animations + transitions" on={s.motion} onChange={v => set("motion", v)}/>
       <A11yToggle label="Readable font" desc="High-legibility, spaced type" on={s.readable} onChange={v => set("readable", v)}/>
       <A11yToggle label="Underline links" desc="Underline every link" on={s.underline} onChange={v => set("underline", v)}/>
+      <A11yToggle label="Lite mode" desc={"Faster on low-end phones: no animations, blur or scroll effects" + (s.lite == null && nggLiteAuto() ? " — on automatically for this device" : "")}
+        on={nggLiteOn(s)} onChange={v => set("lite", v)}/>
       <button className="a11y-reset" onClick={reset} disabled={!anyOn}>Reset to defaults</button>
     </div>
   );
@@ -3667,7 +3800,8 @@ const CUR_FILE_ACCEPT = ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.odt,.odp,.ods,.r
    Links and images accept https only, or a file in the curriculum store. The
    server renders the same language for the downloadable document
    (curriculum_text_html), so the page and the printout agree. */
-const CUR_SAFE_URL = /^(https:\/\/[^\s<>"']+|\/api\/member\/curriculum-file\.php\?f=[a-f0-9]{16,64}\.[a-z0-9]{2,5})$/i;
+// The site's own shipped lesson media (assets/learn-media/) is safe too: it is code, not a stranger's URL.
+const CUR_SAFE_URL = /^(https:\/\/[^\s<>"']+|\/api\/member\/curriculum-file\.php\?f=[a-f0-9]{16,64}\.[a-z0-9]{2,5}|\/assets\/learn-media\/[a-z0-9][a-z0-9\/_-]{0,180}\.(?:png|svg|jpe?g|webp|gif|html|pdf))$/i;
 function curVideoEmbed(url) {
   const u = String(url || "").trim();
   let m = u.match(/^https:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{6,15})/);
@@ -4727,3 +4861,99 @@ function NggPushNudge({ surface, text }) {
 }
 
 Object.assign(window, { NggPushCard, NggPushNudge, nggPushBoot, useNggPush, nggPushEnv, nggPushEnable, nggPushDisable });
+
+/* Shared with public pages (owner, 7 Nov 2026: "optimise speed … for low-end devices"): these lived in
+   page-portals.jsx / page-dashboard.jsx, which now ship only in the signed-in bundle, so a public page
+   (the Club, the Anchor application, Learn) must find them here. */
+const naira = (n) => fmtMoney(n);
+
+function Field({ label, value, onChange, type, placeholder, required, disabled, hint }) {
+  return (
+    <label className="admin-field">
+      <span>{label}{required && <em>*</em>}</span>
+      <input type={type || "text"} className="admin-input" value={value == null ? "" : value} disabled={!!disabled}
+        onChange={(e) => onChange(e.target.value)} placeholder={placeholder} required={required}
+        style={disabled ? { opacity: .7, cursor: "not-allowed" } : undefined}/>
+      {hint && <span className="admin-hint" style={{ margin: 0 }}>{hint}</span>}
+    </label>
+  );
+}
+
+function CurCheckField({ c, n, value, onChange, verdict, mark, disabled }) {
+  const rv = verdict;
+  return (
+    <fieldset className="cur-check">
+      <legend><span className="cur-check-n">{n}.</span> {c.prompt} <span className="cur-check-pts">{c.points} pt{c.points === 1 ? "" : "s"}</span></legend>
+      {/* THE VIDEO IS PART OF THE QUESTION, so it plays here. Sending a
+          learner away to find it is where this flow breaks: they lose the
+          exam, they lose the question, and on a phone they lose the tab. */}
+      {c.kind === "watch" && c.videoUrl && (() => {
+        const v = curVideoEmbed(c.videoUrl);
+        return v ? <div className="cur-watch">
+          <div className="cur-embed"><iframe src={v.src} title={v.title} loading="lazy"
+            allow="accelerometer; encrypted-media; picture-in-picture; fullscreen" allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"/></div>
+          <p className="cur-watch-note">Watch it, then write what you took from it — in your own words. A detail or a moment from the video counts for more than a tidy summary.</p>
+        </div> : null;
+      })()}
+      {/* An outside exercise: where it is, then their proof and account in the box below. */}
+      {c.kind === "order" || c.kind === "evidence"
+        /* One ordering control and one outside-exercise answer in the app: the exam player's (lrn-exam.jsx). */
+        ? <LxField q={{ ...c, n }} value={value} onChange={onChange} onPaste={() => {}} onType={() => {}} disabled={disabled}/>
+        : c.kind === "mcq"
+        ? c.options.map((o, k) => (
+            /* `answer` is there once the right answers are revealed (a pass,
+               or enough tries); before that only `right` comes back, so the
+               learner is told which they got wrong and has to think again. */
+            <label key={k} className={"cur-opt" + (rv && (rv.answer !== undefined ? String(k) === rv.answer : rv.right && value === k) ? " is-right" : "")
+                                     + (rv && value === k && (rv.answer !== undefined ? String(k) !== rv.answer : !rv.right) ? " is-wrong" : "")}>
+              <input type="radio" name={c.checkId} checked={value === k} disabled={disabled} onChange={() => onChange(k)}/>
+              <span>{o}</span>
+            </label>))
+        : <React.Fragment>
+            <textarea className={"cur-answer" + (c.kind === "code" ? " is-code" : "")} rows={["essay", "reflection", "project", "code"].includes(c.kind) ? 8 : 3}
+              value={value || ""} aria-label={"Answer to question " + n} spellCheck={c.kind !== "code"} disabled={disabled}
+              onChange={e => onChange(e.target.value)}
+              placeholder={{ essay: "Make your case — a clear point, your reasons, an example", reflection: "Be honest and specific — there is no wrong answer",
+                project: "What you made, how you made it, and what you learned", task: "What you actually did, and one decision you made while doing it",
+                watch: "What you took from it — something specific you saw or heard, in your own words",
+                evidence: "The link to your result, then what you did, your score, and one thing that went wrong",
+                code: "Paste or type your code" }[c.kind] || "Your answer, in your own words"}/>
+            {CUR_SHOWS_WORK.includes(c.kind) && !disabled && <CurAttach n={n} onAdd={url => onChange(((value || "") + "\n" + url).trim())}/>}
+          </React.Fragment>}
+      {mark && mark.feedback && <p className="cur-feedback"><b>{mark.by === "ai" ? "Feedback (AI)" : mark.by === "auto" ? "Note" : "Your instructor"}:</b> {mark.feedback}</p>}
+      {rv && rv.slip && <p className="cur-feedback"><b>Why that one is tempting:</b> {rv.slip}</p>}
+      {rv && c.kind !== "mcq" && c.kind !== "order" && rv.answer && <p className="cur-model"><b>A strong answer:</b> {rv.answer}</p>}
+      {rv && rv.answer === undefined && !rv.right && <p className="cur-feedback"><b>Not yet.</b> Think it through again — the answer is shown once you pass, or after a few tries.</p>}
+    </fieldset>
+  );
+}
+
+const CUR_SHOWS_WORK = ["task", "project", "code"];
+
+function CurAttach({ n, onAdd }) {
+  const [busy, setBusy] = React.useState(false);
+  const pick = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.curriculumUpload(file);
+      onAdd(r.url);
+      toast.success("Added to your answer.", file.name);
+    } catch (e) {
+      toast.error(e.code === "too_large" ? "That file is over 25 MB — a shorter recording or a smaller photo."
+        : e.code === "bad_type" ? "That kind of file is not allowed here." : humanizeError(e.code, e.code));
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="cur-attach">
+      <label className={"cur-attach-btn" + (busy ? " is-busy" : "")}>
+        {busy ? "Adding…" : "Attach your work"}
+        <input type="file" className="sr-only" disabled={busy} accept={CUR_FILE_ACCEPT}
+               aria-label={"Attach your work for question " + n}
+               onChange={e => { pick(e.target.files && e.target.files[0]); e.target.value = ""; }}/>
+      </label>
+      <span className="cur-attach-hint">A photo, a recording, a screenshot or a file — whatever shows you did it.</span>
+    </div>
+  );
+}

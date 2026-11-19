@@ -349,6 +349,11 @@ async function as(memberId, admin, viewport) {
       (await starRow.innerText()).replace(/\n/g, ' | ') + ' · verbal=' + q(`(int)(db_row("SELECT verbal FROM v3_scores WHERE subjectId = 'NGG-MS-K2' ORDER BY id DESC LIMIT 1")['verbal'] ?? 0)`));
     await mt.keyboard.press('Escape');
     await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/class-inside.png' : path.join(TMP, 'class-inside.png') });
+    // Class › Curriculum carries the session exams panel (Mp15CExams): the class's hardest questions and each sitting.
+    await mt.goto(BASE + '/mentor/class?tab=curriculum', { waitUntil: 'domcontentloaded' });
+    await mt.waitForSelector('#m15c-ex-h, .m15c-card[role="alert"]', { timeout: 60000 }).catch(() => {});
+    const exTxt = await mt.locator('#m15c-ex-h').innerText().catch(() => '');
+    chk('Class › Curriculum shows the session exams panel beside the answers to mark', /Session exams/.test(exTxt), exTxt || (await mt.locator('main').innerText().catch(() => '')).slice(0, 200));
     // The old email link (?tab=results) lands on Class › School results, inside the portal
     await mt.goto(BASE + '/mentor?tab=results', { waitUntil: 'domcontentloaded' });
     await waitForBoot(mt);
@@ -483,9 +488,11 @@ async function as(memberId, admin, viewport) {
     await ad.waitForFunction(() => /Chess & strategic thinking/.test(document.body.innerText), null, { timeout: 60000 });
     await ad.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/admin-formation.png' : path.join(TMP, 'admin-formation.png') });
     await ad.click('tr:has-text("Chess & strategic thinking"), [role=row]:has-text("Chess & strategic thinking")');
+    // The row opens the block's drawer (move, copy, remove); its first act is the edit form.
+    await ad.click('button:has-text("Change this block")');
     await ad.getByLabel('Key question or line').fill('What do you do after making a bad move?');
     await ad.click('button:has-text("Save block")');
-    await ad.waitForFunction(() => /Every portal shows the new/.test(document.body.innerText), null, { timeout: 20000 }).catch(() => {});
+    await ad.waitForFunction(() => /Every portal on this day shows the new/.test(document.body.innerText), null, { timeout: 20000 }).catch(() => {});
     chk('Control Room: saving a block changes the schedule every portal reads', q(`public_formation(['audience' => 'mentor'])['blocks'][7]['quote']`) === 'What do you do after making a bad move?');
     chk('…and a member without the content capability cannot', !q(`admin_formation_save(['requesterId' => 'NGG-MS-K1', 'key' => 'chess', 'quote' => 'x'])['ok'] ?? false`));
     chk('no page errors (admin)', ad.errs.length === 0);

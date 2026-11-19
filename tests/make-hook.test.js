@@ -30,6 +30,9 @@ const PORT = process.env.MAKE_PORT || 8257;
 const BASE = 'http://127.0.0.1:' + PORT;
 const CONFIG = path.join(ROOT, 'api', 'config.php');
 const DB = path.join(os.tmpdir(), 'ngg-make-hook-' + process.pid + '.db');
+/* Its own cache dir too: the rate-limit buckets live there, and in the shared api/_cache every
+   earlier suite's calls to cron.php from 127.0.0.1 counted against this one's. */
+const CACHE = path.join(os.tmpdir(), 'ngg-make-hook-cache-' + process.pid);
 const SECRET = 'm' + 'test-make-secret-0123456789abcdef';
 const UI_SECRET = 'mk_' + 'made-on-screen-0123456789abcdef';
 const UI_CRON = 'ck_' + 'made-on-screen-0123456789abcdef';
@@ -68,8 +71,9 @@ function writeConfig(secret) {
   const cfg = example
     .replace(/'cookie_secret'\s*=>\s*'[^']*'/, "'cookie_secret' => '" + 'c'.repeat(48) + "'")
     .replace(/'sqlite_path'\s*=>\s*[^,]+,/, "'sqlite_path' => " + JSON.stringify(DB) + ',')
-    .replace(/'make_secret'\s*=>\s*'[^']*'/, "'make_secret' => '" + secret + "'");
-  if (!cfg.includes("'make_secret' => '" + secret + "'") || !cfg.includes(DB)) throw new Error('config.example.php changed shape');
+    .replace(/'make_secret'\s*=>\s*'[^']*'/, "'make_secret' => '" + secret + "'")
+    .replace(/'cache_dir'\s*=>\s*[^,]+,/, "'cache_dir' => " + JSON.stringify(CACHE) + ',');
+  if (!cfg.includes("'make_secret' => '" + secret + "'") || !cfg.includes(DB) || !cfg.includes(CACHE)) throw new Error('config.example.php changed shape');
   fs.writeFileSync(CONFIG, cfg);
 }
 
@@ -139,6 +143,7 @@ function writeConfig(secret) {
     stop();
     try { fs.unlinkSync(CONFIG); } catch (_) {}
     for (const f of [DB, DB + '-wal', DB + '-shm']) { try { fs.unlinkSync(f); } catch (_) {} }
+    try { fs.rmSync(CACHE, { recursive: true, force: true }); } catch (_) {}
   }
 
   console.log('\n' + (failed === 0 ? '✅ PASS' : '❌ FAIL') + ': '

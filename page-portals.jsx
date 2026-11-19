@@ -3971,17 +3971,6 @@ function downloadCsv(name, rows) {
 // Tiny field components
 // ============================================================================
 
-function Field({ label, value, onChange, type, placeholder, required, disabled, hint }) {
-  return (
-    <label className="admin-field">
-      <span>{label}{required && <em>*</em>}</span>
-      <input type={type || "text"} className="admin-input" value={value == null ? "" : value} disabled={!!disabled}
-        onChange={(e) => onChange(e.target.value)} placeholder={placeholder} required={required}
-        style={disabled ? { opacity: .7, cursor: "not-allowed" } : undefined}/>
-      {hint && <span className="admin-hint" style={{ margin: 0 }}>{hint}</span>}
-    </label>
-  );
-}
 /* Age from an ISO date, matching dob_age() on the server so the number an admin
    sees while typing is the number that gets stored. Returns "" for a date that
    is not one yet, rather than a nonsense age for a half-typed year. */
@@ -4265,7 +4254,7 @@ function SummerKiosk({ onCheckin }) {
           {!result && <div className="summer-result idle"><i className="ph" aria-hidden="true">◎</i><div>Ready — scan a card.</div></div>}
           {result && result.student && !result.refused && !result.tooEarly && (
             <div className={"summer-result " + (result.already ? "dupe" : result.status === "late" ? "late" : "ok")}>
-              <div className="summer-result-av">{result.student.photoUrl ? <img src={result.student.photoUrl} alt=""/> : (result.student.fullName || "?").charAt(0)}</div>
+              <div className="summer-result-av">{result.student.photoUrl ? <img src={nggImg(result.student.photoUrl, "face")} alt=""/> : (result.student.fullName || "?").charAt(0)}</div>
               <div className="summer-result-nm">{result.student.fullName}</div>
               <div className="summer-result-msg">{result.out ? (result.already ? "Already signed out today" : result.early ? "Signed out early — reason recorded" : "Signed out →") : result.already ? "Already checked in today" : "Checked in ✓"}</div>
               <div className="mono summer-result-id">{result.student.studentId}{result.student.track ? " · " + result.student.track : ""}</div>
@@ -4337,7 +4326,6 @@ const STATE_CHIP = {
   evicted:   { label: "Evicted",   cls: "status-archived" },
 };
 /* A shared global: page-admin.jsx's v1 fees screen formats naira with it too. */
-const naira = (n) => fmtMoney(n);
 
 function PolicyStateChip({ state }) {
   const s = STATE_CHIP[state] || STATE_CHIP.clear;

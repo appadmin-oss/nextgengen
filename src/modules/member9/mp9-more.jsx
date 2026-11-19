@@ -5,7 +5,11 @@ const MP9_JOURNAL_URL = "/journal/";
    the curriculum stopped being a sheet over this tab and became its own app
    at /learn — a lesson has an address now, and the portal links into it
    rather than drawing a second copy of it. */
-const MP9_APPS = [["Learn", "ph ph-book-open-text", "/learn"], ["Anchor Journal", "ph ph-notebook", MP9_JOURNAL_URL], ["Community", "ph ph-users-three", "/community"]];
+/* The apps a member opens outside the portal. "Learn" used to sit here as well, beside the Learn
+   area it duplicated, so a child saw the same word twice and two different pages behind it. One
+   "Labs" entry (owner: "it should just say labs") opens the Labs hub, which lists every subject Lab
+   from NGG_LABS, so a new Lab needs no change here. */
+const MP9_APPS = [["Anchor Journal", "ph ph-notebook", MP9_JOURNAL_URL], ["Labs", "ph ph-flask", "/study/labs"], ["Community", "ph ph-users-three", "/community"]];
 /* The idea sheet's chips, and the topic the server keeps for each (MEMBER_FEEDBACK_TOPICS). */
 const MP9_IDEA_TOPICS = { "How NGG is going for me": "experience", "An activity idea": "idea", "Something NGG should change": "change", "Something I love": "love", "Something in the portal isn’t working": "app" };
 /* The experience scale, 1 to 5, as MEMBER_FEEDBACK_RATINGS words it. Faces as well as words: the youngest members read the face first. */
@@ -19,13 +23,13 @@ const MP9_RATINGS = [[1, "Not good", "ph ph-smiley-sad"], [2, "Not great", "ph p
    the nav (its screen still opens from a link); Records is "My requests". */
 function mp9SimpleAreas(older) {
   return [["Today", "ph ph-sun-horizon", [["today", "Today"]]],
-    ["My mentor", "ph ph-handshake", [["mentor", "Talk to my mentor"], ["companion", "How my week went"], ["community", "My club"]]],
-    ["Learn", "ph ph-book-open-text", [["learn", "My lessons"], ["sat", "This Saturday"], ["timetable", "My week"], ["tools", "Study tools"]].concat(older ? [["opps", "Opportunities"]] : [])],
+    ["My mentor", "ph ph-handshake", [["mentor", "Talk to my mentor"], ["companion", "How my week went"], ["community", "Projects & ideas"]]],
+    ["Learn", "ph ph-book-open-text", [["learn", "My lessons"], ["sat", "This Saturday"], ["timetable", "My week"], ["tools", "Labs & tools ↗"]].concat(older ? [["opps", "Opportunities"]] : [])],
     ["Me", "ph ph-star", [["growth", "My goals"], ["passport", "My badges"], ["journal", "My journal"], ["results", "My school report"]]],
     ["Help", "ph ph-lifebuoy", [["help", "Get help"], ["support", "Ask the NGG team"], ["me", "My profile"], ["records", "My requests"]].concat(older ? [["money", "Money"]] : [])]];
 }
 const MP9_SIMPLE_SUBS = { mentor: "Send a message or a voice note", companion: "Tell us about your week", community: "See what your club is sharing", learn: "Your lessons and homework", sat: "What happens this Saturday",
-  timetable: "When to come to the centre", tools: "Flashcards, quizzes and a focus timer", growth: "What you’re working towards", passport: "Badges you’ve earned", journal: "Write about your day",
+  timetable: "When to come to the centre", tools: "The Labs, flashcards and a focus timer · opens in its own app", growth: "What you’re working towards", passport: "Badges you’ve earned", journal: "Write about your day",
   results: "Add your school report", help: "Ask a grown-up at NGG for help", support: "When something isn’t working", me: "Your name, photo and settings", records: "Things you’ve asked us for", opps: "Things you can apply for" };
 /* Today's big buttons in the simple view: the four things a child comes to do,
    one press each, before the full Today screen below. */
@@ -59,7 +63,9 @@ Object.assign(Mp9Portal.prototype, {
       return { t: a.title, div: (a.track || me.track || "Club") + (a.proofLabel ? " · " + a.proofLabel : ""), due: a.dueAt ? mp9Date(a.dueAt, { weekday: "short", day: "numeric", month: "short" }) : "no date", s: st,
         fg: ["marked", "submitted"].includes(a.state) ? "#1d6b30" : a.state === "todo" ? "#7a5600" : "#b0361c", open: () => this.setState({ handIn: a.assignmentId }) };
     });
-    if (!asg.length) asg.push({ t: "No assignments right now", div: "", due: "–", s: "All clear", fg: "#1d6b30", open: () => this.toast("Nothing is waiting for you.") });
+    // One line under each title, built here so an empty part never leaves a dangling "· due –".
+    asg.forEach(a => { a.meta = [a.div, a.due ? "due " + a.due : ""].filter(Boolean).join(" · "); });
+    if (!asg.length) asg.push({ t: "Nothing set right now", meta: "Your instructor sets these. They show up here.", div: "", due: "", s: "All clear", fg: "#1d6b30", open: () => this.toast("Nothing is waiting for you.") });
     const ev = (d.events || []).map(e => { const r = (s.rsvp || {})[e.eventId] !== undefined ? s.rsvp[e.eventId] : e.myRsvp; const going = r === "going";
       return { t: e.title, when: mp9Date(e.startAt, { weekday: "short", day: "numeric", month: "short" }) + (e.startAt && e.startAt.length > 10 ? " · " + new Date(e.startAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""), r, going: going ? "true" : "false",
         gBg: going ? "#0b0b0c" : "#fff", gFg: going ? "#fff" : "#0b0b0c", label: going ? "Going" : "I’ll go",
@@ -188,7 +194,7 @@ Object.assign(Mp9Portal.prototype, {
         },
         doneT: (R.wins.length ? "Wins: " + R.wins.join(", ").toLowerCase() + ". " : "") + "Plan: " + (R.plan || "") + (R.share ? " Shared with " + mf + "." : ""),
         redo: () => set({ cr: { ...R, done: false, step: 2 } }),
-        starters: [["ph ph-question", "Quiz me on a subject", "Practice testing helps it stick", "Quiz me on one of my subjects, one question at a time."], ["ph ph-calendar-check", "Plan tomorrow’s study", "Turn it into an if-then plan", "Help me plan tomorrow’s study."], ["ph ph-lightbulb", "I’m stuck on homework", "Hints, never the answer", "I’m stuck on a homework question."], ["ph ph-heart", "I feel stressed about exams", "One small step for tonight", "I feel stressed about exams."]]
+        starters: [["ph ph-hourglass-medium", "I keep putting off studying", "Find the first small step", "I keep putting off studying."], ["ph ph-calendar-check", "Plan tomorrow’s study", "Turn it into an if-then plan", "Help me plan tomorrow’s study."], ["ph ph-brain", "How do I study smarter?", "Test yourself, space it out", "How can I study smarter, not longer?"], ["ph ph-heart", "I feel stressed about exams", "One small step for tonight", "I feel stressed about exams."]]
           .map(([icon, t, s2, prompt]) => ({ icon, t, s: s2, go: () => this.askComp(prompt) })),
         chatEmpty: !msgs.length, msgs: msgs.map(m => ({ text: m.text, al: m.role === "user" ? "flex-end" : "flex-start", bg: m.role === "user" ? "#0b0b0c" : "#f4f4f2", fg: m.role === "user" ? "#fff" : "#0b0b0c" })), busy: !!s.ccBusy,
         q: s.ccQ || "", onQ: e => set({ ccQ: e.target.value }), send: e => { e.preventDefault(); this.askComp(s.ccQ); },
@@ -199,21 +205,28 @@ Object.assign(Mp9Portal.prototype, {
     text = String(text || "").trim(); if (!text || this.state.ccBusy) return;
     const msgs = (this.state.cc || []).concat([{ role: "user", text }]);
     this.setState({ cc: msgs, ccQ: "", ccBusy: true });
-    NGGApi.member.coach(msgs.map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }))).then(r => {
+    /* The coach reads {role: 'me'|'coach', text} (momentum.php). This sent {role, content}, so every
+       message arrived empty and the chat answered nothing but an error. And it says someone has been
+       told only when someone has (safeguard_check opened a case). */
+    NGGApi.member.coach(msgs.map(m => ({ role: m.role === "user" ? "me" : "coach", text: m.text }))).then(r => {
       this.setState(s => ({ cc: (s.cc || []).concat([{ role: "ai", text: (r && r.reply) || "Tell me a bit more." }]), ccBusy: false }));
-      if (r && r.safeguarding) this.toast("Your mentor and the safeguarding lead have been told so they can help.");
+      if (r && r.safeguarding) this.toast(r.told ? "The safeguarding lead at your centre has been told, so someone can help today." : "Please talk to an adult you trust today — your mentor, a parent or a teacher.");
     }).catch(e => this.setState(s => ({ cc: (s.cc || []).concat([{ role: "ai", text: mp9Err(e) }]), ccBusy: false })));
   },
   moneyVals(go) {
     const s = this.state, st = this.dd("stmt") || {}, cp = this.dd("comp9") || {}, t = this.dd("today") || {}, a = t.account || {};
     const lines = (st.lines || []).filter(l => !l.void);
-    const rows = lines.map(l => ({ d: mp9Date(l.date), w: (l.note || l.kind) + (l.real === false ? " · programme cost" : ""), c: l.charge ? mp9Naira(l.charge) : "", p: l.credit ? mp9Naira(l.credit) : "", bal: mp9Naira(l.runningPayable), isPay: !!l.credit }));
+    const rows = lines.map(l => { const x = mp9LedgerWhat(l); return { d: mp9Date(l.date), w: x.w, sub: x.sub, c: l.charge ? mp9Naira(l.charge) : "", p: l.credit ? mp9Naira(l.credit) : "", bal: mp9Naira(l.runningPayable), isPay: !!l.credit }; });
     const fines = (cp.fines || []);
     return {
-      ledger: rows.length ? (s.ledgerAll ? rows : rows.slice(-8)) : [{ d: "–", w: st.enabled === false ? "Nothing is being charged on this account" : "Nothing charged yet", c: "", p: "", bal: mp9Naira(0), isPay: false }],
+      /* Only the last eight show at first, so the balance they start from is
+         stated rather than left to look like an error in the first row. */
+      ledger: rows.length ? (s.ledgerAll || rows.length <= 8 ? rows : [{ d: "", w: "Brought forward", sub: (rows.length - 8) + " earlier entries", c: "", p: "", bal: mp9Naira(lines[lines.length - 9].runningPayable), isPay: false }].concat(rows.slice(-8))) : [{ d: "–", w: st.enabled === false ? "Nothing is being charged on this account" : "Nothing charged yet", c: "", p: "", bal: mp9Naira(0), isPay: false }],
       ledgerMore: rows.length > 8 && !s.ledgerAll, ledgerN: rows.length, showLedger: () => this.setState({ ledgerAll: true }),
-      mou: { done: true, cost: a.trainingFee ? mp9Naira(a.trainingFee) : "Covered", note: "Covered by NGG while you serve. It is only yours to pay if you leave before your MOU is complete.", status: "Active" },
-      finesList: fines.length ? fines.map(f => ({ d: mp9Date(f.issuedAt), t: f.reason, a: mp9Naira(f.amount), st: f.status === "pending" ? "Being reviewed" : "Owed", fg: "#b0361c", strike: "none" }))
+      owedList: (st.owed || []).map(o => ({ w: o.label, s: o.detail || "", a: mp9Naira(o.amount) })),
+      owedNone: !(st.owed || []).length,
+      mou: mp9MouCard(st.training, a),
+      finesList: fines.length ? fines.map(f => ({ d: mp9Date(f.issuedAt), t: mp9Plain(f.reason), a: mp9Naira(f.amount), st: "Owed", fg: "#b0361c", strike: "none" }))
         : [{ d: "", t: "No fines. Keep it that way.", a: "", st: "", fg: "#1d6b30", strike: "none" }],
       /* A member does not record payments: their parent does, from the family
          account. "Ask my parent" opens the panel below the money screen. */
@@ -248,10 +261,14 @@ Object.assign(Mp9Portal.prototype, {
       reqKinds: KINDS.map(k => ({ k: k[3] || k[0], on: s.rKind === k[0] ? "true" : "false", ring: s.rKind === k[0] ? "#0b0b0c" : "#d6d4cc", bw: s.rKind === k[0] ? "2px" : "1px", pick: () => this.setState({ rKind: k[0], rF: {} }) })),
       rHas: !!K, rFields: K ? K[2].map(fl => ({ f: fl, v: f[fl] || "", on: e => this.setState({ rF: { ...this.state.rF, [fl]: e.target.value } }) })) : [],
       rCant: !rOk, rOp: rOk ? 1 : 0.4, rCancel: () => this.setState({ rKind: null, rF: {} }),
+      // Under 24 hours before the day it excuses: warned, never blocked (nggLeaveNotice, components.jsx).
+      ...(() => { const n = K && K[1] === "leave" ? nggLeaveNotice(f[K[2][0]], ((this.dd("today") || {}).standing || {}).lateRedline) : { short: false };
+        return { rNoticeOn: !!n.short, rNotice: n.short ? nggLeaveNoticeText(n, "you") : "" }; })(),
       rSend: () => { if (!rOk) return; const v = i => (f[K[2][i]] || "").trim();
         const body = (K[1] === "leave" || K[1] === "academic") ? { kind: K[1], fromDate: v(0), toDate: v(1), body: v(2) }
           : Object.assign({ kind: K[1], subject: f.subject || "", body: v(0) }, K[4] || {});
-        NGGApi.member.raiseRequest(body).then(() => { this.setState({ rKind: null, rF: {} }); this.refresh(["reqs", "comp9"]); this.toast("Sent. You’ll see the reply here."); }).catch(e => this.toast(mp9Err(e))); },
+        NGGApi.member.raiseRequest(body).then(r => { this.setState({ rKind: null, rF: {} }); this.refresh(["reqs", "comp9"]);
+          this.toast(r && r.request && r.request.shortNotice ? "Sent, with less than 24 hours’ notice: the desk will only approve it for an emergency it can check." : "Sent. You’ll see the reply here."); }).catch(e => this.toast(mp9Err(e))); },
       reqList: list.length ? list : [{ t: "You haven’t asked the desk anything yet", key: "none", gone: false, hasReply: false, reply: "", canWithdraw: false, sFg: "#6b6b72", sText: "", when: "–", withdraw: () => {} }],
       ...this.achVals(),
     };
@@ -414,7 +431,7 @@ Object.assign(Mp9Portal.prototype, {
     const Mst = M ? ((s.mState || {})[M.missionId] || M.status || "todo") : "todo";
     const evSent = !!M && (Mst !== "todo" && Mst !== "rejected");
     return {
-      sat: { date: satIso ? mp9Date(satIso, { weekday: "long", day: "numeric", month: "long" }) : "Saturday", time: f.hours || "9:00am – 3:00pm", theme: f.theme || "Think. Create. Lead. Serve.", room: me.centre + " centre" },
+      sat: { date: satIso ? mp9Date(satIso, { weekday: "long", day: "numeric", month: "long" }) : "Saturday", time: f.off ? "No NGG this Saturday" : f.hours || "9:00am – 3:00pm", theme: f.theme || "Think. Create. Lead. Serve.", room: me.centre + " centre" },
       plan: (f.blocks || []).map(b => ({ t: b.start, a: b.title + ((b.for && b.for.member && b.for.member[0]) ? " · " + b.for.member[0] : "") })).concat(f.blocks && f.blocks.length ? [] : [{ t: "", a: f.error ? "The plan couldn’t load." : "The Saturday plan isn’t published yet." }]),
       ch: M ? { t: M.title, cat: M.type || "Mission", due: "Before Saturday", d: M.prompt || "", builds: [] } : { t: "No mission this week", cat: "Mission", due: "", d: "When the week’s mission opens, it shows here.", builds: [] },
       builds: M ? [M.type || "Reflect", (M.xp || 0) + " XP", M.estimatedMin ? "About " + M.estimatedMin + " min" : ""].filter(Boolean) : [],
@@ -718,10 +735,10 @@ Object.assign(Mp9Portal.prototype, {
     const BADGE = { mentor: unreadChat ? String(unreadChat) : "", results: resDue, learn: learnN, money: owed };
     const bdg = id => BADGE[id] || "";
     const simple = this.simple();
-    const areas = (simple ? mp9SimpleAreas(older) : [["Today", "ph ph-sun-horizon", [["today", "Today"]]], ["Mentor", "ph ph-handshake", [["mentor", "My mentor"], ["companion", "Companion"], ["community", "Community"]]],
-      ["Grow", "ph ph-plant", [["growth", "Scorecard & goals"], ["results", "School results"], ["passport", "Passport"], ["journal", "Journal"]]],
-      ["Learn", "ph ph-book-open-text", [["learn", "Lessons"], ["sat", "Saturday"], ["timetable", "Timetable"], ["tools", "Study tools"]].concat(older ? [["opps", "Opportunities"]] : [])],
-      ["Account", "ph ph-user-circle", [["me", "Profile"], ["money", "Money"], ["records", "Records"], ["support", "Support"], ["help", "Help"]]]])
+    const areas = (simple ? mp9SimpleAreas(older) : [["Today", "ph ph-sun-horizon", [["today", "Today"]]], ["Mentor", "ph ph-handshake", [["mentor", "My mentor"], ["companion", "My week"], ["community", "Projects & ideas"]]],
+      ["Grow", "ph ph-plant", [["growth", "Goals & scores"], ["results", "School results"], ["passport", "Badges"], ["journal", "Journal"]]],
+      ["Learn", "ph ph-book-open-text", [["learn", "Lessons"], ["sat", "Saturday"], ["timetable", "Timetable"], ["tools", "Labs & tools ↗"]].concat(older ? [["opps", "Opportunities"]] : [])],
+      ["Account", "ph ph-user-circle", [["me", "Profile"], ["money", "Money"], ["records", "My requests"], ["support", "Ask NGG"], ["help", "Help"]]]])
       .map(([label, icon, kids]) => { const bb = kids.map(([id]) => bdg(id)).filter(Boolean); return { label, icon, kids, ids: kids.map(k => k[0]), badge: bb.length === 1 ? bb[0] : bb.length ? String(bb.length) : "" }; });
     const area = areas.find(a => a.ids.includes(cur)) || areas[0];
     const acc = a => MP9_ACCENT[MP9_AREA_OF[a.ids[0]] || "today"] || "#0b0b0c", accOn = acc(area);
@@ -732,7 +749,7 @@ Object.assign(Mp9Portal.prototype, {
         go: () => { try { location.assign(url); } catch (_) {} } })) }];
     const areaTabs = area.kids.map(([id, l]) => { const on = cur === id; const bb = bdg(id); return { l, on: on ? "true" : "false", fg: on ? accOn : "#5a5a60", fw: on ? 600 : 500, bar: on ? accOn : "transparent", badge: bb, hasBadge: !!bb, go: () => this.go(id) }; });
     const tabbar = areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, fw: on ? 600 : 500, fg: on ? acc(a) : "#626a6e", go: () => this.go(a.ids[0]), hasBadge: !!a.badge }; });
-    const subs = { support: "Cases you’ve opened with the NGG team", sat: "This week's plan and mission", journal: "Opens in its own app", tools: "Flashcards, focus timer, typing, maths · its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
+    const subs = { support: "Cases you’ve opened with the NGG team", sat: "This week's plan and mission", journal: "Opens in its own app", tools: "The Labs, flashcards, focus timer and tools · opens in its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
     if (simple) Object.assign(subs, MP9_SIMPLE_SUBS);
     const flat = [].concat(...areas.map(a => a.kids.map(([id, l]) => ({ id, label: l, icon: a.icon }))));
     const moreGroups = areas.slice(1).map(a => ({ h: a.label, items: a.kids.map(([id, label]) => ({ label, icon: a.icon, badge: bdg(id), hasBadge: !!bdg(id), d: subs[id] || "", go: () => this.go(id) })) }));
@@ -810,9 +827,27 @@ Object.assign(Mp9Portal.prototype, {
     if (s.scr !== "today" || !this.dd("today")) return null;
     return <>
       {rec && rec.asked && typeof RecordDrive === "function" ? <div className="m9x-rec"><RecordDrive status={rec} onSaved={this.props.onRecSaved}/></div> : null}
+      {this.welcomeCard()}
       {this.startCard()}
       {this.hero()}
       {this.simple() ? this.simpleTiles() : null}
+    </>;
+  },
+  /* The welcome under the greeting: one line read from the record (a programme
+     day, a streak, a first fortnight, or an effort-praising nudge), how long
+     they have been with NGG, and — on a birthday or a tenure milestone — a
+     celebration they can put away once they have seen it. */
+  welcomeCard() {
+    const w = (this.dd("today") || {}).welcome;
+    if (!w) return null;
+    const c = w.celebrate, seen = c && this.st("mp9.celebrated." + c.key, false);
+    return <>
+      {c && !seen ? <section className="m9x-celebrate" aria-labelledby="m9x-cel-h">
+        <i className={"ph-fill ph-" + (c.icon || "confetti") + " m9x-celebrate-i"} aria-hidden="true"/>
+        <div className="m9x-celebrate-b"><h2 id="m9x-cel-h" className="m9x-celebrate-t">{c.title}</h2><p className="m9x-celebrate-s">{c.text}</p></div>
+        <button type="button" className="m9x-celebrate-x" aria-label="Put this away" onClick={() => { this.saveSt("mp9.celebrated." + c.key, true); this.forceUpdate(); }}><i className="ph ph-x" aria-hidden="true"/></button>
+      </section> : null}
+      <p className="m9x-welcome" aria-live="polite">{w.line}{w.tenure ? <span className="m9x-welcome-t"> · {w.tenure}</span> : null}</p>
     </>;
   },
   /* Getting started: the first things a new member does, each read from the
@@ -831,6 +866,10 @@ Object.assign(Mp9Portal.prototype, {
         const el = document.querySelector('.m9-app main [role="radiogroup"][aria-label="How are you doing"]'); if (el) { el.scrollIntoView({ block: "center" }); const b = el.querySelector("button"); if (b) b.focus(); } } },
       { k: "family", t: "Link a parent or guardian", s: "Give them your Anchor Circle code so they can follow your progress.", done: linked === true, unknown: linked === null, cta: "Get my code", go: () => this.go("me") },
     ].filter(x => !x.unknown || !x.done);
+  },
+  startCardShown() {
+    if (this.st("mp9.startHidden", false)) return false;
+    const steps = this.startSteps(); return steps.length > 0 && steps.some(x => !x.done);
   },
   startCard() {
     if (this.st("mp9.startHidden", false)) return null;
@@ -860,8 +899,12 @@ Object.assign(Mp9Portal.prototype, {
     const scrOf = x => MP9_ROUTE[x.route] || (/results/.test(x.route) ? "results" : /money|account/.test(x.route) ? "money" : /learn/.test(x.route) ? "learn" : /mentor/.test(x.route) ? "mentor" : "today");
     const nudge = mom && mom.nudges && mom.nudges[0] ? mom.nudges[0].text : "";
     const left = (t.todo || []).length;
+    // While the Getting-started card is on screen it IS the list of next steps; the banner repeating
+    // its first row made "Add your photo" appear three times on one page. Only once the member has
+    // hidden that card does the banner carry the open step.
+    const open = this.startCardShown() ? [] : this.startSteps().filter(x => !x.done && !x.wait), nx = open[0] || null, openSteps = open.length;
     const jm = this.dd("jm") || {}, wrote = !!(jm.todayEntry && ((jm.todayEntry.body || "").trim() || (jm.todayEntry.title || "").trim()));
-    return <section className="m9x-hero" aria-labelledby="m9x-hero-h">
+    return <section className="m9x-hero" aria-label="Your progress">
       <div className="m9x-hero-top">
         <span className="m9x-hero-lvl"><i className="ph-fill ph-plant" aria-hidden="true"/>Level {level} · {name}</span>
         <span className={"m9x-hero-streak" + (streak ? " is-on" : "")}><i className="ph-fill ph-fire" aria-hidden="true"/>{streak ? streak + "-day streak" : "Start a streak today"}</span>
@@ -875,13 +918,19 @@ Object.assign(Mp9Portal.prototype, {
         <b className="m9x-hero-t">{first.title}</b>
         {first.subtitle ? <span className="m9x-hero-s">{first.subtitle}</span> : null}
         <button type="button" className="m9x-hero-go" onClick={() => this.go(scrOf(first))}>{first.cta || "Start"}<i className="ph ph-arrow-right" aria-hidden="true"/></button>
-      </div> : <div className="m9x-hero-next is-done">
+      </div> : nx ? <div className="m9x-hero-next">
+        {/* Nothing set by the centre, but getting started is not finished: that IS the next step.
+            It used to read "All caught up · Nothing waiting" above a list of open steps. */}
+        <span className="m9x-hero-eyebrow" id="m9x-hero-h">Your next step{openSteps > 1 ? " · " + openSteps + " to finish getting started" : ""}</span>
+        <b className="m9x-hero-t">{nx.t}</b>
+        <span className="m9x-hero-s">{nx.s}</span>
+        {nx.href ? <a className="m9x-hero-go" href={nx.href}>{nx.cta}<i className="ph ph-arrow-right" aria-hidden="true"/></a>
+          : <button type="button" className="m9x-hero-go" onClick={nx.go}>{nx.cta}<i className="ph ph-arrow-right" aria-hidden="true"/></button>}
+      </div> : this.startCardShown() ? (nudge ? <p className="m9x-hero-s" id="m9x-hero-h">{nudge}</p> : null) : <div className="m9x-hero-next is-done">
         <span className="m9x-hero-eyebrow" id="m9x-hero-h">All caught up</span>
         <b className="m9x-hero-t">Nothing waiting for you. Nice work.</b>
         {nudge ? <span className="m9x-hero-s">{nudge}</span> : null}
-        {(() => { const nx = this.startSteps().find(x => !x.done && !x.wait);
-          return nx ? (nx.href ? <a className="m9x-hero-go" href={nx.href}>{nx.t}<i className="ph ph-arrow-right" aria-hidden="true"/></a> : <button type="button" className="m9x-hero-go" onClick={nx.go}>{nx.t}<i className="ph ph-arrow-right" aria-hidden="true"/></button>)
-            : <button type="button" className="m9x-hero-go" onClick={() => this.go("tools")}>Practise something<i className="ph ph-arrow-right" aria-hidden="true"/></button>; })()}
+        <a className="m9x-hero-go" href="/study/labs">Practise in a Lab<i className="ph ph-arrow-right" aria-hidden="true"/></a>
       </div>}
       {/* The journal, one tap from Today, in the same tab (a new tab on Android loses the portal). */}
       {wrote ? <a className="m9x-hero-j is-done" href={MP9_JOURNAL_URL}><i className="ph-fill ph-check-circle" aria-hidden="true"/>You wrote in your journal today · open it</a>
@@ -951,7 +1000,7 @@ Object.assign(Mp9Portal.prototype, {
       onDone={(msg) => { this.setState({ handIn: null }); this.refresh(["dash", "today"]); this.toast(msg); }}/> : null;
     const rest = this.slotEndInner();
     // The view switch goes after the profile, never above the area's tabs: on a phone it pushed them off the first screen.
-    const view = s.scr === "me" ? <>{typeof Mp9Wifi === "function" ? <Mp9Wifi toast={t => this.toast(t)}/> : null}{typeof Mp9VolWallet === "function" ? <Mp9VolWallet/> : null}{this.viewSwitch()}</> : null;
+    const view = s.scr === "me" ? <>{typeof RclProgress === "function" ? <RclProgress who="member"/> : null}{typeof Mp9Wifi === "function" ? <Mp9Wifi toast={t => this.toast(t)}/> : null}{typeof Mp9VolWallet === "function" ? <Mp9VolWallet/> : null}{this.viewSwitch()}</> : null;
     return handEl || view ? <>{view}{rest}{handEl}</> : rest;
   },
   slotEndInner() {
@@ -970,7 +1019,7 @@ Object.assign(Mp9Portal.prototype, {
     const evals = (s.scr === "growth" || s.scr === "sat")
       ? <Mp9Evals data={this.dd("evals")} err={s.er.evals} busy={!!s.ld.evals} retry={() => this.load("evals")} latestOnly={s.scr === "sat"} mentor={this.mentorInfo().first}/> : null;
     // The formation day is the staff-edited schedule with the member's own part (tests/mentor-v15); it sits in the column.
-    if (s.scr === "sat" && typeof FormationDay === "function") return <div className="m9x-slot"><FormationDay audience="member" compact={true}/>{evals}</div>;
+    if (s.scr === "sat" && typeof FormationDay === "function") return <div className="m9x-slot"><FormationDay audience="member" centre={this.me().centre || ""} compact={true}/>{evals}</div>;
     if (evals) return <div className="m9x-slot">{evals}</div>;
     return null;
   },
@@ -1001,7 +1050,10 @@ Object.assign(Mp9Portal.prototype, {
       me: { ...me, name: me.name || "…" }, mentor: { name: M.name, first: M.first, initials: M.initials, role: M.role, months: mine.mentor && mine.mentor.since ? Math.max(1, Math.round((Date.now() - new Date(mine.mentor.since + "T12:00:00Z")) / (30.4 * 864e5))) : 1, since: mine.mentor && mine.mentor.since ? mp9Date(mine.mentor.since, { month: "long", year: "numeric" }) : "this session", next: this.satDate() ? mp9Date(this.satDate(), { weekday: "short", day: "numeric", month: "short" }) + " · the mentor breakout at the centre" : "Saturday at the centre" },
       sessEnds: me.sessEnds,
       lastMsg: last ? "“" + last.body.slice(0, 140) + "”" : M.has ? "No message yet. Say hello." : "A mentor is matched to you by your centre.",
-      kpis: [["Session", sess ? sess.name + " · week " + sess.weekOf + " of " + sess.totalWeeks : "Between sessions"], ["Level", "Level " + (stats.level || 1) + (((this.dd("mom") || {}).momentum || {}).levelName ? " · " + this.dd("mom").momentum.levelName : "")], ["Streak", (stats.streak || 0) + (stats.streak === 1 ? " day" : " days")]].map(([k, v]) => ({ k, v, fg: "#0b0b0c" })),
+      // One streak, read where the hero reads it (it said "1-day streak" over a tile reading "0 days");
+      // no Level tile (the hero already shows it); and the term in words, not the session's code name.
+      kpis: (() => { const mstreak = ((this.dd("mom") || {}).momentum || {}).streak || stats.streak || 0;
+        return [["This term", sess && sess.totalWeeks ? "Week " + sess.weekOf + " of " + sess.totalWeeks : "Between terms"], ["Streak", mstreak + (mstreak === 1 ? " day" : " days")]]; })().map(([k, v]) => ({ k, v, fg: "#0b0b0c" })),
       takeTour: () => { if (typeof window.nggGuide === "function") window.nggGuide("member"); else this.toast("The tour isn’t available right now."); },
       showStart: () => { this.saveSt("mp9.startHidden", false); this.go("today"); },
       signOutMe: () => nggPortalSignOut(this.props.onSignOut), goMore: go("more"), onMoreCur: cur === "more" ? "page" : undefined,
@@ -1338,7 +1390,11 @@ function mp9PhotoAsk(app, me, s, set) {
       : declined ? "The desk kept your photo" + (r.note ? ": " + r.note : ".") + " You can ask again with another photo."
       : r && r.status === "approved" ? "Your new photo was approved." : "To change it, choose the photo you want. The desk checks it first.",
     canPick: !pending && !draft, pickL: me.photo ? "Ask to change my photo" : "Send my photo",
-    onPick: e => { const f = e.target.files && e.target.files[0]; if (!f) return; set({ phDraft: { busy: true, url: "", local: URL.createObjectURL(f) } });
+    onPick: async e => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return;
+      /* NGG does not take low-quality photos: judged here first, so a blurred or tiny one is never sent. */
+      const qa = await photoQaCheckFile(f);
+      if (qa.issues.length) { app.toast(qa.words); return; }
+      set({ phDraft: { busy: true, url: "", local: URL.createObjectURL(f) } });
       NGGApi.uploadOrInline(f, "headshot").then(u => set({ phDraft: { busy: false, url: u.url, local: (app.state.phDraft || {}).local || "" } }))
         .catch(er => { set({ phDraft: null }); app.toast(mp9Err(er)); }); },
     hasDraft: !!draft, draft: draft ? (draft.local || nggPhotoSrc(draft.url)) : "",
@@ -1472,4 +1528,38 @@ function Mp9Notifications({ items, loading, error, retry, isRead, unreadOnly, se
       {typeof NggPushCard === "function" ? <div className="m9n-push"><NggPushCard surface="member" compact title="Get these on your phone"/></div> : null}
     </div>
   </>;
+}
+
+/* A statement line in a member's words. The stored note is written for the
+   ledger ("Monthly dues 2026-07", "Policy fine — Missed 2026-07-03 — ₦1,000
+   absence fine."): ISO months and days read as dates, and an amount the row
+   already prints in its own column is not said twice. */
+const MP9_KIND_L = { membership: "Membership fee", dues: "Commitment fee", fine: "Fine", payment: "Payment", waiver: "Waived", adjustment: "Adjustment", training: "Training place", writeoff: "Training earned off", refund: "Refund" };
+function mp9Plain(t) {
+  /* "Commitment fee" is the name families, notices and receipts use; the
+     ledger's own "Monthly dues" stays in the ledger. */
+  return String(t || "").replace(/^Monthly dues\b/, "Commitment fee").replace(/^Policy fine — /, "Fine — ")
+    .replace(/\s*—\s*₦[\d,]+\s+([^—]+?)\.?$/, " — $1")
+    .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (m, y, mo, d) => mp9Date(m) || m)
+    .replace(/\b(\d{4})-(\d{2})\b/g, (m, y, mo) => { const n = Number(mo); return n >= 1 && n <= 12 ? new Date(Date.UTC(Number(y), n - 1, 1)).toLocaleString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }) : m; })
+    .replace(/^Commitment fee (?=[A-Z])/, "Commitment fee · ")
+    .trim();
+}
+function mp9LedgerWhat(l) {
+  const raw = mp9Plain(l.note) || MP9_KIND_L[l.kind] || l.kind || "";
+  /* The first clause leads; what follows a dash or a bracket is detail. */
+  const cut = raw.search(/\s+—\s+|\s+\(/);
+  let w = cut > 0 ? raw.slice(0, cut) : raw, sub = cut > 0 ? raw.slice(cut).replace(/^\s+—\s+/, "").replace(/^\s+\((.*)\)$/, "$1") : "";
+  if (l.real === false) sub = sub ? sub + " · covered by NGG, not a bill" : "Covered by NGG, not a bill";
+  return { w, sub };
+}
+/* The training place card: what it costs, how much service has earned off,
+   and the one state that turns it into money (left before the MOU). */
+function mp9MouCard(t, a) {
+  t = t || {};
+  const cost = t.cost || (a && a.trainingFee) || 0;
+  if (t.owed > 0) return { cost: mp9Naira(t.owed), note: "You left before your MOU was complete, so the part of the training place your service had not earned off is now owed.", status: "Owed", bg: "#fbeae6", fg: "#9b2c14" };
+  if (t.mouDone) return { cost: cost ? mp9Naira(cost) : "Covered", note: "Your MOU is complete. The training place is yours, and nothing about it is owed.", status: t.mouAt ? "MOU complete · " + mp9Date(t.mouAt) : "MOU complete", bg: "#e9f6ec", fg: "#1d6b30" };
+  const pct = cost > 0 ? Math.min(100, Math.floor((t.covered || 0) * 100 / cost)) : 0;
+  return { cost: cost ? mp9Naira(cost) : "Covered", note: "Covered by NGG while you serve" + (cost ? " — " + mp9Naira(t.covered || 0) + " earned off so far" : "") + ". It is only yours to pay if you leave before your MOU is complete.", status: cost ? "Earning off · " + pct + "%" : "In training", bg: "#eef2f8", fg: "#1f4a7a" };
 }

@@ -68,6 +68,7 @@ function admin_member_record(array $p): array {
         $entries = fees_entries($id);
         $b = fees_balance($m, null, null, $entries);
         $out['fees'] = ['payable' => (int)$b['payable'], 'outstanding' => (int)$b['outstanding'], 'charged' => (int)$b['charged'], 'credited' => (int)$b['credited'],
+            'realCharged' => (int)$b['realCharged'], 'realCredited' => (int)$b['realCredited'],
             'programmeCost' => (int)$b['programmeCost'], 'programmeCovered' => (int)$b['programmeCovered'], 'phase' => (string)($b['tenure']['phase'] ?? ''),
             'recent' => array_map(static fn($e) => ['date' => substr((string)$e['createdAt'], 0, 10), 'kind' => (string)$e['kind'], 'direction' => (string)$e['direction'],
                 'amount' => (int)$e['amount'], 'note' => (string)($e['note'] ?? ''), 'voided' => (string)($e['voidedAt'] ?? '') !== ''], array_slice(array_reverse($entries), 0, 12))];
@@ -91,6 +92,25 @@ function admin_member_record(array $p): array {
     $out['family'] = db_all("SELECT g.fullName, g.email, w.relationship, w.status, w.createdAt FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId
                              WHERE w.memberId = ? AND w.status IN ('active','pending') ORDER BY w.id", [$id]);
     $out['guardian'] = ['name' => (string)($m['parentName'] ?? ''), 'email' => (string)($m['parentEmail'] ?? ''), 'phone' => (string)($m['parentPhone'] ?? '')];
+
+    /* What the family told us when they applied, and that the member row has no column for: the
+       child's vision, what they enjoy, where they want to lead, the second guardian. The answers
+       stayed on the accepted application and no screen reached them from the member, so a mentor
+       setting a first goal asked the family again (audit, 13 Nov 2026). Read-only: the application
+       is the record of what was said then. */
+    $app = db_row("SELECT id, why, details, createdAt FROM applications WHERE convertedMemberId = ? ORDER BY id DESC LIMIT 1", [$id]);
+    if ($app) {
+        $dt = safe_json((string)($app['details'] ?? '')) ?: [];
+        $areas = array_values(array_filter(array_map('strval', is_array($dt['influenceAreas'] ?? null) ? $dt['influenceAreas'] : []), static fn($x) => $x !== 'Something else'));
+        if (trim((string)($dt['influenceOther'] ?? '')) !== '') $areas[] = (string)$dt['influenceOther'];
+        $out['application'] = ['id' => (int)$app['id'], 'appliedAt' => substr((string)$app['createdAt'], 0, 10), 'vision' => (string)($app['why'] ?? ''),
+            'hobbies' => array_values(array_map('strval', is_array($dt['hobbies'] ?? null) ? $dt['hobbies'] : [])), 'influenceAreas' => $areas,
+            'guardian1Rel' => (string)($dt['parent1Rel'] ?? ''),
+            'guardian2' => empty($dt['parent2None']) && trim((string)($dt['parent2Name'] ?? '')) !== ''
+                ? ['rel' => (string)($dt['parent2Rel'] ?? ''), 'name' => (string)$dt['parent2Name'], 'phone' => (string)($dt['parent2Phone'] ?? '')] : null,
+            'originLga' => (string)($dt['originLga'] ?? ''),
+            'heardFrom' => (string)($dt['heardFrom'] ?? '') === 'Something else' ? (string)($dt['heardOther'] ?? '') : (string)($dt['heardFrom'] ?? '')];
+    }
 
     // Mentorship: the current mentor and how often they have met.
     $mentor = db_row("SELECT a.mentorId, a.startedAt, mt.fullName FROM mentor_assignments a LEFT JOIN mentors mt ON mt.mentorId = a.mentorId

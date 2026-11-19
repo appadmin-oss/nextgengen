@@ -36,4 +36,8 @@ try {
               . ($mod ? "<lastmod>{$mod}</lastmod>" : '') . "<changefreq>monthly</changefreq><priority>0.7</priority></url>\n";
     }
 } catch (Throwable $e) { /* centres table unavailable — rest still serves */ }
+try {
+    // Every Lab: the Lab, its courses, every stage guide and every topic (domain/lab-seo.php).
+    foreach (lab_seo_urls() as [$path, $freq, $pri]) $out .= "  <url><loc>{$base}{$path}</loc><changefreq>{$freq}</changefreq><priority>{$pri}</priority></url>\n";
+} catch (Throwable $e) { /* the rest still serves */ }
 echo $out . '</urlset>';

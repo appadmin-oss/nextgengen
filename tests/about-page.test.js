@@ -161,7 +161,7 @@ function registrationSuite() {
      /title: "[^"]+"/.test(aboutRow));
   ok('the about row carries a real meta description (share card, SEO)',
      /desc: "[^"]{60,}"/.test(aboutRow));
-  ok('app.jsx renders <AboutPage> for the about route', /about:\s*<AboutPage\s/.test(app));
+  ok('app.jsx renders <AboutPage> for the about route', /about:\s*(?:\(\)\s*=>\s*)?<AboutPage\s/.test(app));
   ok('about is indexable — it is the programme\'s public statement of itself',
      !/index:\s*false/.test(aboutRow));
   ok('about does not claim its own chrome — it keeps the topnav and footer',

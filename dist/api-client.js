@@ -6,6 +6,16 @@
 (function (global) {
   const BASE = '/api';
 
+  /* The image cloud and hosts (site-config `img`), for nggImgFetchParts in
+     photos.js — card printing frames a bucket photo through Cloudinary's fetch.
+     Page views never do: they are served from the bucket (nggImg). */
+  function setImgCfg(c) {
+    if (!c || typeof c !== 'object') return;
+    const v = { cloud: String(c.cloud || ''), hosts: Array.isArray(c.hosts) ? c.hosts.map(h => String(h).toLowerCase()) : [] };
+    global.__nggImgCfg = v;
+    try { localStorage.setItem('ngg_img', JSON.stringify(v)); } catch (_) {}
+  }
+
   function getCookie(name) {
     const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)'));
     return m ? decodeURIComponent(m[1]) : '';
@@ -231,6 +241,7 @@
       try { _configCache = await request('/public/config.php'); }
       catch (__) { _configCache = { uploads: { enabled: false } }; }
     }
+    setImgCfg(_configCache.img);
     return _configCache;
   }
 
@@ -804,6 +815,28 @@
        hands back the image inline when there is not. Never fails because
        Cloudinary is unconfigured. */
     uploadOrInline: uploadOrInline,
+    /* A photo of a signed document that must stay READABLE (the inked Membership
+       Agreement): the cloud at the 'proof' size (2000px) when there is one; else
+       the same 2000px copy into this site's photo store — never the 1000px inline
+       size the headshot fallback uses, at which a signature page cannot be read. */
+    uploadDocumentPhoto: async (file, onProgress) => {
+      const cfg = await getConfig();
+      if (cfg && cfg.uploads && cfg.uploads.enabled) {
+        try { return Object.assign({ local: false }, await uploadFile(file, 'proof', onProgress)); } catch (_) { /* the photo store below */ }
+      }
+      let url = file;
+      try { const tools = await ensureImageTools(); const prep = await tools.prepare(file, SHRINK.proof); url = !prep.skipped && prep.blob ? prep.blob : file; } catch (_) {}
+      let data = typeSendable(url && url.type) ? await blobToDataUrl(url) : '';
+      for (const step of [{ maxPx: 2000, quality: 0.8 }, { maxPx: 1800, quality: 0.72 }]) {
+        if (data && data.length <= 4600000 && /^data:image\/(jpeg|png|webp);/.test(data)) break;
+        const shrunk = await canvasShrink(file, step.maxPx, step.quality, 320);
+        if (!shrunk) break;
+        data = await blobToDataUrl(shrunk);
+      }
+      const stored = await storeInPieces(data, onProgress);
+      if (!stored) throw new Error('The photograph couldn’t be stored. Check the connection and try again.');
+      return { url: stored, local: true };
+    },
     /* A photo of a document (a school report) as a data URL, at the size the
        'proof' preset uses: every score on it has to stay readable, which the
        1000px inline size does not promise. Never above 3.5MB of base64, the
@@ -839,6 +872,8 @@
       resetConfirm: (creds) => request('/auth/reset-confirm.php', { body: creds }),
       setPassword: (password, current) => request('/auth/set-password.php', { body: { password, current: current || '' } }),
       verify:  (creds) => request('/auth/verify.php', { body: creds }).then(r => withPick(r, creds && creds.remember)),
+      // A code staff made at the desk: the ID and the code, no password (domain/mfa.php auth_desk).
+      desk:    (identifier, code) => request('/auth/desk.php', { body: { identifier, code } }),
       studentLogin: (creds) => request('/auth/student-login.php', { body: creds }),
       me:      () => request('/auth/me.php'),
       /* Two-step sign-in, for whoever is signed in; family: true for a guardian. */
@@ -1006,6 +1041,17 @@
       curriculum:        () => request('/member/curriculum.php'),
       curriculumUnit:    (unitId) => request('/member/curriculum.php' + qs({ unit: unitId })),
       curriculumSubmit:  (unitId, answers) => request('/member/curriculum.php', { body: { action: 'submit', unitId, answers }, timeout: 90000 }),
+      // The standardised exam and mastery (domain/learn-exam.php, learn-mastery.php).
+      exam: {
+        start:  (o) => request('/member/curriculum.php', { body: { action: 'exam_start', ...o } }),
+        save:   (sittingId, answers, confidence, signals) => request('/member/curriculum.php', { body: { action: 'exam_save', sittingId, answers, confidence, signals } }),
+        submit: (sittingId, answers, confidence, signals) => request('/member/curriculum.php', { body: { action: 'exam_submit', sittingId, answers, confidence, signals }, timeout: 120000 }),
+        appeal: (sittingId, reason, checkId) => request('/member/curriculum.php', { body: { action: 'exam_appeal', sittingId, reason, checkId } }),
+        viva:   (sittingId, checkId, answer) => request('/member/curriculum.php', { body: { action: 'exam_viva', sittingId, checkId, answer }, timeout: 60000 }),
+        mastery: () => request('/member/curriculum.php?view=mastery'),
+        staff:  (course) => request('/member/curriculum.php?view=staff_exams' + (course ? '&course=' + encodeURIComponent(course) : '')),
+        mark:   (sittingId, checkId, points, note) => request('/member/curriculum.php', { body: { action: 'exam_mark', sittingId, checkId, points, note } }),
+      },
       // The Learn app: a private note on a lesson (empty clears it), and saving one for later.
       learnNote:         (unitId, note) => request('/member/curriculum.php', { body: { action: 'note', unitId, note } }),
       learnSave:         (unitId, saved) => request('/member/curriculum.php', { body: { action: 'save', unitId, saved: !!saved } }),
@@ -1049,6 +1095,33 @@
       curriculumUpload:   (file) => { const fd = new FormData(); fd.append('file', file); return request('/member/curriculum.php', { body: fd, timeout: 180000 }); },
       stateGet:  (keys) => request('/member/state.php' + qs({ keys: Array.isArray(keys) ? keys.join(',') : keys })),
       stateSet:  (key, value) => request('/member/state.php', { body: { key, value } }),
+      /* Maths Lab (docs/MATH-LAB-PLAN.md) — marked on the server; the client never holds a key. */
+      /* The Labs (domain/labs.php). Every call names its Lab, taken from the ADDRESS the learner is
+         on — /study/physics is the Physics Lab, anything else (/study/lab, the Club page) is Maths —
+         so the URL is the state and a refresh or a shared link opens the same Lab. */
+      mathslab: {
+        home:   () => request('/member/mathslab.php' + qs({ lab: mlabLab() })),
+        map:    () => request('/member/mathslab.php' + qs({ view: 'map', lab: mlabLab() })),
+        comp:   (comp) => request('/member/mathslab.php' + qs({ view: 'comp', comp, lab: mlabLab() })),
+        cert:   (course) => request('/member/mathslab.php' + qs({ view: 'certificate', course, lab: mlabLab() })),
+        progress: () => request('/member/mathslab.php' + qs({ view: 'progress', lab: mlabLab() })),
+        daily:  () => request('/member/mathslab.php' + qs({ view: 'daily', lab: mlabLab() })),
+        exams:  () => request('/member/mathslab.php' + qs({ view: 'exams', lab: mlabLab() })),
+        guide:  (stage) => request('/member/mathslab.php' + qs({ view: 'guide', stage, lab: mlabLab() })),
+        chest:  (stage) => request('/member/mathslab.php', { body: { action: 'chest', stage, lab: mlabLab() } }),
+        dailyAnswer: (answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'daily', answer, lab: mlabLab() }, extra || {}) }),
+        start:  (mode, opts) => request('/member/mathslab.php', { body: Object.assign({ action: 'start', mode, lab: mlabLab() }, opts || {}) }),
+        replace: () => request('/member/mathslab.php', { body: { action: 'replace', lab: mlabLab() } }),
+        explain: (sessionId, index) => request('/member/mathslab.php', { body: { action: 'explain', sessionId, index, lab: mlabLab() } }),
+        // "Work through one with Guide": op 'start', then 'turn' with an answer or a message (mathslab-walk.php).
+        walk: (sessionId, step, body) => request('/member/mathslab.php', { body: Object.assign({ action: 'walk', sessionId, step, lab: mlabLab() }, body || {}) }),
+        answer: (sessionId, index, answer, extra) => request('/member/mathslab.php', { body: Object.assign({ action: 'answer', sessionId, index, answer, lab: mlabLab() }, extra || {}) }),
+        finish: (sessionId) => request('/member/mathslab.php', { body: { action: 'finish', sessionId, lab: mlabLab() } }),
+        enrol:  (courseId) => request('/member/mathslab.php', { body: { action: 'enrol', courseId, lab: mlabLab() } }),
+        studied: (comp) => request('/member/mathslab.php', { body: { action: 'studied', comp, lab: mlabLab() } }),
+        voice:  (text, voice) => request('/member/mathslab.php', { body: { action: 'voice', text, voice: voice || 0, lab: mlabLab() } }),
+        listen: (comp, index, audio, mime) => request('/member/mathslab.php', { body: { action: 'listen', comp, index, audio, mime, lab: mlabLab() } }),
+      },
       tools: {
         decks:   () => request('/member/tools.php?view=decks'),
         deck:    (deckId) => request('/member/tools.php' + qs({ view: 'deck', deckId })),
@@ -1077,6 +1150,14 @@
       wifiPassword: (password) => request('/member/wifi.php', { body: { action: 'password', password } }),
       // Their volunteer wallet, when they volunteer with NGG (domain/volunteer-pay.php); null when they don't.
       volunteerPay: () => request('/member/volunteer-pay.php'),
+      /* The registration checklist (domain/registration-checklist.php): the members I
+         supervise, my own progress, and evidence for one item. */
+      regcheck: {
+        mine:     () => request('/member/registration-checklist.php' + qs({ view: 'mine' })),
+        progress: () => request('/member/registration-checklist.php' + qs({ view: 'progress' })),
+        submit:   (body) => request('/member/registration-checklist.php', { body: Object.assign({}, body || {}, { action: 'submit' }) }),
+        followup: (body) => request('/member/registration-checklist.php', { body: Object.assign({}, body || {}, { action: 'followup' }) }),
+      },
       volunteerBank: (d) => request('/member/volunteer-pay.php', { body: { action: 'bank', bankName: d.bankName, accountNumber: d.accountNumber, accountName: d.accountName } }),
       /* Self-service. No memberId travels in any of these — the server reads it
          from the session, which is what keeps them from being an enumeration
@@ -1192,12 +1273,6 @@
         start:  (game) => request('/member/arcade.php', { body: { action: 'start', game } }),
         submit: (roundId, answers) => request('/member/arcade.php', { body: { action: 'submit', roundId, answers } }),
       },
-      // Math Lab — levels that unlock, JSS number work up to Further Maths.
-      mathlab: {
-        board:  () => request('/member/arcade.php' + qs({ view: 'mathlab' })),
-        start:  (level) => request('/member/arcade.php', { body: { action: 'mathStart', level } }),
-        submit: (roundId, answers) => request('/member/arcade.php', { body: { action: 'mathSubmit', roundId, answers } }),
-      },
       // Two-player, turn-based matches. There is no "send message" here by
       // design — react() takes one of a fixed set of reactions and nothing else.
       match: {
@@ -1276,6 +1351,11 @@
       securityRevokeOthers: () => request('/member/security.php', { body: { action: 'revoke_others' } }),
     },
     public: {
+      /* Maths Lab Lite — anyone: a question with a signed token, then marking with the worked solution. */
+      mathslabMap:   () => request('/public/mathslab.php' + qs({ view: 'map', lab: mlabLab() })),
+      mathslabComp:  (comp) => request('/public/mathslab.php' + qs({ view: 'comp', comp, lab: mlabLab() })),
+      mathslabItem:  (comp) => request('/public/mathslab.php' + qs({ comp, lab: mlabLab() })),
+      mathslabCheck: (token, answer) => request('/public/mathslab.php', { body: { token, answer } }),
       /* The help centre's answers (api/public/help.php). No case is opened publicly. */
       help: (q) => request('/public/help.php' + (q ? qs({ q }) : '')),
       telegram:   () => request('/public/telegram.php'),
@@ -1358,7 +1438,7 @@
         submit:  (t, photoUrl, submissionId) => request('/public/reshoot.php', { body: { t, photoUrl, submissionId: submissionId || '' } }),
       },
       timetable: (centre) => request('/public/timetable.php' + qs({ centre: centre || '' })),
-      formation: (audience) => request('/public/formation.php' + qs({ audience: audience || 'member' })),
+      formation: (audience, opts) => request('/public/formation.php' + qs(Object.assign({ audience: audience || 'member' }, opts || {}))),
       timetableSave: (body) => request('/public/timetable-save.php', { body }),
       timetableLoad: (k) => request('/public/timetable-save.php' + qs({ k })),
       timetableTerm: () => request('/public/timetable-term.php'),
@@ -1366,10 +1446,25 @@
       programme: (program) => request('/public/programme.php' + qs({ program: program === 'summer' ? 'summer' : 'anchor' })),
       testimonials: () => request('/public/testimonials.php'),
       // A family's joining invoice, by its private token (/pay/<token>).
+      // The Membership Agreement by its private link (domain/mou.php).
+      mou:               (token) => request('/public/mou.php' + qs({ token })),
+      mouSign:           (body) => request('/public/mou.php', { body }),
+      // The agreement to print and sign in ink (the family's own link).
+      mouPrintUrl:       (token) => '/api/public/mou.php' + qs({ print: token }),
       membershipInvoice: (token) => request('/public/membership-pay.php' + qs({ token })),
       photoFraming:      (urls) => request('/public/photo-framing.php' + qs({ u: JSON.stringify(urls) })),
       membershipPay:     (token) => request('/public/membership-pay.php', { body: { action: 'init', token } }),
       membershipVerify:  (token, reference) => request('/public/membership-pay.php', { body: { action: 'verify', token, reference } }),
+      /* The NGG shop (api/public/shop.php, domain/shop.php). The server prices
+         everything: a cart is product ids, options and quantities. */
+      shop: {
+        list:  () => request('/public/shop.php'),
+        quote: (items, fulfil, code, email) => request('/public/shop.php', { body: { items, fulfil, code: code || '', buyer: { email: email || '' } } }),
+        pay:   (token) => request('/public/shop.php', { body: { action: 'pay', token } }),
+        order: (o) => request('/public/shop.php', { body: Object.assign({ action: 'order' }, o) }),
+        // An order by its private link; with Paystack's reference the server confirms it first.
+        get:   (token, reference) => request('/public/shop.php' + qs({ token, reference: reference || '' })),
+      },
     },
     /* Push notifications (api/auth/push.php). `surface` picks WHICH session
        is read — member, family or admin — never whose; the server takes the
@@ -1390,9 +1485,13 @@
       support: supportApi('/family/support.php'),
       me:       () => request('/family/me.php'),
       request:  (email) => request('/family/request.php', { body: { email } }),
+      // A code staff made at the desk: the email and the code, no emailed code (domain/mfa.php auth_desk).
+      desk:     (email, code) => request('/family/desk.php', { body: { email, code } }),
       verify:   (data) => request('/family/verify.php', { body: data }),
       logout:   (everywhere) => request('/family/logout.php', { body: { everywhere: !!everywhere } }),
       ward:     (linkId) => request('/family/ward.php' + qs({ link: linkId })),
+      // A ward's registration progress: done, what is left, who is helping (first name).
+      registration: (linkId) => request('/family/registration.php' + qs({ link: linkId })),
       // A child's Anchor week, for a parent's link; writes go through act('anchor.confirm' | 'anchor.remark').
       anchor:   (linkId) => request('/family/anchor.php' + qs({ link: linkId })),
       pay:      (linkId) => request('/family/pay.php', { body: { link: linkId } }),
@@ -1503,8 +1602,11 @@
         stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),
       },
       formation: {
-        list: () => request('/admin/formation.php'),
+        list: (scope) => request('/admin/formation.php' + qs({ scope: scope || '' })),
         save: (block) => request('/admin/formation.php', { body: Object.assign({ action: 'save' }, block || {}) }),
+        /* One op per verb on one route: add, remove, move, shift, version.create,
+           version.delete, day.set — every one names its `scope` (the version). */
+        act: (action, args) => request('/admin/formation.php', { body: Object.assign({}, args || {}, { action: action }) }),
       },
       /* Opportunities shown to members (Learning → Opportunities). Capability: content. */
       /* Sign-in & security (domain/mfa.php): who has a second step, the policy per kind, and the desk's actions. */
@@ -1738,6 +1840,22 @@
         health:    (o) => request('/admin/courses.php' + qs(Object.assign({ view: 'health' }, o || {}))),
         set:       (action, memberIds, extra) => request('/admin/courses.php', { body: Object.assign({ action, memberIds }, extra || {}) }),
       },
+      /* Membership Agreements (domain/mou.php). Capability: people. */
+      mou: {
+        list:   (o) => request('/admin/mou.php' + qs(Object.assign({ view: 'list' }, o || {}))),
+        get:    (mouId) => request('/admin/mou.php' + qs({ view: 'get', mouId })),
+        docUrl: (mouId) => '/api/admin/mou.php' + qs({ view: 'doc', mouId }),
+        act:    (action, body) => request('/admin/mou.php', { body: Object.assign({}, body || {}, { action }) }),
+      },
+      /* The registration checklist (domain/registration-checklist.php). Capability: people. */
+      regcheck: {
+        list:    (o) => request('/admin/registration-checklist.php' + qs(Object.assign({ view: 'list' }, o || {}))),
+        ids:     (o) => request('/admin/registration-checklist.php' + qs(Object.assign({ view: 'list', ids: 1 }, o || {}))),
+        member:  (memberId) => request('/admin/registration-checklist.php' + qs({ view: 'member', memberId })),
+        suggest: (memberIds) => request('/admin/registration-checklist.php' + qs({ view: 'suggest', memberIds: (memberIds || []).join(',') })),
+        items:   () => request('/admin/registration-checklist.php' + qs({ view: 'items' })),
+        act:     (action, body) => request('/admin/registration-checklist.php', { body: Object.assign({}, body || {}, { action }) }),
+      },
       engagementPortal: (opts) => request('/admin/engagement.php' + qs(Object.assign({ view: 'portal' }, opts || {}))),
       /* Whether the community is a community: reply rate, distinct voices,
          reach, return rate, answer speed, and the posts nobody answered. */
@@ -1808,16 +1926,46 @@
       mentorSupport: (data) => request('/admin/mentor-support.php', { body: data }),
       applications: {
         list:    (q) => request('/admin/applications.php' + qs(q || {})),
-        status:  (id, status, message) => request('/admin/applications.php', { body: { id, status, message: message || '' } }),
+        /* Waitlisting or refusing tells the family: `message` is the desk's own words
+           (empty sends the standard line); `notify: false` files the status quietly. */
+        status:  (id, status, message, opts) => request('/admin/applications.php', { body: Object.assign({ id, status, message: message || '' }, opts || {}) }),
         message: (id, message) => request('/admin/applications.php', { body: { action: 'message', id, message } }),
-        // `startDate` prices the first month's commitment fee (only the meeting days left are charged).
-        convert: (id, startDate) => request('/admin/applications.php', { body: { action: 'convert', id, startDate: startDate || '' } }),
+        // `startDate` prices the first month's commitment fee (only the meeting days left are charged); `centre` when the application has none.
+        convert: (id, startDate, centre) => request('/admin/applications.php', { body: { action: 'convert', id, startDate: startDate || '', centre: centre || '' } }),
         update:  (id, data) => request('/admin/applications.php', { body: { action: 'update', id, data } }),
         remove:  (id) => request('/admin/applications.php', { body: { action: 'delete', id } }),
       },
       newsletter:   () => request('/admin/newsletter.php'),
       newsletterSend: (subject, body) => request('/admin/newsletter.php', { body: { subject, body } }),
-      donations:    () => request('/admin/donations.php'),
+      donations:    (o) => request('/admin/donations.php' + qs({ export: o && o.export ? 1 : '' })),
+      /* The NGG shop (api/admin/shop.php): the catalogue is `content`; orders and settings are `fees`. */
+      shop: {
+        products:    () => request('/admin/shop.php' + qs({ what: 'products' })),
+        productSave: (data) => request('/admin/shop.php', { body: { action: 'product', data } }),
+        orders:      (f) => request('/admin/shop.php' + qs(Object.assign({ what: 'orders' }, f || {}))),
+        orderSet:    (orderId, status, reason, x) => request('/admin/shop.php', { body: Object.assign({ action: 'order', orderId, status, reason: reason || '' }, x || {}) }),
+        order:       (orderId) => request('/admin/shop.php' + qs({ what: 'order', orderId })),
+        note:        (orderId, text) => request('/admin/shop.php', { body: { action: 'note', orderId, text } }),
+        remind:      (orderId) => request('/admin/shop.php', { body: { action: 'remind', orderId } }),
+        exchange:    (orderId, line, to, qty) => request('/admin/shop.php', { body: { action: 'exchange', orderId, line, to, qty } }),
+        refund:      (r) => request('/admin/shop.php', { body: Object.assign({ action: 'refund' }, r) }),
+        refundCheck: (refundId) => request('/admin/shop.php', { body: { action: 'refundCheck', refundId } }),
+        stock:       () => request('/admin/shop.php' + qs({ what: 'stock' })),
+        history:     (productId, variant) => request('/admin/shop.php' + qs(variant == null ? { what: 'history', productId } : { what: 'history', productId, variant })),
+        adjust:      (a) => request('/admin/shop.php', { body: Object.assign({ action: 'adjust' }, a) }),
+        stocktake:   (counts, note) => request('/admin/shop.php', { body: { action: 'stocktake', counts, note: note || '' } }),
+        codes:       () => request('/admin/shop.php' + qs({ what: 'codes' })),
+        codeSave:    (data) => request('/admin/shop.php', { body: { action: 'code', data } }),
+        pos:         () => request('/admin/shop.php' + qs({ what: 'pos' })),
+        sale:        (s) => request('/admin/shop.php', { body: Object.assign({ action: 'sale' }, s) }),
+        sessionOpen: (s) => request('/admin/shop.php', { body: Object.assign({ action: 'sessionOpen' }, s) }),
+        sessionClose:(s) => request('/admin/shop.php', { body: Object.assign({ action: 'sessionClose' }, s) }),
+        sessions:    (sessionId) => request('/admin/shop.php' + qs({ what: 'sessions', sessionId: sessionId || '' })),
+        report:      (f) => request('/admin/shop.php' + qs(Object.assign({ what: 'report' }, f || {}))),
+        exportRows:  (f) => request('/admin/shop.php' + qs(Object.assign({ what: 'export' }, f || {}))),
+        settings:    () => request('/admin/shop.php' + qs({ what: 'settings' })),
+        settingsSet: (data) => request('/admin/shop.php', { body: { action: 'settings', data } }),
+      },
       comments:     (status) => request('/admin/comments.php' + qs({ status: status || 'pending' })),
       commentModerate: (commentId, act) => request('/admin/comments.php', { body: { commentId, do: act } }),
       promos: {
@@ -1986,6 +2134,8 @@
         restore: (name, data) => request('/admin/photo-framing.php', { body: { action: 'restore', name, data }, timeout: 120000 }),
         cloud:    () => request('/admin/photo-framing.php', { body: { action: 'cloud' }, timeout: 120000 }),
         useCloud: (name, place, rowId, url) => request('/admin/photo-framing.php', { body: { action: 'useCloud', name, place, rowId, url } }),
+        toBucket: () => request('/admin/photo-framing.php', { body: { action: 'toBucket' }, timeout: 120000 }),
+        variants: () => request('/admin/photo-framing.php', { body: { action: 'variants' }, timeout: 120000 }),
       },
       membership: {
         list:     (status) => request('/admin/membership.php' + qs({ status: status || '' })),
@@ -1995,6 +2145,8 @@
         bank:     (bank) => request('/admin/membership.php', { body: { action: 'bank', bank } }),
         bankConfirm: (confirmAccountNumber) => request('/admin/membership.php', { body: { action: 'bankConfirm', confirmAccountNumber } }),
         bankCancel:  () => request('/admin/membership.php', { body: { action: 'bankCancel' } }),
+        // The legal details on every invoice, receipt and certificate: read, or save with `data`.
+        documents:   (data) => data ? request('/admin/membership.php', { body: { action: 'documents', data } }) : request('/admin/membership.php' + qs({ view: 'documents' })),
         // The evidence travels as a data URL, compressed in the browser first (a host refuses big bodies).
         record:   (data) => request('/admin/membership.php', { body: Object.assign({ action: 'record' }, data), timeout: 120000 }),
         verify:   (paymentId, confirmReference, confirmAmount, checked) => request('/admin/membership.php', { body: { action: 'verify', paymentId, confirmReference, confirmAmount, checked: !!checked } }),
@@ -2094,6 +2246,8 @@
         settingsSet: (data) => request('/admin/fees.php', { body: { action: 'settings', data } }),
         member:      (memberId) => request('/admin/fees.php' + qs({ view: 'member', memberId })),
         arrears:     (limit) => request('/admin/fees.php' + qs({ view: 'arrears', limit })),
+        journal:     (f) => request('/admin/fees.php' + qs(Object.assign({ view: 'journal' }, f || {}))),
+        unappliedResolve: (id, decision, note) => request('/admin/fees.php', { body: { action: 'unappliedResolve', id, decision, note } }),
         training: (q) => request('/admin/fees.php' + qs(Object.assign({ view: 'training' }, q || {}))),
         /* Find anybody's account, not only a debtor's — the arrears list holds
            people who owe, so it could never answer "has Ada paid?". */
@@ -2102,6 +2256,8 @@
         void:        (entryId, reason) => request('/admin/fees.php', { body: { action: 'void', entryId, reason } }),
         mou:         (memberId) => request('/admin/fees.php', { body: { action: 'mou', memberId } }),
         remindOff:   (memberId, off) => request('/admin/fees.php', { body: { action: 'remindOff', memberId, off } }),
+        notices:     () => request('/admin/fees.php' + qs({ view: 'notices' })),
+        noticesRun:  () => request('/admin/fees.php', { body: { action: 'noticesRun' } }),
         charge:      (memberId, kind, amount, reason, note) => request('/admin/fees.php', { body: { action: 'charge', memberId, kind, amount, reason, note } }),
         fineImport:  (rows, opts) => request('/admin/fees.php', { body: Object.assign({ action: 'fineImport', rows }, opts || {}) }),
         waive:       (memberId, amount, reason) => request('/admin/fees.php', { body: { action: 'waive', memberId, amount, reason } }),
@@ -2128,6 +2284,12 @@
         save:      (programme, policy, memberProgramme) => request('/admin/policy.php', { body: { action: 'save', programme, policy, memberProgramme } }),
         dayToggle: (date, runs) => request('/admin/policy.php', { body: { action: 'dayToggle', date, runs } }),
         infraction:(personId, personType, kind, date, note) => request('/admin/policy.php', { body: { action: 'infraction', personId, personType, kind, date, note } }),
+        /** A written rule broken, by one member or several: {ruleId, personIds[], date?, note?}. */
+        /** Every rule in one place: the rulebook's and the written ones (the Rules page). */
+        rules:     () => request('/admin/policy.php' + qs({ view: 'rules' })),
+        ruleBreach:(data) => request('/admin/policy.php', { body: Object.assign({ action: 'ruleBreach' }, data) }),
+        /** The member rulebook alone (people), from the Rules page. */
+        rulebookSave:(member) => request('/admin/policy.php', { body: { action: 'rulebookSave', member } }),
         void:      (infractionId, reason) => request('/admin/policy.php', { body: { action: 'void', infractionId, reason } }),
         issue:     (personId, personType, kind, reason, opts) => request('/admin/policy.php', { body: Object.assign({ action: 'sanctionIssue', personId, personType, kind, reason }, opts || {}) }),
         update:    (sanctionId, status, note) => request('/admin/policy.php', { body: { action: 'sanctionUpdate', sanctionId, status, note } }),
@@ -2138,6 +2300,7 @@
         unmatched: (id, personId, personType, dismiss) => request('/admin/policy.php', { body: { action: 'unmatchedMatch', id, personId: personId || '', personType: personType || 'member', dismiss: !!dismiss } }),
         repair:    (opts) => request('/admin/policy.php', { body: Object.assign({ action: 'repair' }, opts || {}) }),
         halfday:   () => request('/admin/policy.php', { body: { action: 'halfday' } }),
+        prelate:   () => request('/admin/policy.php', { body: { action: 'prelate' } }),
         freshStart:(opts) => request('/admin/policy.php', { body: Object.assign({ action: 'freshStart' }, opts || {}) }),
         correctives: () => request('/admin/policy.php' + qs({ view: 'correctives' })),
         correctivesDone: (ids) => request('/admin/policy.php', { body: { action: 'correctivesDone', ids } }),
@@ -2255,7 +2418,8 @@
       },
       volunteers: {
         list:    (programme) => request('/admin/volunteers.php' + qs({ programme: programme || '' })),
-        approve: (id) => request('/admin/volunteers.php', { body: { action: 'approve', id } }),
+        /* An under-18 applicant is approved only with `guardianConfirmed`: staff spoke to the guardian on the form. */
+        approve: (id, guardianConfirmed) => request('/admin/volunteers.php', { body: { action: 'approve', id, guardianConfirmed: !!guardianConfirmed } }),
         decline: (id, reason) => request('/admin/volunteers.php', { body: { action: 'decline', id, reason: reason || '' } }),
         safeguard: (volunteerId, status) => request('/admin/volunteers.php', { body: { action: 'safeguard', volunteerId, status } }),
         // Portal access, granted per person by a super admin. caps ⊆ ['summer','club'].
@@ -2480,6 +2644,12 @@
       fileUrl: (caseNo, f) => BASE + base + qs({ view: 'file', caseNo, f }),
     };
   }
+  /** The Lab a page address belongs to: /study/<lab> names it, and /study/lab (the first Lab's
+      address, kept for every old link) and everywhere else mean Maths. The server checks the name. */
+  function mlabLab() {
+    const m = /^\/study\/([a-z]+)/.exec((typeof location !== 'undefined' && location.pathname) || '');
+    return m && m[1] !== 'lab' ? m[1] : 'maths';
+  }
   function qs(obj) {
     const parts = [];
     for (const k in obj) {
@@ -2518,6 +2688,8 @@
   API.portalBeat = (portal, seconds) => request('/member/beat.php', { body: { portal: portal, seconds: seconds } });
 
   global.NGGApi = API;
+  // The image cloud and hosts, read once a load (card printing; nggImgFetchParts in photos.js).
+  if (global.document) setTimeout(() => { getConfig().catch(() => {}); }, 0);
   global.NGGApiBase = BASE;
 
   /* How long people actually use the portals. Time counts only while the page

@@ -3,7 +3,10 @@
 require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-if ($method === 'GET' && isset($_GET['collectors'])) {
+if ($method === 'GET' && isset($_GET['report'])) {
+    // A member's family report for a month, built now and not sent (domain/parent-reports.php).
+    $res = gs_call('admin.reports.member', ['requesterId' => $s['mid'], 'memberId' => (string)$_GET['report'], 'month' => (string)($_GET['month'] ?? '')]);
+} elseif ($method === 'GET' && isset($_GET['collectors'])) {
     // Who may collect one member — the list a family reads and cannot write.
     $res = gs_call('admin.member.collectors', ['requesterId' => $s['mid'], 'memberId' => (string)$_GET['collectors']]);
 } elseif ($method === 'POST' && ($b = read_json_body()) && ($b['action'] ?? '') === 'collectors') {

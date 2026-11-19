@@ -28,6 +28,15 @@ member band's `absenceLimit` (two by default) and the count is the engine's own:
 absences logged, plus days still ahead on open or approved leave. A request
 that would go past the limit is refused with how many are left.
 
+**At least 24 hours' notice** (owner, 14 Nov 2026). A leave request must reach the
+desk at least 24 hours before the first meeting day it excuses, measured from the
+member band's `lateRedline` (09:00 by default), Lagos time. A later request is
+still accepted, because it may be a real emergency, but it is not approved unless
+the emergency can be checked (a hospital note, for example). The member and family
+apps warn as the date is chosen, the request is marked when it is sent
+(`member_requests.shortNotice`), and the requests desk shows that mark with the
+request.
+
 - **Nobody asked:** the absence is fined at the member band's `absenceFine`
   (₦1,000 by default; 0 switches it off), one fine per absent day.
 - **Asked, not yet decided:** the absence is held — no fine until the desk
@@ -268,8 +277,34 @@ thresholds → Stricter than Summer School**:
 
 1. **Every late is fined, from the first** (default ₦500), on the member's
    account. This is in addition to the suspension ladder.
-2. **No grace band.** Arriving after resumption (plus any grace minutes) is
-   late — there is no "tardy" in between for members.
+2. **When "late" begins depends on the rulebook in force.** Under the older
+   *ladder*, arriving after resumption (plus any grace minutes) was late. Under
+   the **member rulebook** (the default since 30 Oct 2026) a member is late
+   only from the **first lateness band** (09:30 by default); arriving between
+   resumption and that time is recorded as *tardy* — seen, and it costs
+   nothing. Each band carries its own fine and frog jumps; from the review
+   time on, a late goes to management instead.
+
+   *Lates before the first band (correction, 3 Nov 2026).* Lates the ladder
+   had logged for arrivals such as 09:01 or 09:21 were later charged by the
+   rulebook under its first band — "Arrived 09:21 (09:45 to before 10:00) —
+   3 frog jumps". That is corrected: an arrival before the first band is never
+   charged, and each such late on record is voided ("Not late under the
+   rulebook"), kept as tardy, and its fine lifted — a fine already paid stays
+   on the account as credit. Frog jumps already done stay done. The nightly
+   check applies this by itself; **Compliance → Correct lates before the first
+   band** applies it at once and says what changed.
+
+   *One penalty per entry.* A fine and the frog jumps that go with it are two
+   entries: the fine says only the money (its words are also the line on the
+   family's account), the exercise says only the exercise. The frog-jumps list
+   shows what each set was for (Late / Absent) and the day.
+
+   *Fines owed reads the account.* A policy fine the family's payments cover
+   (oldest charges first, as every money screen reads it) is marked paid by
+   itself, and owed again if that payment is voided — so the conduct board,
+   the roster and the family's account agree. A fine a person settled or
+   waived by hand is left as they set it.
 3. **A day with no sign-out is a half-day** (since 31 Oct 2026; it was a whole
    absence before, and those days were converted). Two half-days count as one
    absence. Sign-out opens at the closing time set in

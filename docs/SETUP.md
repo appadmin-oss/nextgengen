@@ -356,6 +356,27 @@ b2 bucket update --cors-rules '[{"corsRuleName":"ngg","allowedOrigins":["https:/
 **custom domain** must be added to `connect-src` and `frame-src` there by hand,
 or uploads (and photos on printed cards) fail with a CSP error in the console.
 
+**Stored in the bucket, optimised once by Cloudinary, served from the bucket.**
+Cloudinary bills every byte it serves on every view; R2 serves for nothing. So
+with both set, Cloudinary is asked for each photo's display sizes **once** (by
+fetch, reading the photo from the bucket), and the small WebP copies are stored
+back in the bucket beside it as `<photo>__<size>.webp`. Pages then load those
+straight from the bucket (`nggImg`, photos.js); no page view reaches Cloudinary.
+A photo whose sizes are not made yet is shown as it is. Cloudinary is otherwise
+used only to frame a photo when an ID card is printed, and to edit one (the
+finished edit is saved back into the bucket).
+
+In the Cloudinary console, **Settings → Security**: make sure **Fetched URL** is
+not under *Restricted image types*, and set **Allowed fetch domains** to your
+bucket's public host (e.g. `pub-1a2b3c.r2.dev`) and this site's host, and nothing
+else, so nobody can spend your credits fetching other sites through your cloud.
+
+Photos still kept on this server (the "held" ones in Diagnostics) move into the
+bucket from **Settings → Diagnostics → Photo storage → Move held photos to the
+bucket**, and by themselves once an hour. **Optimise photos** makes the sizes
+now; otherwise it carries on by itself every ten minutes. Moving keeps the file
+on this server and leaves a missing file alone.
+
 What the server enforces: the object key is chosen by the server (folder, date,
 random id), so nobody can overwrite another file; the content type comes from an
 allow-list by extension (no HTML, SVG or scripts); and the signature covers the
@@ -408,6 +429,33 @@ What you should know about it:
 Setting `cloudinary` is still worth doing for a real deployment — it brings the
 CDN, the face-aware crop and the identity-safe enhancement pass, and it keeps
 image bytes out of your database backups.
+
+### WhatsApp through Kapso (optional)
+
+With Kapso set, every text the site sends goes on WhatsApp first and by SMS when WhatsApp cannot deliver it,
+and parents' WhatsApp replies arrive in the Control Room inbox (`api/_lib/domain/kapso.php`). Sign-in codes
+always stay on SMS. Set it in the Control Room (Settings → API keys → WhatsApp (Kapso)), no file editing:
+
+1. **Connect the number in Kapso** (app.kapso.ai) and copy its **Phone number ID** and a project **API key**.
+2. **Create one template** in Kapso: category *Utility*, name `ngg_message` (or your own, typed into
+   "Template name"), language `en`, body `Next Generation Genius: {{1}}`. Wait for Meta to approve it.
+   WhatsApp only lets a business start a conversation with an approved template, so until it is approved
+   every message falls back to SMS.
+3. **Add a webhook** in Kapso pointing at `https://<your site>/api/hooks/kapso.php`, for the message
+   received, sent, delivered and failed events. Copy its **secret key** into "Webhook secret". Deliveries
+   are checked against it (HMAC-SHA256 of the raw body); without it the endpoint refuses everything.
+4. Press **Test** on the Kapso card: it reads the number's details from Kapso and sends nothing.
+
+How it behaves:
+
+- A message is the template with the text as its one parameter, made one line (WhatsApp refuses
+  newlines in a parameter). If Kapso refuses it, the same text goes by SMS straight away.
+- If WhatsApp accepts it but later reports it **failed** (for example the number is not on WhatsApp),
+  the webhook sends the same words by SMS, once.
+- A parent's WhatsApp message becomes an inbox **Message** (purpose WhatsApp), named from the family
+  record when the number matches a guardian or member. Further messages within a week join the same
+  thread. Replying from the inbox answers on WhatsApp: plain text within 24 hours of their last message,
+  the template after that.
 
 ### AI providers and the analyst panel
 

@@ -140,11 +140,10 @@ function DashAccount({ onRaise }) {
                   </tbody>
                 </table>
               </div>
-              {/* window.print() rather than a generated PDF: the browser's own
-                  print-to-PDF is on every device a family has, needs no library
-                  in the bundle, and produces something they can actually keep. */}
+              {/* The browser's own print-to-PDF (on every device a family has, no library in the bundle), but of the
+                  formal A4 account statement (domain/dues-print.php) rather than of this screen. */}
               <div style={{ marginTop: 12 }}>
-                <button className="btn btn-ghost btn-sm noprint" onClick={() => window.print()}>Print / save as PDF</button>
+                <a className="btn btn-ghost btn-sm noprint" href="/api/member/statement.php" target="_blank" rel="noopener">Statement (PDF)</a>
               </div>
             </div>
           )}
@@ -1024,7 +1023,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                   <section id="sec-today" className="ngg-anchor"><DashboardToday today={today} member={m} onMutate={onMutate} session={session}/></section>
                   <section id="sec-assignments" className="ngg-anchor"><DashboardAssignments assignments={data.assignments || []} filesMax={data.assignmentFilesMax || 5} onMutate={onMutate}/></section>
                   {/* The Saturday Formation Schedule, the member's part of each block (an NGG member's Saturday; Summer School keeps its own). */}
-                  {(m.type || "NGG") === "NGG" && typeof FormationDay === "function" && <section id="sec-saturday" className="ngg-anchor"><FormationDay audience="member" compact={true}/></section>}
+                  {(m.type || "NGG") === "NGG" && typeof FormationDay === "function" && <section id="sec-saturday" className="ngg-anchor"><FormationDay audience="member" centre={m.centre || ""} compact={true}/></section>}
                   {mentor && <section id="sec-checkin" className="ngg-anchor"><DashboardCheckin/></section>}
                   <section id="sec-activity" className="ngg-anchor"><DashboardActivityFeed memberId={m.memberId} session={session} reloadKey={mutateSeq}/></section>
                   <section id="sec-journal" className="ngg-anchor"><DashboardJournal onMutate={onMutate}/></section>
@@ -1157,7 +1156,7 @@ function DashboardSidebar({ m, first, account, ngv, fines, counts, mentorNamed, 
       <div className="ngg-side-inner">
         <button className="ngg-side-brand" onClick={onEditProfile} title="Edit your profile">
           {hasPhoto
-            ? <img src={m.photoUrl} alt="" className="ngg-side-avatar-img" onError={(e) => { e.target.style.display = "none"; }}/>
+            ? <img src={nggImg(m.photoUrl, "avatar")} alt="" className="ngg-side-avatar-img" onError={(e) => { e.target.style.display = "none"; }}/>
             : <Avatar seed={m.memberId.charCodeAt(m.memberId.length - 1) % 20 + 1} size={40} ring/>}
           <span className="ngg-side-brand-text"><b>{first}</b><span className="mono">{m.memberId}</span></span>
         </button>
@@ -1285,7 +1284,7 @@ function DashboardProfileModal({ m, onClose, onSaved, onAsk }) {
         <div className="admin-fields">
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             {hasPhoto
-              ? <img src={d.photoUrl} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover" }} onError={(e) => { e.target.style.display = "none"; }}/>
+              ? <img src={nggImg(d.photoUrl, "face")} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover" }} onError={(e) => { e.target.style.display = "none"; }}/>
               : <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--cream-100)", display: "grid", placeItems: "center", fontSize: 28 }}>🙂</div>}
             <div className="admin-upload-row">
               <input type="text" className="admin-input" value={d.photoUrl} onChange={(e) => set("photoUrl", e.target.value)} placeholder="Upload → or paste a photo URL"/>
@@ -2014,7 +2013,8 @@ function DashboardObligations({ account }) {
         <React.Fragment>
           <div className="dash-account-figure">{naira(owed)}</div>
           <div className="dash-account-sub">to pay</div>
-          {a.payOnline && <PayBalanceButton amountText={naira(owed)} pay={() => NGGApi.member.feesPay()}/>}
+          {a.payOnline && <PayBalanceButton amountText={naira(owed + (a.payFee || 0))} pay={() => NGGApi.member.feesPay()}/>}
+          {a.payOnline && a.payFee > 0 && <p className="pay-balance-note">Includes Paystack’s {naira(a.payFee)} charge for paying online. A bank transfer to NGG has no charge.</p>}
         </React.Fragment>
       ) : (
         <React.Fragment>
@@ -2252,7 +2252,7 @@ function DashboardMentor({ mentor }) {
       <div className="eyebrow" style={{color:"var(--ink-500)"}}>YOUR MENTOR</div>
       <div className="dash-mentor-row">
         {mentor.photoUrl
-          ? <img className="dash-mentor-avatar" src={mentor.photoUrl} alt={mentor.fullName}/>
+          ? <img className="dash-mentor-avatar" src={nggImg(mentor.photoUrl, "face")} alt={mentor.fullName}/>
           : <div className="dash-mentor-avatar dash-mentor-avatar-fallback">{(mentor.fullName || "?").charAt(0)}</div>}
         <div>
           <div className="dash-mentor-name">{mentor.fullName}</div>
@@ -2637,7 +2637,6 @@ function DashCurriculum() {
    subject assessed only in prose is a practical subject assessed badly —
    so these carry the thing made, done or played, attached in the exam
    itself rather than "bring it next Saturday". */
-const CUR_SHOWS_WORK = ["task", "project", "code"];
 
 /**
  * Attach the work to the answer — a photo of it, a recording of it, a file.
@@ -2650,32 +2649,6 @@ const CUR_SHOWS_WORK = ["task", "project", "code"];
  * the written answer, so nothing about marking, progress or the schema
  * changes — a marker opens the answer and the work is in it.
  */
-function CurAttach({ n, onAdd }) {
-  const [busy, setBusy] = React.useState(false);
-  const pick = async (file) => {
-    if (!file) return;
-    setBusy(true);
-    try {
-      const r = await NGGApi.member.curriculumUpload(file);
-      onAdd(r.url);
-      toast.success("Added to your answer.", file.name);
-    } catch (e) {
-      toast.error(e.code === "too_large" ? "That file is over 25 MB — a shorter recording or a smaller photo."
-        : e.code === "bad_type" ? "That kind of file is not allowed here." : humanizeError(e.code, e.code));
-    } finally { setBusy(false); }
-  };
-  return (
-    <div className="cur-attach">
-      <label className={"cur-attach-btn" + (busy ? " is-busy" : "")}>
-        {busy ? "Adding…" : "Attach your work"}
-        <input type="file" className="sr-only" disabled={busy} accept={CUR_FILE_ACCEPT}
-               aria-label={"Attach your work for question " + n}
-               onChange={e => { pick(e.target.files && e.target.files[0]); e.target.value = ""; }}/>
-      </label>
-      <span className="cur-attach-hint">A photo, a recording, a screenshot or a file — whatever shows you did it.</span>
-    </div>
-  );
-}
 
 /**
  * One question, wherever it is asked.
@@ -2687,44 +2660,6 @@ function CurAttach({ n, onAdd }) {
  * how the two drift until a child sees a different thing depending on which
  * screen asked them.
  */
-function CurCheckField({ c, n, value, onChange, verdict, mark, disabled }) {
-  const rv = verdict;
-  return (
-    <fieldset className="cur-check">
-      <legend><span className="cur-check-n">{n}.</span> {c.prompt} <span className="cur-check-pts">{c.points} pt{c.points === 1 ? "" : "s"}</span></legend>
-      {/* THE VIDEO IS PART OF THE QUESTION, so it plays here. Sending a
-          learner away to find it is where this flow breaks: they lose the
-          exam, they lose the question, and on a phone they lose the tab. */}
-      {c.kind === "watch" && c.videoUrl && (() => {
-        const v = curVideoEmbed(c.videoUrl);
-        return v ? <div className="cur-watch">
-          <div className="cur-embed"><iframe src={v.src} title={v.title} loading="lazy"
-            allow="accelerometer; encrypted-media; picture-in-picture; fullscreen" allowFullScreen
-            referrerPolicy="strict-origin-when-cross-origin"/></div>
-          <p className="cur-watch-note">Watch it, then write what you took from it — in your own words. A detail or a moment from the video counts for more than a tidy summary.</p>
-        </div> : null;
-      })()}
-      {c.kind === "mcq"
-        ? c.options.map((o, k) => (
-            <label key={k} className={"cur-opt" + (rv && String(k) === rv.answer ? " is-right" : "") + (rv && value === k && String(k) !== rv.answer ? " is-wrong" : "")}>
-              <input type="radio" name={c.checkId} checked={value === k} disabled={disabled} onChange={() => onChange(k)}/>
-              <span>{o}</span>
-            </label>))
-        : <React.Fragment>
-            <textarea className={"cur-answer" + (c.kind === "code" ? " is-code" : "")} rows={["essay", "reflection", "project", "code"].includes(c.kind) ? 8 : 3}
-              value={value || ""} aria-label={"Answer to question " + n} spellCheck={c.kind !== "code"} disabled={disabled}
-              onChange={e => onChange(e.target.value)}
-              placeholder={{ essay: "Make your case — a clear point, your reasons, an example", reflection: "Be honest and specific — there is no wrong answer",
-                project: "What you made, how you made it, and what you learned", task: "What you actually did, and one decision you made while doing it",
-                watch: "What you took from it — something specific you saw or heard, in your own words",
-                code: "Paste or type your code" }[c.kind] || "Your answer, in your own words"}/>
-            {CUR_SHOWS_WORK.includes(c.kind) && !disabled && <CurAttach n={n} onAdd={url => onChange(((value || "") + "\n" + url).trim())}/>}
-          </React.Fragment>}
-      {mark && mark.feedback && <p className="cur-feedback"><b>{mark.by === "ai" ? "Feedback (AI)" : mark.by === "auto" ? "Note" : "Your instructor"}:</b> {mark.feedback}</p>}
-      {rv && c.kind !== "mcq" && rv.answer && <p className="cur-model"><b>A strong answer:</b> {rv.answer}</p>}
-    </fieldset>
-  );
-}
 
 /**
  * ONE LINE ABOUT TODAY, asked at the end of every session.
@@ -2807,7 +2742,7 @@ function DashLessonFeedback({ unitId, mine, onSaved }) {
                     onBlur={() => body !== ((mine && mine.body) || "") && send(signal, body)}/>
         </label>
       )}
-      {saidAt > 0 && <p className="cur-fb-done" role="status">Thank you \u2014 your instructor will see this.</p>}
+      {saidAt > 0 && <p className="cur-fb-done" role="status">Thank you — your instructor will see this.</p>}
     </section>
   );
 }
@@ -2844,7 +2779,7 @@ function DashTermSay({ ask, mine, onSaved }) {
     <form className="dash-card cur-say" onSubmit={save} aria-label={"What " + ask.name + " gave you"}>
       <div className="eyebrow cur-eyebrow">{ask.name.toUpperCase()} IS ENDING</div>
       <h3 className="cur-sec-h">What did this term give you?</h3>
-      <p className="cur-say-q">One or two lines, in your own words. Not today \u2014 the whole term.</p>
+      <p className="cur-say-q">One or two lines, in your own words. Not today — the whole term.</p>
       <label className="cur-say-f">
         <span className="sr-only">What this term gave you</span>
         <textarea rows={3} value={body} maxLength={600} disabled={busy}
@@ -2876,66 +2811,6 @@ function DashTermSay({ ask, mine, onSaved }) {
   );
 }
 
-/**
- * THE OPENING REVIEW — last week's questions, before today's lesson.
- *
- * The questions belong to the PREVIOUS lesson and are submitted against it,
- * so the attempt lands on the lesson it is about and every report, deadline
- * and completion already knows where to look. Nothing new is stored.
- *
- * It is first on the page and today's teaching waits behind it — but "Skip
- * to today's lesson" is always there, in plain words, because a child who
- * joined late or was away must not be locked out of the lesson by a review
- * of a week they were not here for.
- */
-function DashOpeningReview({ review, onDone, onSkip }) {
-  const [answers, setAnswers] = React.useState({});
-  const [busy, setBusy] = React.useState(false);
-  const [out, setOut] = React.useState(null);
-  const checks = review.checks || [];
-  const answered = checks.every(c => answers[c.checkId] !== undefined && answers[c.checkId] !== "");
-  const verdicts = {}; ((out && out.review) || []).forEach(c => { verdicts[c.checkId] = c; });
-  const submit = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      const r = await NGGApi.member.curriculumSubmit(review.unitId, answers);
-      setOut(r);
-      if (r.progress.pending) toast.info("Sent. Your instructor will mark the written answers.", review.title);
-      else toast.success("Review done — " + Math.round(r.progress.score) + " of " + r.progress.maxScore + ".", review.title);
-    } catch (e2) { toast.error(humanizeError(e2.code, e2.code)); }
-    finally { setBusy(false); }
-  };
-  const p = out && out.progress;
-  return (
-    <form className="dash-card cur-review" onSubmit={submit} aria-label={"Review of week " + review.week}>
-      <div className="eyebrow cur-review-eyebrow">BEFORE TODAY&rsquo;S LESSON</div>
-      <h3 className="cur-review-h">What do you still remember?</h3>
-      <p className="cur-review-sub">
-        {checks.length} question{checks.length === 1 ? "" : "s"} from week {review.week}, <b>{review.title}</b>.
-        {review.attempted ? " You have had a go at these before." : " Try them from memory — looking them up does not help you."}
-      </p>
-      {checks.map((c, i) => (
-        <CurCheckField key={c.checkId} c={c} n={i + 1} value={answers[c.checkId]} disabled={!!p}
-                       onChange={v => setAnswers(a => ({ ...a, [c.checkId]: v }))}
-                       verdict={verdicts[c.checkId]} mark={p && p.marks && p.marks[c.checkId]}/>
-      ))}
-      {p
-        ? <div className="cur-review-done" aria-live="polite">
-            <p className="cur-result">
-              {p.pending ? "Your written answers are with your instructor."
-                : Math.round(p.score) + " of " + p.maxScore + ". " + (p.status === "completed" ? "That week is complete." : "Worth going back over before you carry on.")}
-            </p>
-            <button type="button" className="btn btn-primary" onClick={onDone}>Start today&rsquo;s lesson</button>
-          </div>
-        : <div className="cur-review-acts">
-            <button type="submit" className="btn btn-primary" disabled={busy || !answered}>{busy ? "Marking…" : "Check my answers"}</button>
-            <button type="button" className="btn btn-ghost" onClick={onSkip}>Skip to today&rsquo;s lesson</button>
-            {!answered && <span className="cur-note">Answer every question to check them.</span>}
-          </div>}
-    </form>
-  );
-}
 
 function DashCurriculumLesson({ unitId, onBack }) {
   const [d, setD] = React.useState(null);
@@ -2985,7 +2860,8 @@ function DashCurriculumLesson({ unitId, onBack }) {
         <span className={"cur-chip " + st.tone}>{st.label}</span>
         {p && p.stale && <p className="cur-note">This lesson's checks have changed since you sat them — your earlier score was on the older questions.</p>}
       </header>
-      {!opened && <DashOpeningReview review={d.review} onDone={() => setStarted(true)} onSkip={() => setStarted(true)}/>}
+      {/* One exam player everywhere a lesson opens (src/modules/learn/lrn-exam.jsx). */}
+      {!opened && <LrnExam start={{ unitId }} onDone={() => setStarted(true)} onSkip={() => setStarted(true)}/>}
       {opened && u.objectives.length > 0 && (
         <section className="dash-card">
           <h3 className="cur-sec-h">What you'll learn</h3>

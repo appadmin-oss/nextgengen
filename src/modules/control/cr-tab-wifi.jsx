@@ -17,7 +17,6 @@
    guide's drawer, with the script already filled in. */
 
 const CR_WF_ACCESS = [["on", "On"], ["limited", "Limited"], ["off", "Off"]];
-const CR_WF_ACCESS_TONE = { on: "ok", limited: "warn", off: "neutral" };
 const CR_WF_PROFILE_WORDS = {
   "ngg-member": "Members", "ngg-staff": "Staff, mentors and instructors", "ngg-limited": "Limited access",
   "ngg-summer": "Summer School participants", "ngg-guest": "Visitors",
@@ -133,9 +132,8 @@ function crWfEdit(ctx, d, g, centre) {
    the password they set, kept by CACENTRE; "Back to NGG" undoes it with a full list. */
 function crWfCacMoveSteps(c, g) {
   if (!c || !c.configured || g.movedAt) return null;
-  const code = (c.sites || {})[g.centre] || "";
   return { h: "Moving it to CACENTRE", rows: [
-    ["1 · At CACENTRE", "Admin → Wi-Fi → Sites & routers. Add a site with the code " + (code ? "“" + code + "”" : "of this centre’s card code, in small letters") + " if it isn’t there, then Add a router for it."],
+    ["1 · At CACENTRE", "Admin → Wi-Fi → Sites & routers. " + g.centre + "’s site is made there from CACENTRE’s location of the same name once NGG has sent its list; Add a router for it."],
     ["2 · On this router", "Paste the one line CACENTRE shows. It removes NGG’s script and users and installs CACENTRE’s; nobody is cut off for more than a minute."],
     ["3 · Here", "Press “It now runs from CACENTRE”. NGG stops watching it, and members at " + g.centre + " use the password they set, now kept by CACENTRE."],
   ] };
@@ -579,7 +577,7 @@ function crWfCacBlock(ctx, c) {
   if (!L.ok) return { type: "note", span: 6, icon: "warning", tone: "bad", text: "The last list didn’t reach CACENTRE (" + crAgo(L.at) + "). " + (CR_WF_CAC_ERR[L.error] || L.error), act };
   return { type: "note", span: 6, icon: "buildings", tone: L.refused || unknown.length ? "warn" : "ok",
     text: "CACENTRE runs the Wi-Fi. Sent " + crAgo(L.at) + ": " + crNum(L.sent) + " people with NGG’s say about each" + (L.gone ? ", " + crNum(L.gone) + " no longer on NGG’s list withdrawn" : "") + (L.refused ? "; " + crNum(L.refused) + " refused (" + (L.refusals || []).slice(0, 3).map(x => x.id + ": " + x.error).join(", ") + ")" : "") + ".",
-    sub: (unknown.length ? "CACENTRE has no site for " + unknown.map(k => k.toUpperCase() + " (" + crNum(L.unknownSites[k]) + ")").join(", ") + ": add each there with the centre’s card code; until then those people sign in at the hubs only. " : "")
+    sub: (unknown.length ? "CACENTRE could not place " + unknown.map(k => k.toUpperCase() + " (" + crNum(L.unknownSites[k]) + ")").join(", ") + ": it is not one of CACENTRE’s locations. Add the location there (Attendance → Locations) and its Wi-Fi site follows on the next send; until then those people sign in at the hubs only. " : "")
       + (L.full ? "" : "The list was sent in parts, so nobody was withdrawn. ") + "Suspensions, overrides and the access table here become NGG’s say; CACENTRE never gives more than NGG does. Members still set their password under Me → Wi-Fi, kept by CACENTRE once their centre’s router has moved. Anybody without email is shown their starting password at the gate when they check in, or use Starting passwords to hand them out.", act };
 }
 

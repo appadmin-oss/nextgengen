@@ -112,6 +112,21 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
     } catch (e) { setLoadErr(mfaErr(e, "We couldn’t load your sign-in settings.")); }
   }, [mode, family]);
   React.useEffect(() => { load(); }, [load]);
+  /* The desk's ten-minute let-in has to REACH this screen. It is pressed in
+     the Control Room while the person stands here; nothing on this page asked
+     again, so the screen sat on its question as if nothing had happened. It
+     asks every few seconds while it is visible, and opens by itself. */
+  React.useEffect(() => {
+    if (mode !== "step" || !forced) return;
+    let live = true;
+    const tick = () => {
+      if (document.visibilityState === "hidden") return;
+      NGGApi.auth.mfa.status(family).then(s => { if (live && s && !s.pending) onDone && onDone("cleared"); }).catch(() => {});
+    };
+    const t = setInterval(tick, 4000);
+    document.addEventListener("visibilitychange", tick);
+    return () => { live = false; clearInterval(t); document.removeEventListener("visibilitychange", tick); };
+  }, [mode, forced, family]);
 
   // Focus trap, Escape (only when it may close), focus restored on close.
   React.useEffect(() => {
@@ -163,7 +178,7 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
     try {
       const r = await NGGApi.auth.mfa.verify(a, family);
       if (r && r.backupUsed && typeof toast !== "undefined") toast.info("Backup code used — " + r.backupLeft + " left. Make new ones under Two-step sign-in when you can.", "Signed in");
-      onDone && onDone("passed");
+      onDone && onDone(r && r.letIn ? "letin" : "passed");
     }
     catch (x) { setErr(mfaErr(x)); setAnswer(""); setBusy(false); }
   };
@@ -197,7 +212,7 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
       if (answer !== confirm) { setErr("The two PINs don’t match."); return; }
       data.pin = answer;
     } else data.code = answer;
-    if (enrolled && mode === "setup" && !forced) data.current = current;
+    if (enrolled && mode === "setup" && !forced && !letIn) data.current = current;
     setBusy(true); setErr("");
     try {
       const r = await NGGApi.auth.mfa.enroll(data, family);
@@ -240,8 +255,14 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
       {busy ? <span className="signin-spin" role="status" aria-label="Working"/> : label}
     </button>
   );
+  /* Declared BEFORE anything reads it. It sat below currentField, which reads
+     it: development's in-browser Babel turns const into var and hid that,
+     while the production build keeps const, so the whole page crashed
+     ("Hold on.") the moment a let-in person reached it. */
+  const letIn = !!(status && status.bypassUntil && status.bypassUntil * 1000 > Date.now());
   // "Your current answer" — asked before anything replaces or removes it.
-  const currentField = enrolled ? (
+  // Not while staff have let them in: they came to the desk because it is lost.
+  const currentField = enrolled && !letIn ? (
     <div className="mfa-current">
       <MfaField id="mfa-cur" kind={status.type === "question" || status.type === "pin" ? status.type : "code"} value={current} onChange={v => { setErr(""); setCurrent(v); }}
         label={status.type === "question" ? "First, your current answer — " + (status.question || "") : status.type === "pin" ? "First, your current PIN" : "First, a code from your current " + (status.type === "app" ? "app" : status.type === "sms" ? "phone" : "email")}/>
@@ -277,15 +298,15 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
     body = <div className="mfa-state" role="status" aria-live="polite"><span className="signin-spin" aria-hidden="true"/> Loading…</div>;
   } else if (mode === "step") {
     const t = useBackup ? "backup" : chal.type;
-    title = t === "backup" ? "Use a backup code" : t === "question" ? "One more question" : t === "pin" ? "Your " + pinName : t === "app" ? "Code from your app" : t === "sms" ? "Check your phone" : "Check your email";
-    sub = t === "backup" ? "One of the eight codes you saved when you set this up. Each works once." : t === "question" ? "So we know it’s really you." : t === "pin" ? "The six digits you chose for this account." : t === "app" ? "Open your authenticator app and type the code it shows for NGG." : <>We sent a code{chal.masked ? <> to <b>{chal.masked}</b></> : null}. It’s good for 10 minutes.</>;
+    title = t === "backup" ? "Backup code or staff code" : t === "question" ? "One more question" : t === "pin" ? "Your " + pinName : t === "app" ? "Code from your app" : t === "sms" ? "Check your phone" : "Check your email";
+    sub = t === "backup" ? "One of the eight codes you saved when you set this up, or the one-time code a coordinator gave you. Each works once." : t === "question" ? "So we know it’s really you." : t === "pin" ? "The six digits you chose for this account." : t === "app" ? "Open your authenticator app and type the code it shows for NGG." : <>We sent a code{chal.masked ? <> to <b>{chal.masked}</b></> : null}. It’s good for 10 minutes.</>;
     body = (
       <form onSubmit={verify} className="signin-form" noValidate>
         {t === "question" && <p className="mfa-q">{chal.question}</p>}
         {note && <p className="signin-note" role="status"><i className="ph ph-info" aria-hidden="true"/>{note}</p>}
         {t === "backup" ? (
           <>
-            <label className="signin-label" htmlFor="mfa-bk">Backup code</label>
+            <label className="signin-label" htmlFor="mfa-bk">Backup or staff code</label>
             <input id="mfa-bk" ref={inputRef} className={"signin-input signin-otp" + (err ? " is-bad" : "")} type="text" autoComplete="off" spellCheck="false" autoCapitalize="characters"
               placeholder="XXXX-XXXX" maxLength={9} value={answer} onChange={e => { setErr(""); setAnswer(e.target.value); }}/>
           </>
@@ -297,11 +318,11 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
         {submit("Continue", !answer.trim())}
         <div className="signin-alts mfa-alts">
           {(t === "email" || t === "sms") && <button type="button" className="signin-link" onClick={resend} disabled={busy}>Send a new code</button>}
-          {(t === "question" || t === "pin") && <button type="button" className="signin-link" onClick={recheck} disabled={busy}>I’ve been let in by staff</button>}
-          <button type="button" className="signin-link" onClick={() => { setUseBackup(b => !b); setAnswer(""); setErr(""); }}>{useBackup ? "Back to my usual step" : "Use a backup code"}</button>
+          <button type="button" className="signin-link" onClick={recheck} disabled={busy}>I’ve been let in by staff</button>
+          <button type="button" className="signin-link" onClick={() => { setUseBackup(b => !b); setAnswer(""); setErr(""); }}>{useBackup ? "Back to my usual step" : "Use a backup code or a staff code"}</button>
           {onSignOut && <button type="button" className="signin-link" onClick={onSignOut}>Sign out</button>}
         </div>
-        {(t === "question" || t === "pin") && <p className="signin-help mfa-help">Forgot it? A coordinator or instructor can let you in for 10 minutes from the Control Room, or reset it so you choose a new one.</p>}
+        <p className="signin-help mfa-help">{t === "question" || t === "pin" ? "Forgot it?" : t === "app" ? "New phone, or lost the app?" : "Can’t get the code?"} A coordinator or instructor can let you in for 10 minutes from the Control Room (this screen opens by itself when they do), or give you a one-time code to type here. Then you set up a new step without the old one.</p>
       </form>
     );
   } else if (mode === "manage") {
@@ -361,7 +382,9 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
     // setup
     const methods = status.methods || [];
     title = forced ? "Add a second sign-in step" : enrolled ? "Change your second step" : "Add a second sign-in step";
-    sub = forced ? "NGG asks this of your account before you go on. It takes a minute." : "Something only you have, asked each time you sign in.";
+    sub = forced ? "NGG asks this of your account before you go on. It takes a minute."
+      : letIn && enrolled ? "Staff let you in until " + mfaClock(status.bypassUntil) + ". You won’t be asked for your old step: choose the new one now."
+      : "Something only you have, asked each time you sign in.";
     if (!type) {
       body = (
         <div className="signin-form">
@@ -455,7 +478,7 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
           {note && <p className="signin-help" role="status">{note}</p>}
           {fields}
           {fieldErr}
-          {submit(enrolled && !forced ? "Save the change" : "Turn it on", !ready || (enrolled && !forced && !current.trim()))}
+          {submit(enrolled && !forced ? "Save the change" : "Turn it on", !ready || (enrolled && !forced && !letIn && !current.trim()))}
           <div className="signin-alts mfa-alts">{back}{forced && onSignOut ? <button type="button" className="signin-link" onClick={onSignOut}>Sign out</button> : null}</div>
         </form>
       );
@@ -478,6 +501,11 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
 }
 
 /* Shown under webdriver only when a test forces it — the same rule the tours use. */
+/** "14:32" from a unix time, in the viewer's clock. */
+function mfaClock(unix) {
+  const d = new Date(unix * 1000);
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
 function mfaNudgeAuto() {
   try { if (localStorage.getItem("ngg.mfa.force") === "1") return true; } catch (_) {}
   return !(typeof navigator !== "undefined" && navigator.webdriver);
@@ -492,13 +520,30 @@ function MfaNudge({ id, family, onSetUp }) {
     try { return Number(localStorage.getItem(mfaLaterKey(id)) || 0) > Date.now(); } catch (_) { return false; }
   });
   React.useEffect(() => {
-    if (!id || hidden || !mfaNudgeAuto()) return;
+    // Asked even after "Not now": that hides the set-up nudge, never the let-in notice.
+    if (!id || !mfaNudgeAuto()) return;
     let live = true;
     NGGApi.auth.mfa.status(family).then(s => { if (live) setSt(s); }).catch(() => {});
     const again = () => NGGApi.auth.mfa.status(family).then(s => { if (live) setSt(s); }).catch(() => {});
     window.addEventListener("ngg:mfa-changed", again);
     return () => { live = false; window.removeEventListener("ngg:mfa-changed", again); };
-  }, [id, hidden, family]);
+  }, [id, family]);
+  /* Let in by staff without the second step: say so, and offer to set a new
+     one while the window is open (the old one is not asked for then). */
+  if (st && st.enrolled && st.bypassUntil && st.bypassUntil * 1000 > Date.now()) {
+    return (
+      <aside className="mfa-nudge is-required" role="region" aria-label="Account security" aria-live="polite">
+        <i className="ph ph-shield-warning mfa-nudge-ic" aria-hidden="true"/>
+        <div className="mfa-nudge-txt">
+          <b>Staff let you in without your second step</b>
+          <span>Until {mfaClock(st.bypassUntil)}. If you lost your phone or forgot your answer, set a new step now: you won’t be asked for the old one.</span>
+        </div>
+        <div className="mfa-nudge-act">
+          <button type="button" className="mfa-nudge-go" onClick={onSetUp}>Set a new step</button>
+        </div>
+      </aside>
+    );
+  }
   if (!st || hidden || st.enrolled || st.policy === "off" || st.kind === "staff" || !st.methods || !st.methods.length) return null;
   const copy = st.kind === "team"
     ? "You work with children’s records. Add a second sign-in step — an authenticator app or an emailed code."
@@ -540,6 +585,11 @@ function MfaHost({ id, pending, family, onCleared, onSignOut }) {
         u.searchParams.delete("mfa"); window.history.replaceState({}, "", u.toString());
       }
     } catch (_) {}
+    // Just let in by the desk: open "set a new step" while the replace window is open.
+    if (!pending) {
+      let flag = false; try { flag = sessionStorage.getItem("ngg.mfa.replace") === "1"; sessionStorage.removeItem("ngg.mfa.replace"); } catch (_) {}
+      if (flag) NGGApi.auth.mfa.status(family).then(st => { if (st && st.bypassUntil && st.bypassUntil * 1000 > Date.now()) setOpen("setup"); }).catch(() => {});
+    }
     return () => { if (window.nggMfa) delete window.nggMfa; };
   }, [id, pending]);
   React.useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 5000); return () => clearTimeout(t); }, [toast]);
@@ -547,7 +597,12 @@ function MfaHost({ id, pending, family, onCleared, onSignOut }) {
   if (!id) return null;
   if (pending) {
     return <MfaDialog key={"p-" + pending} mode={pending === "enroll" ? "setup" : "step"} forced family={family}
-      onDone={() => { try { window.dispatchEvent(new CustomEvent("ngg:mfa-changed")); } catch (_) {} onCleared && onCleared(); }} onSignOut={onSignOut}/>;
+      onDone={how => {
+        // In by the desk: the step was lost, so replacing it comes next (the old one is not asked for).
+        if (how === "cleared" || how === "letin") { try { sessionStorage.setItem("ngg.mfa.replace", "1"); } catch (_) {} }
+        try { window.dispatchEvent(new CustomEvent("ngg:mfa-changed")); } catch (_) {}
+        onCleared && onCleared();
+      }} onSignOut={onSignOut}/>;
   }
   return (
     <>
