@@ -50,7 +50,8 @@ function fee_plan_max_days(?array $cfg = null): int {
 function fee_plan_terms(?array $cfg = null): array {
     $max = fee_plan_max_days($cfg);
     return ['version' => FEE_PLAN_TERMS_VERSION, 'lines' => [
-        'The plan covers what is owed today. It starts only once NGG approves it.',
+        'The plan covers what is owed today. It starts only once NGG approves it, and if that is after the first date, every date moves to start on the day it is approved.',
+        'Every instalment is the same amount, give or take ₦1. There is no interest and no charge for paying this way.',
         'Each instalment is due on the date shown. Any payment counts towards the plan — online, by bank transfer or cash at the desk.',
         'Payments go to the earliest instalment first. Paying early or paying more is always fine.',
         'New monthly fees that fall due during the plan are charged as normal and are not part of the plan.',
@@ -92,9 +93,12 @@ function fee_plan_schedule(int $total, int $count, string $cadence, string $star
     $span = (int)round((strtotime($dates[$count - 1] . 'T12:00:00Z') - strtotime($dates[0] . 'T12:00:00Z')) / 86400);
     $max = fee_plan_max_days($cfg);
     if ($span > $max) return ['ok' => false, 'error' => 'too_long', 'maxDays' => $max, 'spanDays' => $span];
-    $each = intdiv($total, $count);
+    /* Fair to the naira: no instalment differs from another by more than ₦1.
+       The odd naira go one each to the LAST instalments, so the first is
+       never the larger one and nobody's last payment is a lump. */
+    $each = intdiv($total, $count); $odd = $total - $each * $count;
     $rows = [];
-    foreach ($dates as $i => $d) $rows[] = ['n' => $i + 1, 'date' => $d, 'amount' => $i === $count - 1 ? $total - $each * ($count - 1) : $each];
+    foreach ($dates as $i => $d) $rows[] = ['n' => $i + 1, 'date' => $d, 'amount' => $each + ($i >= $count - $odd ? 1 : 0)];
     return ['ok' => true, 'schedule' => $rows, 'spanDays' => $span, 'maxDays' => $max];
 }
 
@@ -279,8 +283,21 @@ function admin_fees_plan_decide(array $p): array {
     $reason = trim((string)($p['reason'] ?? ''));
     if (!$approve && $reason === '') return ['ok' => false, 'error' => 'reason_required'];
     /* Compare-and-set on the status: two people pressing at once decide it once. */
-    $n = db_exec("UPDATE fee_plans SET status = ?, decidedBy = ?, decidedAt = ?, declineReason = ?, updatedAt = ? WHERE planId = ? AND status = 'pending'",
-        [$approve ? 'active' : 'declined', $by, now_iso(), $approve ? '' : mb_substr($reason, 0, 400), now_iso(), (string)$plan['planId']]);
+    /* Nobody is overdue before NGG says yes: a plan approved after its first
+       date is re-dated from the approval day, same amounts, same gaps, so the
+       family gets every day of the plan they agreed to. */
+    $sched = (string)$plan['scheduleJson'];
+    if ($approve) {
+        $today = function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d');
+        if ((string)$plan['startDate'] < $today) {
+            $rows = (array)json_decode($sched, true);
+            foreach (fee_plan_dates($today, count($rows), (string)$plan['cadence']) as $i => $d) $rows[$i]['date'] = $d;
+            $sched = json_encode($rows);
+        }
+    }
+    $n = db_exec("UPDATE fee_plans SET status = ?, decidedBy = ?, decidedAt = ?, declineReason = ?, scheduleJson = ?, startDate = ?, updatedAt = ? WHERE planId = ? AND status = 'pending'",
+        [$approve ? 'active' : 'declined', $by, now_iso(), $approve ? '' : mb_substr($reason, 0, 400), $sched,
+         $approve ? (string)(json_decode($sched, true)[0]['date'] ?? $plan['startDate']) : (string)$plan['startDate'], now_iso(), (string)$plan['planId']]);
     if (!$n) return ['ok' => false, 'error' => 'not_pending'];
     audit($approve ? 'fees.plan.approve' : 'fees.plan.decline', $by, (string)$plan['memberId'], ['planId' => (string)$plan['planId'], 'reason' => $reason], (string)($p['ip'] ?? ''));
     $cfg = fees_settings();

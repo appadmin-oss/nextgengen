@@ -7715,3 +7715,8 @@ for a parent who agreed by phone, in person or in writing and must say which;
   with "Set up a plan"). Tests: the "plans:" group in `api/tests/run.php`.
 - Not done: reminders still run during a plan as before, and a missed
   instalment does not end a plan by itself — staff end it with a reason.
+- **Fair for everyone (owner, 19 Nov):** instalments are equal to the naira —
+  the odd naira go one each to the last instalments, so none differs by more
+  than ₦1 — and a plan approved after its first date is re-dated from the
+  approval day, so nobody is overdue before NGG says yes. No interest or
+  charge for paying by plan; the terms say so.

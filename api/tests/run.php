@@ -41146,7 +41146,8 @@ if (receipt_available()) {
     chk('plans: the fixture owes something to plan', $owed > 0);
 
     $s = fee_plan_schedule(10001, 3, 'monthly', '2026-01-31');
-    chk('plans: equal parts, the remainder on the LAST instalment', array_column($s['schedule'], 'amount') === [3333, 3333, 3335]);
+    chk('plans: fair to the naira — no instalment differs by more than ₦1, the odd naira on the last ones', array_column($s['schedule'], 'amount') === [3333, 3334, 3334]
+        && array_sum(array_column(fee_plan_schedule(1000005, 6, 'weekly', '2026-05-01')['schedule'], 'amount')) === 1000005);
     chk('plans: monthly keeps the day, clamped to the month end (31 Jan → 28 Feb → 31 Mar)', array_column($s['schedule'], 'date') === ['2026-01-31', '2026-02-28', '2026-03-31']);
     chk('plans: weekly and every two weeks step by 7 and 14 days',
         array_column(fee_plan_schedule(600, 2, 'weekly', '2026-05-01')['schedule'], 'date') === ['2026-05-01', '2026-05-08']
@@ -41172,7 +41173,14 @@ if (receipt_available()) {
     chk('plans: the Fees page shows the pending plan and offers no second one', (function () use ($m) { $b = family_fee_plan_block($m, 5000); return $b['plan']['status'] === 'pending' && $b['offer'] === null; })());
     chk('plans: a decline needs a reason', (backend_dispatch('admin.fees.plan.decide', ['requesterId' => $admin, 'planId' => $pid, 'decision' => 'decline'])['error'] ?? '') === 'reason_required');
     chk('plans: a member cannot approve a plan', (backend_dispatch('admin.fees.plan.decide', ['requesterId' => 'NGG-PLN-1', 'planId' => $pid, 'decision' => 'approve'])['ok'] ?? false) === false);
+    // As if NGG took a month to decide: the dates were set for days already gone.
+    $late = json_decode((string)db_row('SELECT scheduleJson FROM fee_plans WHERE planId = ?', [$pid])['scheduleJson'], true);
+    foreach ($late as $i => $r) $late[$i]['date'] = gmdate('Y-m-d', strtotime('2020-01-01 +' . $i . ' month'));
+    db_exec("UPDATE fee_plans SET startDate = '2020-01-01', scheduleJson = ? WHERE planId = ?", [json_encode($late), $pid]);
     $d = backend_dispatch('admin.fees.plan.decide', ['requesterId' => $admin, 'planId' => $pid, 'decision' => 'approve']);
+    chk('plans: approved after its first date, the plan is re-dated from the approval day — nobody is overdue before NGG says yes',
+        ($d['plan']['schedule'][0]['date'] ?? '') === (function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d')) && empty($d['plan']['overdue'])
+        && array_column($d['plan']['schedule'], 'amount') === array_column($late, 'amount'));
     chk('plans: staff with fees approve it, and it runs', !empty($d['ok']) && $d['plan']['status'] === 'active');
     chk('plans: it is decided once', (backend_dispatch('admin.fees.plan.decide', ['requesterId' => $admin, 'planId' => $pid, 'decision' => 'approve'])['error'] ?? '') === 'not_pending');
     chk('plans: the family is told', (bool)db_row("SELECT 1 FROM guardian_notices WHERE guardianId = 'G-PLN-1' AND refId = ?", [$pid]) || !function_exists('family_notice_add'));
