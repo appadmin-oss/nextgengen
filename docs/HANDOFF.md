@@ -7677,7 +7677,7 @@ The owner asked for this "only if you think it is cool". It is, for one concrete
   fine has **Pay this fine**. The design source was recompiled.
 
 **Verified.**
-- `run.php`: *Paying a chosen charge*, 13 checks, run in CI.
+- `run.php`: *Paying a chosen charge*, 12 checks, run in CI.
 - Browser probe: 8 checks. A parent pays a ₦2,000 re-entry fine ahead of ₦4,000 older dues; the fine is
   paid on the ledger and the conduct record; ₦4,000 is still owed; no page errors.
 - The plans probe was re-run after the allocator change: 16/16.
