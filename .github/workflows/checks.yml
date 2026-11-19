@@ -52,7 +52,13 @@ jobs:
       # Runs whether or not a step above failed, so one failure never hides another.
       - name: PHP suite (SQLite)
         if: ${{ !cancelled() }}
-        run: php api/tests/run.php
+        # Mail has no transport on the runner, so stderr is a stream of "sendmail not found"; keep the
+        # results (each check, and the failures by name) and fail the step on any failure.
+        run: |
+          code=0
+          php api/tests/run.php > php-results.log 2> php-stderr.log || code=$?
+          grep -E "✗|❌|✅" php-results.log || tail -n 40 php-results.log
+          exit $code
 
       - name: Browser for the UI suites
         if: ${{ !cancelled() }}

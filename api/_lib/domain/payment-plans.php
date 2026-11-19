@@ -154,7 +154,7 @@ function plan_state(array $plan, ?array $m = null, ?string $today = null, ?int $
     $payNow = $remaining > 0 ? min($remaining, $overdue > 0 ? $overdue : (int)($next['left'] ?? 0)) : 0;
     return ['planId' => (string)$plan['planId'], 'memberId' => $mid, 'status' => $status, 'health' => $health,
         'total' => $total, 'paid' => $covered, 'remaining' => $remaining, 'overdue' => $overdue, 'lateCount' => $late, 'daysLate' => $worst,
-        'payNow' => $payNow, 'next' => $next, 'items' => $out, 'frequency' => (string)$plan['frequency'], 'instalments' => (int)$plan['instalments'],
+        'payNow' => $payNow, 'next' => $next, 'graceDays' => PLAN_GRACE_DAYS, 'items' => $out, 'frequency' => (string)$plan['frequency'], 'instalments' => (int)$plan['instalments'],
         'agreedBy' => (string)$plan['agreedBy'], 'agreedAt' => (string)$plan['agreedAt'], 'source' => (string)$plan['source'],
         'createdAt' => (string)$plan['createdAt'], 'completedAt' => (string)$plan['completedAt'],
         'cancelledAt' => (string)$plan['cancelledAt'], 'cancelReason' => (string)$plan['cancelReason'], 'note' => (string)$plan['note']];

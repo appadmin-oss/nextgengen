@@ -1436,7 +1436,7 @@ function crPpServer(health) {
       return { key: x.planId, open: () => crPpOpen(crMoCtx.current, x.planId), cells: [
         { k: "person", t: x.fullName, s: [x.displayId || x.memberId, x.centre].filter(Boolean).join(" · ") },
         { k: "status", t: h[0] + (x.daysLate ? " · " + x.daysLate + "d" : ""), tone: h[1] },
-        { k: "progress", pct: x.total ? Math.round(100 * x.paid / x.total) : 0, t: fmtMoney(x.paid) + " of " + fmtMoney(x.total) },
+        { k: "progress", pct: x.total ? Math.round(100 * x.paid / x.total) : 0, tone: h[1] === "neutral" ? "ok" : h[1], t: fmtMoney(x.paid) + " of " + fmtMoney(x.total) },
         { k: "text", t: x.next ? fmtMoney(x.next.left) : "—", s: x.next ? "instalment " + x.next.seq + " · " + crPpDay(x.next.dueDate) : "" },
         { k: "num", t: x.overdue ? fmtMoney(x.overdue) : "—", v: x.overdue },
         { k: "text", t: x.agreedBy, s: (x.source === "staff" ? "with staff" : "in the family app") + " · " + crPpDay(x.createdAt) },
@@ -1525,7 +1525,7 @@ Object.assign(CR_TAB_DEFS, {
     blocks: (d, ctx) => {
       crMoCtx.current = ctx;
       // "" is "All", carried in the URL as "all"; no sub means the running plans.
-      const f = ctx.sub === "all" ? "" : CR_PP_FILTERS.some(x => x[0] === ctx.sub) ? ctx.sub : "open";
+      const f = ctx.sub === "all" ? "" : ctx.sub && CR_PP_FILTERS.some(x => x[0] && x[0] === ctx.sub) ? ctx.sub : "open";
       const c = d.counts, s = d.sums;
       return [
         { type: "kpis", span: 6, items: [
