@@ -1809,6 +1809,78 @@ chk('schools: a school the family typed joins the list once their child is accep
     chk('follow-ups · a registration with no progress in ' . RCL_STALL_DAYS . ' days reaches the centre’s staff, but not staff scoped elsewhere',
         (bool)db_row("SELECT 1 x FROM reg_checklist_sends WHERE sendKey = ?", ['stalled:' . $SU . ':' . attendance_today()])
         && !db_row("SELECT 1 x FROM reg_checklist_sends WHERE sendKey = ?", ['stalled:NGG-RCL-SC:' . attendance_today()]));
+
+    /* ── WhatsApp: reminders a family can ANSWER (owner, 19 Nov 2026: "people could also respond"). Kapso is
+       stood in for by the suite's HTTP mock; every call is recorded. */
+    $waPrev = $GLOBALS['CONFIG']['whatsapp'] ?? null;
+    $GLOBALS['CONFIG']['whatsapp'] = ['kapso' => ['api_key' => 'kp_test_key', 'phone_number_id' => '123456789012345', 'template' => 'ngg_message', 'template_lang' => 'en', 'webhook_secret' => 'whsec_test']];
+    $png = (function () { $im = imagecreatetruecolor(1200, 900); imagefill($im, 0, 0, imagecolorallocate($im, 240, 240, 235)); ob_start(); imagepng($im); return (string)ob_get_clean(); })();
+    $wa = []; $wn = 0;
+    $GLOBALS['__sms_http_mock'] = function (string $url, array $opts) use (&$wa, &$wn, $png) {
+        $wa[] = ['url' => $url, 'body' => json_decode((string)($opts[CURLOPT_POSTFIELDS] ?? 'null'), true)];
+        if (str_contains($url, 'media.example')) return ['ok' => true, 'body' => $png];
+        if (str_contains($url, 'api.kapso.ai')) return ['ok' => true, 'body' => json_encode(['messages' => [['id' => 'wamid.RCL' . (++$wn)]]])];
+        return ['ok' => false, 'error' => 'unexpected'];
+    };
+    db_exec("UPDATE guardians SET phone = '0803 111 2233' WHERE guardianId = 'G-RCL-2'");
+    $P = '+2348031112233';
+    chk('whatsapp · the answers are read from a tap or from the words a parent types; the next Saturday is after today',
+        rcl_wa_choice('rcl:NGG-RCL-M2:sat', '') === ['NGG-RCL-M2', 'sat'] && rcl_wa_choice('', '2') === ['', 'next'] && rcl_wa_choice('', 'I need help!') === ['', 'help']
+        && rcl_wa_choice('', 'Good morning') === ['', ''] && rcl_next_saturday('2026-11-19') === '2026-11-21' && rcl_next_saturday('2026-11-21') === '2026-11-28');
+    $sentWa = rcl_tell_family('NGG-RCL-M2', ['the child’s date of birth'], 'wa-test-1');
+    $t = array_values(array_filter($wa, fn($c) => str_contains($c['url'], 'kapso')))[0]['body'] ?? [];
+    chk('whatsapp · the family reminder also goes on WhatsApp, to the guardian’s number; outside the 24 hours, as the template with the choices numbered',
+        $sentWa >= 2 && ($t['to'] ?? '') === '2348031112233' && ($t['type'] ?? '') === 'template'
+        && str_contains(json_encode($t, JSON_UNESCAPED_UNICODE), 'Reply 1 = This Saturday · 2 = Next week · 3 = I need help')
+        && (bool)db_row("SELECT 1 x FROM whatsapp_messages WHERE phone = ? AND kind = 'regcheck:NGG-RCL-M2'", [$P]));
+    chk('whatsapp · …once per stage: the same stage again sends nothing', rcl_wa_remind('NGG-RCL-M2', 'Tobi', ['x'], 'Rcl Town', '', 'wa-test-1') === 0);
+    $GLOBALS['CONFIG']['whatsapp']['kapso']['reply_template'] = 'ngg_reply';
+    $wa = []; rcl_wa_remind('NGG-RCL-M2', 'Tobi', ['the child’s date of birth'], 'Rcl Town', '', 'wa-test-2');
+    $t = $wa[0]['body'] ?? [];
+    chk('whatsapp · with a reply-button template set, the buttons reach them even outside the 24 hours, each carrying the child and the answer',
+        ($t['template']['name'] ?? '') === 'ngg_reply' && ($t['template']['components'][1]['parameters'][0]['payload'] ?? '') === 'rcl:NGG-RCL-M2:sat'
+        && ($t['template']['components'][3]['parameters'][0]['payload'] ?? '') === 'rcl:NGG-RCL-M2:help');
+    $in = function (string $id, array $m) use ($P) { return kapso_handle_webhook(['event' => 'whatsapp.message.received', 'body' => ['message' => ['id' => $id, 'from' => ltrim($P, '+')] + $m]]); };
+    $inboxBefore = (int)db_row("SELECT COUNT(*) n FROM contact_messages WHERE phone = ?", [$P])['n'];
+    $wa = [];
+    $in('wamid.IN1', ['type' => 'interactive', 'interactive' => ['type' => 'button_reply', 'button_reply' => ['id' => 'rcl:NGG-RCL-M2:sat', 'title' => 'This Saturday']]]);
+    $fu1 = db_row("SELECT * FROM reg_checklist_followups WHERE memberId = 'NGG-RCL-M2' ORDER BY id DESC LIMIT 1");
+    $sat = rcl_next_saturday();
+    chk('whatsapp · a tap on "This Saturday" logs the follow-up as the family’s own, and the next one is the day after they said they would come',
+        $fu1 && $fu1['channel'] === 'whatsapp' && $fu1['outcome'] === 'promised' && $fu1['byName'] === 'The family, on WhatsApp'
+        && db_row("SELECT nextFollowUpOn FROM reg_checklists WHERE memberId = 'NGG-RCL-M2'")['nextFollowUpOn'] === gmdate('Y-m-d', strtotime($sat . 'T12:00:00Z') + 86400));
+    $rep = $wa[0]['body'] ?? [];
+    chk('whatsapp · …the family is answered at once, in the open window, with the day and what to bring; nothing lands in the inbox for staff to do',
+        ($rep['type'] ?? '') === 'text' && str_contains((string)($rep['text']['body'] ?? ''), 'We will expect you at Rcl Town') && str_contains((string)($rep['text']['body'] ?? ''), 'date of birth')
+        && (int)db_row("SELECT COUNT(*) n FROM contact_messages WHERE phone = ?", [$P])['n'] === $inboxBefore);
+    $wa = [];
+    $in('wamid.IN2', ['type' => 'text', 'text' => ['body' => '2']]);
+    chk('whatsapp · typing "2" (no button) is read as "Next week", for the child the last reminder was about',
+        db_row("SELECT outcome, note FROM reg_checklist_followups WHERE memberId = 'NGG-RCL-M2' ORDER BY id DESC LIMIT 1")['note'] !== $fu1['note']
+        && str_contains((string)db_row("SELECT note FROM reg_checklist_followups WHERE memberId = 'NGG-RCL-M2' ORDER BY id DESC LIMIT 1")['note'], 'Next week'));
+    $in('wamid.IN3', ['type' => 'interactive', 'interactive' => ['type' => 'button_reply', 'button_reply' => ['id' => 'rcl:NGG-RCL-M2:help', 'title' => 'I need help']]]);
+    chk('whatsapp · "I need help" is logged as needing help, due tomorrow, and the helper is told to call',
+        db_row("SELECT outcome FROM reg_checklist_followups WHERE memberId = 'NGG-RCL-M2' ORDER BY id DESC LIMIT 1")['outcome'] === 'needs_help'
+        && (bool)db_row("SELECT 1 x FROM notifications WHERE memberId = 'VOL-RCL-A' AND title LIKE '%asked for help%'"));
+    $in('wamid.IN4', ['type' => 'image', 'image' => ['id' => 'm1', 'caption' => 'Report card', 'mime_type' => 'image/png'], 'kapso' => ['has_media' => true, 'media_url' => 'https://media.example/m1.png']]);
+    $fs = db_row("SELECT * FROM reg_checklist_submissions WHERE memberId = 'NGG-RCL-M2' AND verdict = 'family_sent' ORDER BY id DESC LIMIT 1");
+    chk('whatsapp · a photo the family sends is kept on this site and put on the child’s registration for the helper to check — it ticks nothing by itself',
+        $fs && $fs['note'] === 'Report card' && $fs['url'] !== '' && !str_contains($fs['url'], 'media.example')
+        && (bool)db_row("SELECT 1 x FROM notifications WHERE memberId = 'VOL-RCL-A' AND title LIKE '%sent a photo on WhatsApp%'"));
+    $in('wamid.IN5', ['type' => 'interactive', 'interactive' => ['type' => 'button_reply', 'button_reply' => ['id' => 'rcl:NGG-RCL-M1:sat', 'title' => 'This Saturday']]]);
+    chk('whatsapp · a button naming a child whose reminder never went to this number is not acted on: it goes to the inbox',
+        !db_row("SELECT 1 x FROM reg_checklist_followups WHERE memberId = 'NGG-RCL-M1' AND channel = 'whatsapp'")
+        && (int)db_row("SELECT COUNT(*) n FROM contact_messages WHERE phone = ?", [$P])['n'] + (int)db_row("SELECT COUNT(*) n FROM contact_replies WHERE body = 'This Saturday'")['n'] > $inboxBefore);
+    $in('wamid.IN6', ['type' => 'text', 'text' => ['body' => 'Good morning, is the centre open on Saturday?']]);
+    chk('whatsapp · anything else a parent writes still reaches a person, in the inbox', (bool)db_row("SELECT 1 x FROM contact_messages WHERE phone = ? UNION SELECT 1 FROM contact_replies WHERE body LIKE 'Good morning%'", [$P]));
+    $in('wamid.IN7', ['type' => 'text', 'text' => ['body' => 'STOP']]);
+    $wa = [];
+    chk('whatsapp · STOP means no more WhatsApp reminders (email still goes); START turns them back on',
+        kapso_opted_out($P) && rcl_wa_remind('NGG-RCL-M2', 'Tobi', ['x'], 'Rcl Town', '', 'wa-test-3') === 0 && $wa === []
+        && (function () use ($in, $P) { $in('wamid.IN8', ['type' => 'text', 'text' => ['body' => 'start']]); return !kapso_opted_out($P); })());
+    chk('whatsapp · the child’s drawer shows the conversation, newest first', count(backend_dispatch('admin.regcheck.member', ['requesterId' => $SU, 'memberId' => 'NGG-RCL-M2'])['whatsapp'] ?? []) >= 6);
+    unset($GLOBALS['__sms_http_mock']);
+    if ($waPrev === null) unset($GLOBALS['CONFIG']['whatsapp']); else $GLOBALS['CONFIG']['whatsapp'] = $waPrev;
     unset($GLOBALS['__mail_sink']);
 } finally { if ($__db->inTransaction()) $__db->rollBack(); } })();
 

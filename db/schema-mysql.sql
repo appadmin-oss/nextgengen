@@ -5451,3 +5451,9 @@ INSERT IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence,
 INSERT IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
   VALUES ('RCI-REPORTCARD', 'Latest school report card', 'Photograph or scan the member’s most recent school report card: every page, readable. Give the date on it.', 'document', 0, 400, 30, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
 INSERT INTO schema_version (version) VALUES (240) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 241 · WhatsApp replies: a number that answered STOP to registration reminders ──
+CREATE TABLE IF NOT EXISTS whatsapp_optout (
+  phone VARCHAR(32) NOT NULL PRIMARY KEY, at VARCHAR(32) NOT NULL DEFAULT '', via VARCHAR(24) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (241) ON DUPLICATE KEY UPDATE version = version;

@@ -7675,3 +7675,15 @@ Owner's paper card *NGG ENTRY STEPS* became the registration checklist's structu
 - The Membership Agreement prints as a standard agreement (assets/report/mou.css; `mou_execution_html`).
 - Known, not caused here: six PHP checks (rulebook ×4, labs quick check, maths lab mini review) fail when the suite
   runs after midnight Lagos time (UTC 23:00–24:00); they fail on the committed code too.
+
+## 2026-11-19 — WhatsApp replies that act (registration)
+
+Owner: "Make + Kapso for WhatsApp onboarding … people could also respond … instead of relying on humans". Built on
+the existing Kapso integration (domain/kapso.php), not through Make: the site already decides who to remind and when.
+- `kapso_send_buttons`: interactive reply buttons in the 24-hour window; outside it the optional `reply_template`
+  (quick replies carrying `rcl:<memberId>:sat|next|help`), else the plain template with "Reply 1, 2 or 3".
+- `rcl_wa_remind` sends each family reminder stage on WhatsApp too (claimed once per stage per number).
+- `rcl_wa_inbound` (called by `kapso_receive` before the inbox): dates → follow-up + next date; help → staff + helper;
+  photo → kept via `photo_store_put` and recorded as a `family_sent` submission; STOP/START → `whatsapp_optout`
+  (migration 241). A button for a child is honoured only from a number that child's reminder went to.
+- Tests: PHP "whatsapp ·" (13), each core rule proven to fail when removed.

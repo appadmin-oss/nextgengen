@@ -5477,3 +5477,24 @@ anything that overlaps is said in words) then **Save my week**. It saves to thei
 item *Personal timetable on the site*. The full maker — colours, printing, wallpapers, one-off changes — is one link
 away (*Full timetable maker*, or /timetable?full=1). Help a child at the centre: sign in as them and open
 /timetable?easy=1; they can do the rest themselves.
+
+
+## WhatsApp: families answer registration reminders
+
+When WhatsApp (Kapso) is set up (Settings → API keys → WhatsApp (Kapso)), every registration reminder also goes on
+WhatsApp, to the guardians on the family account (else the parent phone on the record), with three answers:
+**This Saturday · Next week · I need help**. Families answer with a tap, or by typing 1, 2 or 3.
+
+| They answer | What happens, with nobody at a desk |
+|---|---|
+| This Saturday / Next week | A follow-up is logged as theirs (*The family, on WhatsApp*) and the next follow-up is set for the day after. They are thanked and told what to bring. |
+| I need help | Logged as *needs help*, due tomorrow; the staff inbox and the child's helper are told to call. |
+| A photo or document | Kept on this site and put on the child's registration as *Sent by the family on WhatsApp*. The helper checks it and submits it against the right item — a photo never ticks anything by itself. |
+| STOP / START | No more WhatsApp reminders (email continues) / reminders again. |
+| Anything else | The Control Room inbox, as before. |
+
+Open a child under Members → Registration to see the WhatsApp conversation. **Buttons at any time:** WhatsApp
+allows free buttons only within 24 hours of the family's last message. To have tappable buttons on every reminder,
+get a Utility template approved in Kapso with the body *Next Generation Genius: {{1}}* and three quick-reply buttons
+(This Saturday · Next week · I need help), and put its name in **Reply-button template**. Without it, families
+reply 1, 2 or 3, which works the same.

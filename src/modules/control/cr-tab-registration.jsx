@@ -103,12 +103,15 @@ async function crRclOpen(ctx, memberId) {
       { h: "Done", empty: "Nothing yet.", list: done.map(i => ({ icon: "check-circle", t: i.title, s: i.kind === "auto" ? "The record shows it." : "Verified " + crDate(i.verifiedAt),
           act: i.kind === "admin" ? { l: "Reject", run: () => crRclReject(ctx, m, i) } : null })) },
       { h: "Evidence submitted", empty: "Nothing submitted yet.", list: (d.submissions || []).slice(0, 20).map(x => ({
-          icon: x.verdict === "accepted" || x.verdict === "record_passes" ? "seal-check" : "x-circle", t: title(x.itemKey), s: x.reason, m: crDate(x.at),
+          icon: x.verdict === "accepted" || x.verdict === "record_passes" ? "seal-check" : x.verdict === "family_sent" ? "whatsapp-logo" : "x-circle",
+          t: x.verdict === "family_sent" ? "Sent by the family on WhatsApp" + (x.note ? " · “" + x.note + "”" : "") : title(x.itemKey), s: x.reason, m: crDate(x.at),
           act: x.url ? { l: "Open file", run: () => window.open(x.url, "_blank", "noopener") } : null })) },
+      (d.whatsapp || []).length ? { h: "WhatsApp", list: d.whatsapp.map(w => ({ icon: w.dir === "in" ? "chat-circle-text" : "paper-plane-tilt",
+          t: (w.dir === "in" ? "The family: " : "NGG: ") + w.body, s: w.dir === "out" ? (w.status === "failed" ? "Not delivered — sent by SMS instead" : w.status ? "Message " + w.status : "") : "", m: crDate(String(w.at).slice(0, 10)) })) } : null,
       { h: "Follow-ups", empty: "None logged yet. Call or message the family, then log what they said.", list: fus.map(f => ({
           icon: f.outcome === "reached" || f.outcome === "promised" ? "phone-call" : f.outcome === "withdrawing" ? "warning" : "phone-x",
           t: f.channelLabel + " · " + f.outcomeLabel, s: [f.note, f.nextOn ? "Next: " + crDate(f.nextOn) : ""].filter(Boolean).join(" · "), m: (f.byName || "") + " · " + crDate(String(f.at).slice(0, 10)) })) },
-    ],
+    ].filter(Boolean),
     actions: [
       c.status !== "done" ? { l: "Log a follow-up", primary: true, run: () => crRclFollowup(ctx, m, d, false) } : null,
       { l: c.supervisorId ? "Change who is helping" : "Assign a supervisor", primary: c.status === "done", run: () => crRclAssign(ctx, [m.memberId], m.fullName) },

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 240;
+const NGG_SCHEMA_TARGET = 241;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6701,6 +6701,11 @@ function db_migrate(PDO $db): void {
               VALUES ('RCI-FILE', 'File handed in', 'The member’s file (folder) has been handed in at the centre, with their name on it.', 'none', 1, 0, 20, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
             INSERT OR IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
               VALUES ('RCI-REPORTCARD', 'Latest school report card', 'Photograph or scan the member’s most recent school report card: every page, readable. Give the date on it.', 'document', 0, 400, 30, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+        ",
+        /* 241 — WhatsApp replies (owner, 19 Nov 2026: "people could also respond"). A family that answers STOP
+           gets no more registration reminders on WhatsApp until it answers START: one row per number. */
+        241 => "
+            CREATE TABLE IF NOT EXISTS whatsapp_optout (phone TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT '', via TEXT NOT NULL DEFAULT '');
         ",
     ];
 

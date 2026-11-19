@@ -946,9 +946,175 @@ function rcl_tell_family(string $memberId, array $need, string $stage): int {
         ]);
         $n++;
     }
+    $n += rcl_wa_remind($memberId, $first, $need, $centre, $helper, $stage);
     return $n;
 }
 function rcl_uc_first(string $s): string { return $s === '' ? '' : mb_strtoupper(mb_substr($s, 0, 1)) . mb_substr($s, 1); }
+
+/* ── WhatsApp: reminders a family can ANSWER ──────────────────────────────
+ * Owner, 19 Nov 2026: "people could also respond … instead of relying on
+ * humans, which can make the process slow". Each family reminder also goes on
+ * WhatsApp (domain/kapso.php) with three answers to tap — This Saturday · Next
+ * week · I need help — and the answer does the work a helper used to do by
+ * phone:
+ *   · a date      → a follow-up is logged (by the family, on WhatsApp) and the
+ *                   next one is set for the day after it;
+ *   · I need help → logged, the centre's staff are alerted, and the helper too;
+ *   · a photo     → kept on this site and put on the child's registration for
+ *                   the helper to check and submit (a photo never ticks an item
+ *                   by itself: the supervisor still verifies it);
+ *   · STOP/START  → no more reminders on WhatsApp / reminders again.
+ * Anything else goes to the Control Room inbox, as every WhatsApp message did.
+ * An answer is tied to its child by the button's id, or else by the last
+ * reminder sent to that number within RCL_WA_ANSWER_DAYS.
+ */
+const RCL_WA_ANSWER_DAYS = 14;
+const RCL_WA_PHONES_MAX = 2;          // numbers reminded per child: the guardians on the account, else the parent on the record
+const RCL_WA_CHOICES = ['sat' => 'This Saturday', 'next' => 'Next week', 'help' => 'I need help'];
+
+/** The WhatsApp numbers for a child's family: linked guardians who take alerts, else the parent phone on the record. */
+function rcl_wa_phones(string $memberId): array
+{
+    $out = [];
+    foreach (db_all("SELECT g.phone, w.notify FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId
+                     WHERE w.memberId = ? AND w.status = 'active' AND g.status = 'active'", [$memberId]) as $g) {
+        $prefs = function_exists('family_notify_prefs') ? family_notify_prefs((string)($g['notify'] ?? '')) : ['alerts' => true];
+        if (!empty($prefs['alerts']) && ($e = sms_normalize((string)$g['phone'])) !== '') $out[] = $e;
+    }
+    if (!$out) { $m = db_row('SELECT parentPhone FROM members WHERE memberId = ? LIMIT 1', [$memberId]); if ($m && ($e = sms_normalize((string)$m['parentPhone'])) !== '') $out[] = $e; }
+    $out = array_values(array_filter(array_unique($out), static fn($e) => !kapso_opted_out($e)));
+    return array_slice($out, 0, RCL_WA_PHONES_MAX);
+}
+
+/** The reminder on WhatsApp, once per stage per number. Returns how many went. */
+function rcl_wa_remind(string $memberId, string $first, array $need, string $centre, string $helper, string $stage): int
+{
+    if (!function_exists('kapso_on') || !kapso_on() || !$need) return 0;
+    $text = 'NGG: ' . $first . ' starts lectures on the day every entry step is done. Still needed: ' . implode('; ', $need) . '. Bring them to ' . $centre . ' on a meeting day'
+          . ($helper !== '' ? ' (' . $helper . ' is helping)' : '') . '. When can you come?';
+    $buttons = array_map(static fn($k, $t) => ['rcl:' . $memberId . ':' . $k, $t], array_keys(RCL_WA_CHOICES), RCL_WA_CHOICES);
+    $n = 0;
+    foreach (rcl_wa_phones($memberId) as $e164) {
+        if (!rcl_claim('wa:' . $memberId . ':' . $e164 . ':' . $stage, 'whatsapp', $e164, $memberId)) continue;
+        $r = kapso_send_buttons($e164, $text, $buttons, 'regcheck:' . $memberId);
+        if (!empty($r['ok'])) $n++;
+    }
+    return $n;
+}
+
+/** The next Saturday after today (Lagos), as YYYY-MM-DD. */
+function rcl_next_saturday(?string $today = null): string
+{
+    $t = strtotime(($today ?? attendance_today()) . 'T12:00:00Z');
+    $dow = (int)gmdate('N', $t);
+    return gmdate('Y-m-d', $t + (($dow < 6 ? 6 - $dow : 13 - $dow) * 86400));
+}
+
+/** Which answer a reply is: a button's id, or the words a parent types. '' when it is not one. */
+function rcl_wa_choice(string $btnId, string $text): array
+{
+    if (preg_match('/^rcl:([A-Za-z0-9_-]{3,64}):(sat|next|help)$/', $btnId, $m)) return [$m[1], $m[2]];
+    $t = mb_strtolower(trim($text));
+    $t = trim(preg_replace('/[^\p{L}\p{N} ]+/u', ' ', $t));
+    if (in_array($t, ['1', 'one', 'saturday', 'this saturday', 'sat'], true)) return ['', 'sat'];
+    if (in_array($t, ['2', 'two', 'next week'], true)) return ['', 'next'];
+    if (in_array($t, ['3', 'three', 'help', 'i need help', 'need help'], true)) return ['', 'help'];
+    return ['', ''];
+}
+
+/**
+ * kapso_receive calls this for every WhatsApp message before the inbox. Returns
+ * ['handled' => true, …] when it acted; anything else leaves it for the inbox.
+ */
+function rcl_wa_inbound(string $e164, array $msg, string $text): array
+{
+    $word = mb_strtoupper(trim($text));
+    if (in_array($word, ['STOP', 'UNSUBSCRIBE', 'STOP REMINDERS'], true)) {
+        if (!kapso_opted_out($e164)) { try { db_insert('whatsapp_optout', ['phone' => $e164, 'at' => now_iso(), 'via' => 'reply']); } catch (Throwable $e) { /* said STOP twice at once */ } }
+        kapso_send_text($e164, 'Done: no more registration reminders on WhatsApp. Reply START to have them again. You will still get them by email.');
+        audit('whatsapp.optout', null, $e164, [], '');
+        return ['handled' => true, 'did' => 'optout'];
+    }
+    if ($word === 'START') {
+        db_exec('DELETE FROM whatsapp_optout WHERE phone = ?', [$e164]);
+        kapso_send_text($e164, 'Welcome back: registration reminders are on again.');
+        return ['handled' => true, 'did' => 'optin'];
+    }
+    [$btnId] = kapso_button_of($msg);
+    [$mid, $choice] = rcl_wa_choice($btnId, $text);
+    $type = (string)($msg['type'] ?? '');
+    $isFile = in_array($type, ['image', 'document'], true);
+    if ($choice === '' && !$isFile) return ['handled' => false];
+    if ($mid === '') {
+        // Not a button: the child is the one the last reminder to this number was about.
+        $last = db_row("SELECT kind FROM whatsapp_messages WHERE direction = 'out' AND phone = ? AND kind LIKE 'regcheck:%' AND createdAt >= ? ORDER BY createdAt DESC LIMIT 1",
+            [$e164, gmdate('Y-m-d\TH:i:s\Z', time() - RCL_WA_ANSWER_DAYS * 86400)]);
+        if (!$last) return ['handled' => false];
+        $mid = substr((string)$last['kind'], strlen('regcheck:'));
+    } elseif (!db_row("SELECT 1 x FROM whatsapp_messages WHERE direction = 'out' AND phone = ? AND kind = ? LIMIT 1", [$e164, 'regcheck:' . $mid])) {
+        // A button names a child: only a number that child's reminder went to may answer for them.
+        return ['handled' => false];
+    }
+    $c = db_row('SELECT * FROM reg_checklists WHERE memberId = ? LIMIT 1', [$mid]);
+    $m = $c ? db_row('SELECT memberId, fullName, centre FROM members WHERE memberId = ? LIMIT 1', [$mid]) : null;
+    if (!$c || !$m) return ['handled' => false];
+    $first = rcl_first((string)$m['fullName']) ?: 'your child';
+    $by = ['memberId' => 'whatsapp', 'fullName' => 'The family, on WhatsApp'];
+    $sup = (string)$c['supervisorId'];
+    if ((string)$c['status'] === 'done') {
+        kapso_send_text($e164, 'Thank you! ' . $first . ' is already fully registered' . ((string)$c['resumedOn'] !== '' ? ' and started lectures on ' . gmdate('j F', (int)strtotime($c['resumedOn'] . 'T12:00:00Z')) : '') . '.');
+        return ['handled' => true, 'did' => 'already_done'];
+    }
+
+    if ($isFile) {
+        $url = rcl_wa_keep_media($msg);
+        db_insert('reg_checklist_submissions', ['submissionId' => 'RCS-' . strtoupper(rand_hex(6)), 'memberId' => $mid, 'itemKey' => 'family', 'supervisorId' => '',
+            'url' => mb_substr($url, 0, 600), 'ext' => $type === 'image' ? 'jpg' : 'pdf', 'mime' => mb_substr((string)($msg[$type]['mime_type'] ?? ''), 0, 120), 'bytes' => 0,
+            'capturedOn' => '', 'note' => mb_substr(trim((string)($msg[$type]['caption'] ?? '')), 0, RCL_NOTE_MAX), 'verdict' => 'family_sent',
+            'reason' => 'Sent by the family on WhatsApp — check it and submit it against the right item.', 'centreId' => '', 'createdAt' => now_iso()]);
+        if ($sup !== '') push_notification($sup, ['kind' => 'system', 'groupKey' => 'regcheck-wa:' . $mid, 'title' => $first . '’s family sent a ' . ($type === 'image' ? 'photo' : 'document') . ' on WhatsApp',
+            'body' => 'Open My registrations, check it, and submit it against the right item.']);
+        audit('regcheck.whatsapp_file', null, $mid, ['type' => $type, 'kept' => $url !== '' && !str_contains($url, 'kapso')], '');
+        kapso_send_text($e164, 'Thank you — we have it. ' . ((string)$c['supervisorName'] !== '' ? rcl_first((string)$c['supervisorName']) : 'Someone at the centre') . ' will check it.');
+        return ['handled' => true, 'did' => 'file', 'memberId' => $mid];
+    }
+
+    $today = attendance_today();
+    if ($choice === 'help') {
+        $w = rcl_followup_write($mid, $by, ['channel' => 'whatsapp', 'outcome' => 'needs_help', 'note' => 'Tapped “I need help” on WhatsApp — please call the family.',
+            'nextOn' => gmdate('Y-m-d', (int)strtotime($today . 'T12:00:00Z') + 86400)]);
+        if (function_exists('staff_inbox_alert')) staff_inbox_alert('requests', ['who' => (string)$m['fullName'], 'centre' => (string)$m['centre'],
+            'what' => 'The family asked for help with registration on WhatsApp (' . $e164 . '). Please call them.']);
+        if ($sup !== '') push_notification($sup, ['kind' => 'system', 'groupKey' => 'regcheck-wa:' . $mid, 'title' => $first . '’s family asked for help', 'body' => 'They tapped “I need help” on WhatsApp. Please call ' . $e164 . '.']);
+        kapso_send_text($e164, 'Thank you. Someone from NGG will call you soon to help with ' . $first . '’s registration.');
+        return ['handled' => true, 'did' => 'help', 'memberId' => $mid, 'ok' => !empty($w['ok'])];
+    }
+    $day = $choice === 'sat' ? rcl_next_saturday($today) : gmdate('Y-m-d', (int)strtotime($today . 'T12:00:00Z') + 7 * 86400);
+    // The next follow-up is the day after they said they would come: if they came, it is done by then.
+    $next = gmdate('Y-m-d', (int)strtotime($day . 'T12:00:00Z') + 86400);
+    $w = rcl_followup_write($mid, $by, ['channel' => 'whatsapp', 'outcome' => 'promised',
+        'note' => 'Tapped “' . RCL_WA_CHOICES[$choice] . '” on WhatsApp: coming on ' . gmdate('l j F', (int)strtotime($day . 'T12:00:00Z')) . '.', 'nextOn' => $next]);
+    $b = rcl_refresh([$mid])[$mid] ?? null;
+    $need = $b ? rcl_family_needs($b['items']) : [];
+    kapso_send_text($e164, 'Thank you! We will expect you at ' . ((string)$m['centre'] ?: 'the centre') . ' on ' . gmdate('l j F', (int)strtotime($day . 'T12:00:00Z')) . '.'
+        . ($need ? ' Please bring: ' . implode('; ', $need) . '.' : ''));
+    return ['handled' => true, 'did' => $choice, 'memberId' => $mid, 'on' => $day, 'ok' => !empty($w['ok'])];
+}
+
+/** A photo a family sent: kept on this site (Kapso's link may not last); a document, or a photo that cannot be fetched, keeps Kapso's link. */
+function rcl_wa_keep_media(array $msg): string
+{
+    $type = (string)($msg['type'] ?? '');
+    $src = (string)($msg['kapso']['media_url'] ?? ($msg['kapso']['media_data']['url'] ?? ''));
+    if ($src === '' || !preg_match('#^https://#', $src)) return '';
+    if ($type !== 'image' || !function_exists('photo_store_put')) return $src;
+    $r = sms_http($src, [CURLOPT_HTTPHEADER => str_contains((string)parse_url($src, PHP_URL_HOST), 'kapso.ai') ? ['X-API-Key: ' . kapso_cfg()['api_key']] : []]);
+    $bin = (string)($r['body'] ?? '');
+    $info = $bin !== '' ? @getimagesizefromstring($bin) : false;
+    if (empty($r['ok']) || !$info) return $src;
+    $put = photo_store_put('data:' . $info['mime'] . ';base64,' . base64_encode($bin));
+    return !empty($put['ok']) && !empty($put['url']) ? (string)$put['url'] : $src;
+}
 
 /* ── The follow-up log ─────────────────────────────────────────────────── */
 
@@ -1135,7 +1301,22 @@ function admin_regcheck_member(array $p): array {
             'checklist' => rcl_row_public($m, $c, $b) + ['items' => $b['items']], 'supervisorPresentToday' => $present,
             'submissions' => array_map('rcl_submission_public', $subs), 'me' => (string)$g['requester']['memberId'],
             'followups' => array_map('rcl_followup_public', db_all('SELECT * FROM reg_checklist_followups WHERE memberId = ? ORDER BY id DESC LIMIT 30', [$mid])),
-            'channels' => RCL_FOLLOWUP_CHANNELS, 'outcomes' => RCL_FOLLOWUP_OUTCOMES, 'today' => attendance_today()];
+            'channels' => RCL_FOLLOWUP_CHANNELS, 'outcomes' => RCL_FOLLOWUP_OUTCOMES, 'today' => attendance_today(),
+            'whatsapp' => rcl_wa_thread($mid)];
+}
+
+/** The WhatsApp messages with this child's family: reminders sent and what came back (newest first, at most 20). */
+function rcl_wa_thread(string $memberId): array
+{
+    try {
+        $phones = [];
+        foreach (db_all("SELECT DISTINCT phone FROM whatsapp_messages WHERE direction = 'out' AND kind = ?", ['regcheck:' . $memberId]) as $r) $phones[] = (string)$r['phone'];
+        if (!$phones) return [];
+        $ph = implode(',', array_fill(0, count($phones), '?'));
+        return array_map(static fn($r) => ['dir' => (string)$r['direction'], 'body' => (string)$r['body'], 'status' => (string)$r['status'], 'at' => (string)$r['createdAt']],
+            db_all("SELECT direction, body, status, createdAt FROM whatsapp_messages WHERE phone IN ($ph) AND (direction = 'in' OR kind = ?) ORDER BY createdAt DESC LIMIT 20",
+                array_merge($phones, ['regcheck:' . $memberId])));
+    } catch (Throwable $e) { return []; }
 }
 
 function rcl_submission_public(array $s): array {
