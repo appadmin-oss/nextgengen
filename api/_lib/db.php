@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 237;
+const NGG_SCHEMA_TARGET = 238;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6582,6 +6582,38 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_shop_orders_status ON shop_orders(status, id);
             CREATE INDEX IF NOT EXISTS idx_shop_orders_ref ON shop_orders(paystackRef);
+        ",
+        /* 238 — instalment plans (domain/payment-plans.php): an agreed schedule for clearing a balance.
+           A plan records who agreed it, when, to which terms and from what starting point (`startPaid`,
+           the payments on the account when it began); its instalments are dated amounts; its events are
+           the accountability record — created, reminded, missed, paid, completed, cancelled, notes —
+           each with who and when. Progress is never stored: it is read from the ledger every time. */
+        238 => "
+            CREATE TABLE IF NOT EXISTS payment_plans (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              planId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL,
+              total INTEGER NOT NULL DEFAULT 0, instalments INTEGER NOT NULL DEFAULT 0, frequency TEXT NOT NULL DEFAULT 'monthly',
+              firstDue TEXT NOT NULL DEFAULT '', startPaid INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'active', source TEXT NOT NULL DEFAULT 'family',
+              createdBy TEXT NOT NULL DEFAULT '', agreedBy TEXT NOT NULL DEFAULT '', agreedAt TEXT NOT NULL DEFAULT '', termsVersion TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '', completedAt TEXT NOT NULL DEFAULT '',
+              cancelledAt TEXT NOT NULL DEFAULT '', cancelledBy TEXT NOT NULL DEFAULT '', cancelReason TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_payment_plans_member ON payment_plans(memberId, status);
+            CREATE INDEX IF NOT EXISTS idx_payment_plans_status ON payment_plans(status, id);
+            CREATE TABLE IF NOT EXISTS payment_plan_items (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              planId TEXT NOT NULL, seq INTEGER NOT NULL, dueDate TEXT NOT NULL DEFAULT '', amount INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_plan_items ON payment_plan_items(planId, seq);
+            CREATE INDEX IF NOT EXISTS idx_payment_plan_items_due ON payment_plan_items(dueDate);
+            CREATE TABLE IF NOT EXISTS payment_plan_events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              planId TEXT NOT NULL, memberId TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT '', seq INTEGER NOT NULL DEFAULT 0,
+              actor TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', amount INTEGER NOT NULL DEFAULT 0, at TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_payment_plan_events_plan ON payment_plan_events(planId, id);
         ",
     ];
 

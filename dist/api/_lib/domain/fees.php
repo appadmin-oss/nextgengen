@@ -1552,7 +1552,7 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
 function fees_reminder_candidates(?array $cfg = null, int $limit = FEES_CANDIDATE_MAX): array {
     $cfg = $cfg ?? fees_settings();
     $out = ['due' => [], 'skipped' => ['off' => 0, 'optedOut' => 0, 'nothingPayable' => 0,
-                                       'underMinimum' => 0, 'tooSoon' => 0, 'paidRecently' => 0, 'noContact' => 0]];
+                                       'underMinimum' => 0, 'tooSoon' => 0, 'paidRecently' => 0, 'onPlan' => 0, 'noContact' => 0]];
     if (empty($cfg['enabled']) || empty($cfg['remindEnabled'])) { $out['skipped']['off'] = 1; return $out; }
     $everyDays = max(FEES_REMIND_MIN_DAYS, (int)$cfg['remindEveryDays']);
     $minBal = max(1, (int)$cfg['remindMinBalance']);
@@ -1565,6 +1565,8 @@ function fees_reminder_candidates(?array $cfg = null, int $limit = FEES_CANDIDAT
         foreach (db_all("SELECT memberId, MAX(paidAt) at FROM membership_invoices WHERE purpose = 'part' AND status = 'paid' AND paidAt >= ? GROUP BY memberId",
             [gmdate('Y-m-d\TH:i:s\Z', $now - $everyDays * 86400)]) as $r) $installed[(string)$r['memberId']] = (string)$r['at'];
     }
+    // A family keeping an instalment plan gets the plan's reminders instead (payment-plans.php); a lapsed plan does not protect them.
+    $onPlan = function_exists('plan_protected_members') ? plan_protected_members() : [];
     foreach (db_all("SELECT * FROM members WHERE status = 'active' ORDER BY id LIMIT " . max(1, min(FEES_SCAN_MAX, $limit * 5))) as $m) {
         if (count($out['due']) >= $limit) break;
         if ((int)($m['duesRemindOff'] ?? 0) === 1) { $out['skipped']['optedOut']++; continue; }
@@ -1574,6 +1576,7 @@ function fees_reminder_candidates(?array $cfg = null, int $limit = FEES_CANDIDAT
         $last = strtotime((string)($m['duesRemindedAt'] ?? '')) ?: 0;
         if ($last > 0 && ($now - $last) < $everyDays * 86400) { $out['skipped']['tooSoon']++; continue; }
         if (isset($installed[(string)$m['memberId']])) { $out['skipped']['paidRecently']++; continue; }
+        if (isset($onPlan[(string)$m['memberId']])) { $out['skipped']['onPlan']++; continue; }
         $ct = function_exists('dues_contacts') ? dues_contacts($m) : ['guardianIds' => [], 'emails' => array_filter([trim((string)($m['parentEmail'] ?? ''))]), 'phones' => []];
         if (!$ct['guardianIds'] && !$ct['emails'] && !$ct['phones']) { $out['skipped']['noContact']++; continue; }
         $out['due'][] = ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'],

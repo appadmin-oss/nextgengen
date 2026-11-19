@@ -5348,3 +5348,29 @@ CREATE TABLE IF NOT EXISTS shop_orders (
   UNIQUE KEY uq_shop_order (orderId), UNIQUE KEY uq_shop_token (token), KEY idx_shop_orders_status (status, id), KEY idx_shop_orders_ref (paystackRef)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (237) ON DUPLICATE KEY UPDATE version = version;
+
+-- 238 — instalment plans (domain/payment-plans.php): the agreement, its dated instalments, and the accountability log.
+CREATE TABLE IF NOT EXISTS payment_plans (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  planId VARCHAR(40) NOT NULL, memberId VARCHAR(64) NOT NULL,
+  total INT NOT NULL DEFAULT 0, instalments INT NOT NULL DEFAULT 0, frequency VARCHAR(16) NOT NULL DEFAULT 'monthly',
+  firstDue VARCHAR(10) NOT NULL DEFAULT '', startPaid INT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT 'active', source VARCHAR(16) NOT NULL DEFAULT 'family',
+  createdBy VARCHAR(80) NOT NULL DEFAULT '', agreedBy VARCHAR(160) NOT NULL DEFAULT '', agreedAt VARCHAR(32) NOT NULL DEFAULT '', termsVersion VARCHAR(32) NOT NULL DEFAULT '',
+  note VARCHAR(600) NOT NULL DEFAULT '', completedAt VARCHAR(32) NOT NULL DEFAULT '',
+  cancelledAt VARCHAR(32) NOT NULL DEFAULT '', cancelledBy VARCHAR(80) NOT NULL DEFAULT '', cancelReason VARCHAR(600) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_payment_plan (planId), KEY idx_payment_plans_member (memberId, status), KEY idx_payment_plans_status (status, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS payment_plan_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  planId VARCHAR(40) NOT NULL, seq INT NOT NULL, dueDate VARCHAR(10) NOT NULL DEFAULT '', amount INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_payment_plan_items (planId, seq), KEY idx_payment_plan_items_due (dueDate)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS payment_plan_events (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  planId VARCHAR(40) NOT NULL, memberId VARCHAR(64) NOT NULL DEFAULT '', kind VARCHAR(24) NOT NULL DEFAULT '', seq INT NOT NULL DEFAULT 0,
+  actor VARCHAR(160) NOT NULL DEFAULT '', detail VARCHAR(600) NOT NULL DEFAULT '', amount INT NOT NULL DEFAULT 0, at VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_payment_plan_events_plan (planId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (238) ON DUPLICATE KEY UPDATE version = version;

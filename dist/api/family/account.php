@@ -21,6 +21,11 @@ switch ($action) {
     // Anchor: the week for a parent's link (domain/circle.php).
     case 'anchor.confirm': $res = gs_call('family.anchor.confirm', $base + ['linkId' => $b['linkId'] ?? '', 'date' => (string)($b['date'] ?? ''), 'on' => !empty($b['on'])]); break;
     case 'anchor.remark': $res = gs_call('family.anchor.remark', $base + ['linkId' => $b['linkId'] ?? '', 'text' => (string)($b['text'] ?? '')]); break;
+    // Instalment plans (domain/payment-plans.php).
+    case 'payplan.quote':  $res = gs_call('family.payplan.quote', $base + ['linkId' => $b['linkId'] ?? '', 'instalments' => (int)($b['instalments'] ?? 0), 'frequency' => (string)($b['frequency'] ?? ''), 'firstDue' => (string)($b['firstDue'] ?? '')]); break;
+    case 'payplan.create': $res = gs_call('family.payplan.create', $base + ['linkId' => $b['linkId'] ?? '', 'instalments' => (int)($b['instalments'] ?? 0), 'frequency' => (string)($b['frequency'] ?? ''), 'firstDue' => (string)($b['firstDue'] ?? ''),
+                               'agree' => !empty($b['agree']), 'termsVersion' => (string)($b['termsVersion'] ?? ''), 'agreedName' => (string)($b['agreedName'] ?? ''), 'ip' => client_ip()]); break;
+    case 'payplan.pay':    rate_limit_check_actor('membership.pay', 'guardian:' . (string)$f['gid']); $res = gs_call('family.payplan.pay', $base + ['linkId' => $b['linkId'] ?? '']); break;
     case 'fees.advance': $res = gs_call('family.fees.advance', $base + ['linkId' => $b['linkId'] ?? '', 'months' => (int)($b['months'] ?? 0), 'terms' => (int)($b['terms'] ?? 0)]); break;
     case 'notices.read': $res = gs_call('family.notices.read', $base + ['noticeId' => (string)($b['noticeId'] ?? '')]); break;
     case 'withdraw':    $res = gs_call('family.request.withdraw', $base + ['requestId' => $b['requestId'] ?? '']); break;

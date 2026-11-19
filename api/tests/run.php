@@ -17933,7 +17933,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         $pv = $p2['preview'];
         foreach (['due', 'count', 'skipped', 'everyDays', 'enabled'] as $k) if (!array_key_exists($k, $pv)) return false;
         // Every exclusion is NAMED — "it will send 4 of 60" is not checkable.
-        foreach (['off', 'optedOut', 'nothingPayable', 'underMinimum', 'tooSoon', 'paidRecently', 'noContact'] as $k) {
+        foreach (['off', 'optedOut', 'nothingPayable', 'underMinimum', 'tooSoon', 'paidRecently', 'onPlan', 'noContact'] as $k) {
             if (!array_key_exists($k, $pv['skipped'])) return false;
         }
         // A preview does not send: the stamp is untouched by looking.
@@ -31643,6 +31643,149 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('instalments · a stranger cannot ask for an instalment on someone else\'s child', (backend_dispatch('family.fees.pay', ['guardianId' => 'INSG-X', 'linkId' => 'INS-LINK', 'amount' => 1000])['error'] ?? '') === 'not_found');
 
     unset($GLOBALS['__paystack_mock']);
+    if ($prevPs === null) unset($GLOBALS['CONFIG']['paystack']); else $GLOBALS['CONFIG']['paystack'] = $prevPs;
+    setting_set('fees', is_array($prevFees) ? $prevFees : [], 'test');
+    $wipe();
+})();
+
+// ── Instalment plans: the agreement, the tracking and the record (owner, 19 Nov 2026) ──
+(function () {
+    $now = now_iso(); $ADM = 'NGG-2025-0099';
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'membership_invoices' => 'memberId', 'member_ledger' => 'memberId', 'guardian_wards' => 'memberId', 'dues_notices' => 'memberId',
+                  'guardian_notices' => 'memberId', 'payment_plans' => 'memberId', 'payment_plan_events' => 'memberId'] as $t => $c) {
+            try { db_exec("DELETE FROM $t WHERE $c LIKE 'PLN-%'"); } catch (Throwable $e) {}
+        }
+        try { db_exec("DELETE FROM payment_plan_items WHERE planId NOT IN (SELECT planId FROM payment_plans)"); } catch (Throwable $e) {}
+        db_exec("DELETE FROM guardians WHERE guardianId LIKE 'PLNG-%'");
+    };
+    $wipe();
+    $prevFees = setting_get('fees'); $prevPs = $GLOBALS['CONFIG']['paystack'] ?? null;
+    setting_set('fees', ['enabled' => true, 'remindEnabled' => true] + fees_settings(), 'test');
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    db_insert('members', ['memberId' => 'PLN-1', 'fullName' => 'Pelumi Plan', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'parentEmail' => 'pelumi.parent@example.com', 'joinDate' => gmdate('Y-m-d'), 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'PLNG-1', 'email' => 'pelumi.parent@example.com', 'fullName' => 'Mrs Funmi Plan', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'PLN-LINK', 'guardianId' => 'PLNG-1', 'memberId' => 'PLN-1', 'status' => 'active', 'notify' => '{}', 'createdAt' => $now]);
+    $m = db_row("SELECT * FROM members WHERE memberId = 'PLN-1'");
+    $base = (int)fees_balance($m)['payable'];
+    fees_post('PLN-1', 'adjustment', 24000 - $base, ['periodKey' => 'test:pln:1', 'note' => 'Test balance', 'by' => 'test']);
+    $due = (int)fees_balance($m)['payable'];
+    $today = plan_today();
+    $first = gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') + 7 * 86400);
+    $fam = fn(string $op, array $x = []) => backend_dispatch('family.payplan.' . $op, ['guardianId' => 'PLNG-1', 'linkId' => 'PLN-LINK'] + $x);
+
+    // The schedule.
+    $q = $fam('quote', ['instalments' => 4, 'frequency' => 'monthly', 'firstDue' => $first]);
+    chk('plans · a quote splits the whole balance into equal instalments, the remainder on the first, dates a month apart',
+        $due === 24000 && !empty($q['ok']) && array_column($q['items'], 'amount') === [6000, 6000, 6000, 6000] && $q['items'][1]['dueDate'] === plan_dates($first, 2, 'monthly')[1]
+        && ($q['termsVersion'] ?? '') === PLAN_TERMS_VERSION);
+    chk('plans · an uneven balance puts the remainder on the first instalment', array_column(plan_schedule(10001, 3, 'weekly', $first, $today)['items'], 'amount') === [3335, 3333, 3333]);
+    chk('plans · a monthly date on the 31st falls on the month’s last day', plan_dates('2027-01-31', 2, 'monthly')[1] === '2027-02-28');
+    chk('plans · the limits are refused with a reason: too many, too few, too long, a past day, too far off, instalments under the minimum',
+        ($fam('quote', ['instalments' => 7, 'frequency' => 'monthly', 'firstDue' => $first])['error'] ?? '') === 'bad_count'
+        && ($fam('quote', ['instalments' => 1, 'frequency' => 'monthly', 'firstDue' => $first])['error'] ?? '') === 'bad_count'
+        && (plan_schedule(24000, 6, 'monthly', $first, $today)['error'] ?? '') === 'too_long'
+        && ($fam('quote', ['instalments' => 3, 'frequency' => 'weekly', 'firstDue' => gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') - 86400)])['error'] ?? '') === 'date_past'
+        && ($fam('quote', ['instalments' => 3, 'frequency' => 'weekly', 'firstDue' => gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') + 40 * 86400)])['error'] ?? '') === 'date_too_far'
+        && (plan_schedule(2500, 3, 'weekly', $first, $today)['error'] ?? '') === 'too_small'
+        && ($fam('quote', ['instalments' => 3, 'frequency' => 'daily', 'firstDue' => $first])['error'] ?? '') === 'bad_frequency');
+
+    // The agreement.
+    chk('plans · the family account offers a plan, with the terms to agree to', (family_fees_view($m)['planOffer']['termsVersion'] ?? '') === PLAN_TERMS_VERSION);
+    chk('plans · a plan is not made without accepting the current terms', ($fam('create', ['instalments' => 4, 'frequency' => 'monthly', 'firstDue' => $first, 'agree' => false, 'termsVersion' => PLAN_TERMS_VERSION])['error'] ?? '') === 'terms_required'
+        && ($fam('create', ['instalments' => 4, 'frequency' => 'monthly', 'firstDue' => $first, 'agree' => true, 'termsVersion' => '2020-01'])['error'] ?? '') === 'terms_required');
+    $c = $fam('create', ['instalments' => 4, 'frequency' => 'monthly', 'firstDue' => $first, 'agree' => true, 'termsVersion' => PLAN_TERMS_VERSION]);
+    $pid = (string)($c['plan']['planId'] ?? '');
+    $row = db_row('SELECT * FROM payment_plans WHERE planId = ?', [$pid]);
+    $ev = plan_events($pid);
+    chk('plans · agreeing records who (the guardian by name), when, the terms version, the source and the schedule',
+        !empty($c['ok']) && $row && $row['agreedBy'] === 'Mrs Funmi Plan' && $row['termsVersion'] === PLAN_TERMS_VERSION && $row['source'] === 'family'
+        && $row['createdBy'] === 'guardian:PLNG-1' && (int)$row['total'] === 24000 && count(plan_items($pid)) === 4
+        && $ev && $ev[0]['kind'] === 'created' && str_contains($ev[0]['detail'], 'Mrs Funmi Plan')
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'plan.created' AND subject = 'PLN-1'")['c'] >= 1);
+    chk('plans · one plan at a time', ($fam('create', ['instalments' => 2, 'frequency' => 'monthly', 'firstDue' => $first, 'agree' => true, 'termsVersion' => PLAN_TERMS_VERSION])['error'] ?? '') === 'plan_exists');
+    $s = plan_state($row, $m);
+    chk('plans · a new plan is on track, nothing paid, and asks for the first instalment', $s['health'] === 'on_track' && $s['paid'] === 0 && $s['payNow'] === 6000 && $s['next']['seq'] === 1);
+    chk('plans · the family account shows the plan instead of the offer', (family_fees_view($m)['plan']['planId'] ?? '') === $pid && family_fees_view($m)['planOffer'] === null);
+
+    // Paying: any payment counts, the ledger is the truth.
+    $pay = $fam('pay');
+    $inv = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)($pay['invoiceId'] ?? '')]);
+    chk('plans · "pay this instalment" makes a payment link for exactly the instalment, named for the plan',
+        !empty($pay['ok']) && $inv && $inv['purpose'] === 'part' && (int)$inv['total'] === 6000 && str_contains($inv['items'], 'Instalment 1 of 4') && str_contains($inv['items'], 'plan:' . $pid));
+    fees_post('PLN-1', 'payment', 6000, ['periodKey' => 'test:pln:pay1', 'note' => 'Cash at the desk', 'method' => 'cash', 'by' => 'test']);
+    $s = plan_sync($row);
+    chk('plans · money taken at the desk counts: instalment 1 paid, the next one asked for, and the record says so once',
+        $s['items'][0]['status'] === 'paid' && $s['paid'] === 6000 && $s['remaining'] === 18000 && $s['payNow'] === 6000 && $s['next']['seq'] === 2
+        && count(array_filter(plan_events($pid), fn($e) => $e['kind'] === 'paid')) === 1 && (plan_sync($row) && count(array_filter(plan_events($pid), fn($e) => $e['kind'] === 'paid')) === 1));
+    fees_post('PLN-1', 'payment', 3000, ['periodKey' => 'test:pln:pay2', 'note' => 'Part', 'method' => 'cash', 'by' => 'test']);
+    $s = plan_state($row, $m);
+    chk('plans · half an instalment is shown as part-paid, with what is left of it', $s['items'][1]['status'] === 'part' && $s['items'][1]['left'] === 3000 && $s['payNow'] === 3000);
+    fees_post('PLN-1', 'fine', 500, ['periodKey' => 'test:pln:newfine', 'note' => 'A new fine', 'by' => 'test']);
+    chk('plans · a new charge after the plan began is not added to the plan', plan_state($row, $m)['remaining'] === 15000);
+
+    // Late, behind, broken.
+    db_exec('UPDATE payment_plan_items SET dueDate = ? WHERE planId = ? AND seq = 2', [gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') - 3 * 86400), $pid]);
+    $s = plan_state($row, $m);
+    chk('plans · an instalment past its day and not covered makes the plan "behind", with the overdue amount and the days late',
+        $s['health'] === 'behind' && $s['items'][1]['status'] === 'late' && $s['items'][1]['daysLate'] === 3 && $s['overdue'] === 3000 && $s['payNow'] === 3000);
+    $GLOBALS['__mail_sink'] = [];
+    $r1 = plan_reminders_run($today); $r2 = plan_reminders_run($today);
+    $late = array_values(array_filter($GLOBALS['__mail_sink'], fn($x) => str_contains((string)$x['subject'], 'is late')));
+    unset($GLOBALS['__mail_sink']);
+    chk('plans · the family is told an instalment is late, once, and the record shows the reminder and the miss',
+        $r1['late'] === 1 && $r2['late'] === 0 && count($late) >= 1 && str_contains($late[0]['html'], fees_money_text(3000))
+        && count(array_filter(plan_events($pid), fn($e) => $e['kind'] === 'missed' && $e['seq'] === 2)) === 1
+        && count(array_filter(plan_events($pid), fn($e) => $e['kind'] === 'reminded' && $e['seq'] === 2)) === 1);
+    chk('plans · a family keeping a plan is not sent the general arrears reminder as well (named: onPlan)',
+        !in_array('PLN-1', array_column(fees_reminder_candidates()['due'], 'memberId'), true) && (int)fees_reminder_candidates()['skipped']['onPlan'] >= 1);
+    db_exec('UPDATE payment_plan_items SET dueDate = ? WHERE planId = ? AND seq = 2', [gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') - (PLAN_GRACE_DAYS + 1) * 86400), $pid]);
+    $GLOBALS['__mail_sink'] = [];
+    $r3 = plan_reminders_run($today);
+    $lapsed = array_values(array_filter($GLOBALS['__mail_sink'], fn($x) => str_contains((string)$x['subject'], 'lapsed')));
+    unset($GLOBALS['__mail_sink']);
+    chk('plans · past the grace period the plan is broken: the family is told once, the record says so, and the arrears reminder resumes',
+        plan_state($row, $m)['health'] === 'broken' && $r3['broken'] === 1 && count($lapsed) >= 1 && plan_reminders_run($today)['broken'] === 0
+        && count(array_filter(plan_events($pid), fn($e) => $e['kind'] === 'broken')) === 1 && !isset(plan_protected_members()['PLN-1']));
+
+    // The Control Room.
+    $list = backend_dispatch('admin.payplans.list', ['requesterId' => $ADM]);
+    $mine = array_values(array_filter($list['rows'] ?? [], fn($x) => $x['planId'] === $pid));
+    chk('plans · staff see the plan in the list, broken first, with what is owed and overdue, and the counts',
+        !empty($list['ok']) && $mine && $mine[0]['health'] === 'broken' && $mine[0]['overdue'] === 3000 && ($list['counts']['broken'] ?? 0) >= 1 && ($list['rows'][0]['health'] ?? '') === 'broken');
+    chk('plans · the list filters by health and by name', count(array_filter(backend_dispatch('admin.payplans.list', ['requesterId' => $ADM, 'health' => 'on_track'])['rows'], fn($x) => $x['planId'] === $pid)) === 0
+        && (backend_dispatch('admin.payplans.list', ['requesterId' => $ADM, 'q' => 'Pelumi'])['total'] ?? 0) >= 1);
+    $get = backend_dispatch('admin.payplans.get', ['requesterId' => $ADM, 'planId' => $pid]);
+    chk('plans · one plan opens with its schedule, the person who agreed, the terms, the reminders sent and the whole record',
+        !empty($get['ok']) && $get['plan']['agreedBy'] === 'Mrs Funmi Plan' && count($get['plan']['items']) === 4 && $get['terms'] === PLAN_TERMS
+        && count($get['notices']) >= 2 && count($get['events']) >= 5);
+    $n = backend_dispatch('admin.payplans.note', ['requesterId' => $ADM, 'planId' => $pid, 'text' => 'Called Mrs Plan; she will pay on Friday.']);
+    chk('plans · a staff note goes on the record with who wrote it', !empty($n['ok']) && $n['events'][0]['kind'] === 'note' && $n['events'][0]['actor'] === $ADM);
+    chk('plans · ending a plan needs a reason', (backend_dispatch('admin.payplans.cancel', ['requesterId' => $ADM, 'planId' => $pid, 'reason' => 'no'])['error'] ?? '') === 'reason_required');
+    $GLOBALS['__mail_sink'] = [];
+    $x = backend_dispatch('admin.payplans.cancel', ['requesterId' => $ADM, 'planId' => $pid, 'reason' => 'Two instalments missed and no reply to calls.']);
+    $ended = array_values(array_filter($GLOBALS['__mail_sink'], fn($y) => str_contains((string)$y['subject'], 'has ended')));
+    unset($GLOBALS['__mail_sink']);
+    $row = db_row('SELECT * FROM payment_plans WHERE planId = ?', [$pid]);
+    chk('plans · an ended plan records who, when and why, tells the family, and cannot be ended twice',
+        !empty($x['ok']) && $row['status'] === 'cancelled' && $row['cancelledBy'] === $ADM && str_contains($row['cancelReason'], 'Two instalments') && count($ended) >= 1
+        && (backend_dispatch('admin.payplans.cancel', ['requesterId' => $ADM, 'planId' => $pid, 'reason' => 'again and again'])['error'] ?? '') === 'not_active');
+    // Staff make one on the family's behalf; it records how the parent agreed.
+    chk('plans · staff must say how the parent agreed', (backend_dispatch('admin.payplans.create', ['requesterId' => $ADM, 'memberId' => 'PLN-1', 'instalments' => 2, 'frequency' => 'fortnightly', 'firstDue' => $first, 'agreedBy' => 'Mrs Funmi Plan'])['error'] ?? '') === 'how_required');
+    $sc = backend_dispatch('admin.payplans.create', ['requesterId' => $ADM, 'memberId' => 'PLN-1', 'instalments' => 2, 'frequency' => 'fortnightly', 'firstDue' => $first, 'agreedBy' => 'Mrs Funmi Plan', 'how' => 'by phone', 'note' => 'Agreed on the call']);
+    $prow = db_row('SELECT * FROM payment_plans WHERE planId = ?', [(string)($sc['plan']['planId'] ?? '')]);
+    chk('plans · a staff-made plan records the staff member, the parent who agreed and how', !empty($sc['ok']) && $prow['source'] === 'staff' && $prow['createdBy'] === $ADM
+        && str_contains(plan_events($prow['planId'])[0]['detail'], 'by phone') && (int)$prow['total'] === (int)fees_balance($m)['payable']);
+    // Completing.
+    fees_post('PLN-1', 'payment', (int)$prow['total'], ['periodKey' => 'test:pln:all', 'note' => 'All of it', 'method' => 'transfer', 'by' => 'test']);
+    $done = plan_sync($prow);
+    chk('plans · once nothing is left the plan is completed, with the day, on the record', $done['health'] === 'completed'
+        && db_row('SELECT status, completedAt FROM payment_plans WHERE planId = ?', [$prow['planId']])['status'] === 'completed'
+        && count(array_filter(plan_events($prow['planId']), fn($e) => $e['kind'] === 'completed')) === 1);
+    chk('plans · a stranger cannot see or pay a plan through someone else\'s link', (backend_dispatch('family.payplan.pay', ['guardianId' => 'PLNG-X', 'linkId' => 'PLN-LINK'])['error'] ?? '') === 'not_found');
+    chk('plans · a member of staff without the fees permission cannot read plans', (backend_dispatch('admin.payplans.list', ['requesterId' => 'PLN-1'])['ok'] ?? true) === false);
+
     if ($prevPs === null) unset($GLOBALS['CONFIG']['paystack']); else $GLOBALS['CONFIG']['paystack'] = $prevPs;
     setting_set('fees', is_array($prevFees) ? $prevFees : [], 'test');
     $wipe();

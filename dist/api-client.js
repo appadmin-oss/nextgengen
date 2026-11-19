@@ -1466,6 +1466,12 @@
       // A child's Anchor week, for a parent's link; writes go through act('anchor.confirm' | 'anchor.remark').
       anchor:   (linkId) => request('/family/anchor.php' + qs({ link: linkId })),
       pay:      (linkId, amount) => request('/family/pay.php', { body: amount ? { link: linkId, amount } : { link: linkId } }),
+      // Instalment plans: see the schedule, agree to it by name, pay what it asks for now.
+      payplan: {
+        quote:  (linkId, o) => request('/family/account.php', { body: Object.assign({ action: 'payplan.quote', linkId }, o) }),
+        create: (linkId, o) => request('/family/account.php', { body: Object.assign({ action: 'payplan.create', linkId }, o) }),
+        pay:    (linkId) => request('/family/account.php', { body: { action: 'payplan.pay', linkId } }),
+      },
       act:      (action, data) => request('/family/account.php', { body: Object.assign({ action }, data || {}) }),
       inbox:    (cat, cursor) => request('/family/inbox.php' + qs({ cat: cat || '', cursor: cursor || '' })),
       events:   () => request('/family/events.php'),
@@ -2185,6 +2191,15 @@
         pay:         (period, volunteerIds, method, reference) => request('/admin/volunteer-pay.php', { body: { action: 'pay', period, volunteerIds, method, reference } }),
         voidPayout:  (payoutId, reason) => request('/admin/volunteer-pay.php', { body: { action: 'void', payoutId, reason } }),
         bank:        (volunteerId, d) => request('/admin/volunteer-pay.php', { body: Object.assign({ action: 'bank', volunteerId }, d) }),
+      },
+      // Instalment plans (domain/payment-plans.php, Money → Instalment plans).
+      payplans: {
+        list:   (o) => request('/admin/payplans.php' + qs(Object.assign({ view: 'list' }, o || {}))),
+        get:    (planId) => request('/admin/payplans.php' + qs({ view: 'get', planId })),
+        of:     (memberId) => request('/admin/payplans.php' + qs({ view: 'for', memberId })),
+        create: (d) => request('/admin/payplans.php', { body: Object.assign({ action: 'create' }, d) }),
+        cancel: (planId, reason) => request('/admin/payplans.php', { body: { action: 'cancel', planId, reason } }),
+        note:   (planId, text) => request('/admin/payplans.php', { body: { action: 'note', planId, text } }),
       },
       fees: {
         settings:    () => request('/admin/fees.php'),

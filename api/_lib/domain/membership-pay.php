@@ -301,9 +301,11 @@ function membership_part_min(int $due): int {
     return $due >= 2 * MPAY_PART_MIN ? MPAY_PART_MIN : 0;
 }
 
-function membership_part_invoice(array $m, string $by, int $due, int $amount): array {
+function membership_part_invoice(array $m, string $by, int $due, int $amount, array $plan = []): array {
     $mid = (string)$m['memberId'];
-    $min = membership_part_min($due);
+    /* An instalment a PLAN asks for (payment-plans.php) is the amount agreed, whatever its size: the
+       minimum is for amounts a family types, not for the last ₦600 of a schedule. */
+    $min = $plan ? 1 : membership_part_min($due);
     if ($amount === $due) return membership_balance_invoice($m, $by);          // all of it is the balance invoice
     if ($min === 0) return ['ok' => false, 'error' => 'part_not_allowed', 'detail' => 'The balance is ' . fees_money_text($due) . '. Amounts under ' . fees_money_text(2 * MPAY_PART_MIN) . ' are paid in full.'];
     if ($amount < $min) return ['ok' => false, 'error' => 'part_too_small', 'detail' => 'Pay at least ' . fees_money_text($min) . ' at a time.', 'min' => $min, 'max' => $due];
@@ -319,8 +321,8 @@ function membership_part_invoice(array $m, string $by, int $due, int $amount): a
     $terms = membership_fee_terms();
     $row = [
         'memberId' => $mid, 'applicationId' => 0, 'payToken' => rand_hex(20),
-        'items' => json_encode([['kind' => 'part', 'label' => 'Part payment towards the balance', 'detail' => fees_money_text($due) . ' owed on ' . gmdate('j M Y') . '; ' . fees_money_text($due - $amount) . ' left after this',
-            'amount' => $amount, 'periodKey' => '']], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        'items' => json_encode([['kind' => 'part', 'label' => (string)($plan['label'] ?? 'Part payment towards the balance'), 'detail' => fees_money_text($due) . ' owed on ' . gmdate('j M Y') . '; ' . fees_money_text($due - $amount) . ' left after this',
+            'amount' => $amount, 'periodKey' => $plan ? 'plan:' . (string)$plan['plan'] : '']], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
         'total' => $amount, 'currency' => (string)$terms['currency'], 'startDate' => gmdate('Y-m-d'),
         'status' => 'open', 'purpose' => 'part', 'createdBy' => substr($by, 0, 64), 'createdAt' => now_iso(),
     ];
