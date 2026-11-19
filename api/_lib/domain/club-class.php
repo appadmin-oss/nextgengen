@@ -448,6 +448,17 @@ function instructor_today(array $p): array {
     $marking = function_exists('staff_curriculum') ? staff_curriculum($p) : ['ok' => false];
     $pending = !empty($marking['ok']) ? count($marking['pending'] ?? []) : 0;
     if ($pending) $todo[] = portal_todo('marking', 'check-square', $pending . ' answer' . ($pending === 1 ? '' : 's') . ' to mark', 'Members are waiting for your feedback', 'Mark', '/instructor/progress', 'info', 3);
+    // Hand-ins waiting for a mark, in this instructor's courses and centre
+    // (assignment_marking_queue: the rows the grade op would let them open).
+    // Urgent once the oldest has waited ASG_MARK_URGENT_DAYS; duties_tick
+    // then tells their lead.
+    $handins = instructor_handins_queue($p);
+    if ($handins['count'] > 0) {
+        $old = $handins['oldestDays'];
+        $todo[] = portal_todo('handins', 'tray-arrow-down', $handins['count'] . ' hand-in' . ($handins['count'] === 1 ? '' : 's') . ' to mark — oldest ' . $old . ' day' . ($old === 1 ? '' : 's'),
+            $old >= ASG_MARK_URGENT_DAYS ? 'Waiting over a week · members hear nothing until it is marked' : 'Members are waiting for a mark and feedback',
+            'Mark', '/instructor/progress/assignments', $old >= ASG_MARK_URGENT_DAYS ? 'danger' : 'warning', $old >= ASG_MARK_URGENT_DAYS ? 2 : 3, substr($handins['oldestAt'], 0, 10));
+    }
     // 4. Preparation for the next session.
     $loop = $c['loop'];
     if ($c['date'] >= $today && $loop['steps']['plan'] !== 'done')
@@ -459,8 +470,16 @@ function instructor_today(array $p): array {
         'courses' => $c['courses'], 'centres' => $c['centres'], 'lesson' => $c['lesson'], 'loop' => $loop,
         'counts' => $c['session']['counts'], 'todo' => array_map(static fn($t) => array_diff_key($t, ['rank' => 1]), $todo),
         'glance' => ['class' => count($c['roster']), 'here' => $c['session']['counts']['here'] + $c['session']['counts']['late'],
-            'marking' => $pending, 'resultsAttention' => !empty($res['ok']) ? $res['counts']['attn'] : 0,
+            'marking' => $pending, 'handins' => $handins['count'], 'handinsOldestDays' => $handins['oldestDays'], 'resultsAttention' => !empty($res['ok']) ? $res['counts']['attn'] : 0,
             'resultsMissing' => !empty($res['ok']) ? $res['counts']['missing'] : 0]];
+}
+
+/** The instructor's marking queue through the assignments gate, asked as the instructor. Empty when they cannot mark. */
+function instructor_handins_queue(array $p): array {
+    $empty = ['count' => 0, 'oldestAt' => '', 'oldestDays' => 0, 'oldestId' => ''];
+    if (!function_exists('assignment_marking_queue')) return $empty;
+    $g = assignment_staff_gate(['requesterId' => (string)($p['requesterId'] ?? ''), 'as' => 'instructor']);
+    return !empty($g['ok']) ? assignment_marking_queue($g) + ['centres' => $g['centres']] : $empty;
 }
 
 /** One To do row. rank: 1 safeguarding · 2 deadline · 3 reply owed · 4 preparation · 5 other. */
@@ -535,15 +554,20 @@ function member_today(array $p): array {
         $todo[] = portal_todo('results', 'exam', $t, $sub, $due['step'] === 'upload' ? 'Upload' : 'Continue', '/member/grow/results', $due['overdue'] ? 'danger' : 'warning', $due['step'] === 'returned' ? 3 : 2, $due['dueOn']);
     }
 
-    // Assignments due in the next week, not yet handed in.
+    // Assignments due in the next week, not yet handed in — or handed in and
+    // sent back to revise, which is open work again, due on its resubmit date.
     try {
         $open = 0;
         foreach ((array)(assignment_list_for_member(['memberId' => $mid])['assignments'] ?? []) as $a) {
-            if ($a['submission']) continue;
+            $sub = $a['submission'];
+            if ($sub && $sub['status'] !== 'returned') continue;
+            if ($back = $sub !== null) { if (empty($a['canSubmit'])) continue; }   // returned on an assignment since closed: nothing to do
             $open++;
-            $dueOn = substr((string)$a['dueAt'], 0, 10);
-            if ($dueOn !== '' && $dueOn <= gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') + 7 * 86400))
-                $todo[] = portal_todo('asg-' . $a['assignmentId'], 'pencil-simple-line', (string)$a['title'], ($dueOn < $today ? 'Overdue since ' : 'Due ') . gmdate('D j M', strtotime($dueOn)), 'Start', '/member/learn', $dueOn < $today ? 'danger' : 'warning', 2, $dueOn);
+            $dueOn = $back ? (string)$sub['resubmitBy'] : substr((string)$a['dueAt'], 0, 10);
+            if ($back || ($dueOn !== '' && $dueOn <= gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') + 7 * 86400)))
+                $todo[] = portal_todo('asg-' . $a['assignmentId'], $back ? 'arrow-u-up-left' : 'pencil-simple-line', ($back ? 'Revise and hand in again: ' : '') . (string)$a['title'],
+                    ($dueOn !== '' ? ($dueOn < $today ? 'Overdue since ' : 'Due ') . gmdate('D j M', strtotime($dueOn)) : 'Sent back to improve') . ($back ? ' · see the feedback' : ''),
+                    $back ? 'Revise' : 'Start', '/member/learn', $dueOn !== '' && $dueOn < $today ? 'danger' : 'warning', 2, $dueOn);
         }
         if ($open) $badges['learn/lessons'] = $open;
     } catch (\Throwable $e) {}

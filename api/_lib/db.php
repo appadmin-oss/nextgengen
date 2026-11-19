@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 241;
+const NGG_SCHEMA_TARGET = 242;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6706,6 +6706,21 @@ function db_migrate(PDO $db): void {
            gets no more registration reminders on WhatsApp until it answers START: one row per number. */
         241 => "
             CREATE TABLE IF NOT EXISTS whatsapp_optout (phone TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT '', via TEXT NOT NULL DEFAULT '');
+        ",
+
+        /*
+         * Hand-ins that get marked and returned work that comes back
+         * (assignments.php). `resubmitBy` is the date a RETURNED hand-in is
+         * due again (set when it is returned, default three days), so it is
+         * reminded and counted open like overdue work instead of reading as
+         * handed in. `markMinutes` is how long a hand-in waited, from its
+         * (latest) submission to being marked or returned — time-to-mark, so
+         * "are instructors marking?" has a measured answer.
+         */
+        242 => "
+            ALTER TABLE assignment_submissions ADD COLUMN resubmitBy TEXT DEFAULT '';
+            ALTER TABLE assignment_submissions ADD COLUMN markMinutes INTEGER;
+            CREATE INDEX IF NOT EXISTS idx_sub_status ON assignment_submissions(status);
         ",
     ];
 

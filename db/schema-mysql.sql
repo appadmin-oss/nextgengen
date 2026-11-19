@@ -5457,3 +5457,9 @@ CREATE TABLE IF NOT EXISTS whatsapp_optout (
   phone VARCHAR(32) NOT NULL PRIMARY KEY, at VARCHAR(32) NOT NULL DEFAULT '', via VARCHAR(24) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (241) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 242 · Assignments: a returned hand-in's "resubmit by" date, and time-to-mark ──
+ALTER TABLE assignment_submissions ADD COLUMN resubmitBy VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE assignment_submissions ADD COLUMN markMinutes INT NULL;
+CREATE INDEX idx_sub_status ON assignment_submissions(status);
+INSERT INTO schema_version (version) VALUES (242) ON DUPLICATE KEY UPDATE version = version;

@@ -38411,9 +38411,130 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM assignment_submissions WHERE assignmentId = ?", [$id]); db_exec("DELETE FROM assignments WHERE assignmentId IN (?, ?)", [$id, $id2]);
 })();
 
+// ── HOMEWORK-DONE-2026-11-19 START — marking prompt, returned work stays open, parents see homework ──
+(function () {
+    // 7 · The marking prompt: an instructor is told how many hand-ins wait — only the ones they may mark.
+    $ins = $GLOBALS['__asgx_ins']; $now = now_iso();
+    $aid = staff_assignments_save($ins + ['data' => ['title' => 'Mark me', 'track' => 'Coding', 'instructions' => 'Build it.', 'status' => 'published', 'proof' => 'text']])['assignmentId'] ?? '';
+    assignment_submit(['memberId' => 'ASGX-A', 'assignmentId' => $aid, 'text' => 'Mine.']);
+    assignment_submit(['memberId' => 'ASGX-C', 'assignmentId' => $aid, 'text' => 'Mine too.']);
+    // Out of reach: a member at another centre on an every-centre assignment, and a course that is not theirs.
+    foreach ([['ASG-HW-ALL', 'Coding', ''], ['ASG-HW-DES', 'Design', 'Egbeda']] as [$id, $tr, $ce])
+        db_insert('assignments', ['assignmentId' => $id, 'title' => $id, 'instructions' => 'x', 'track' => $tr, 'centre' => $ce, 'status' => 'published', 'points' => 10, 'proof' => 'text', 'createdBy' => 'admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('assignment_submissions', ['submissionId' => 'SUB-HW-FAR', 'assignmentId' => 'ASG-HW-ALL', 'memberId' => 'ASGX-FAR', 'answerText' => 'far', 'status' => 'submitted', 'submittedAt' => $now, 'createdAt' => $now]);
+    db_insert('assignment_submissions', ['submissionId' => 'SUB-HW-DES', 'assignmentId' => 'ASG-HW-DES', 'memberId' => 'ASGX-B', 'answerText' => 'des', 'status' => 'submitted', 'submittedAt' => $now, 'createdAt' => $now]);
+    db_exec("UPDATE assignment_submissions SET submittedAt = ? WHERE assignmentId = ? AND memberId = 'ASGX-A'", [gmdate('Y-m-d\TH:i:s\Z', time() - 9 * 86400 - 3600), $aid]);
+    $q = instructor_handins_queue($ins);
+    $gateOk = 0;
+    foreach (db_all("SELECT submissionId FROM assignment_submissions WHERE status = 'submitted' AND memberId LIKE 'ASGX-%'") as $r)
+        if (!empty(staff_assignment_submission_gate($ins + ['submissionId' => $r['submissionId']])['ok'])) $gateOk++;
+    chk('homework 7 · the queue counts exactly the hand-ins the instructor may open and mark (their course, their centre)', $q['count'] === 2 && $gateOk === 2);
+    chk('homework 7 · …and says how long the oldest has waited', $q['oldestDays'] === 9);
+    $t = instructor_today($ins);
+    $row = array_values(array_filter((array)($t['todo'] ?? []), fn($x) => $x['key'] === 'handins'))[0] ?? null;
+    chk('homework 7 · Today says "2 hand-ins to mark — oldest 9 days"', $row && str_contains($row['title'], '2 hand-ins to mark') && str_contains($row['title'], 'oldest 9 days'));
+    chk('homework 7 · …urgent once the oldest has waited a week', $row && $row['tone'] === 'danger');
+    db_exec("UPDATE assignment_submissions SET submittedAt = ? WHERE assignmentId = ? AND memberId = 'ASGX-A'", [gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 86400), $aid]);
+    $row = array_values(array_filter((array)(instructor_today($ins)['todo'] ?? []), fn($x) => $x['key'] === 'handins'))[0] ?? null;
+    chk('homework 7 · …and due, not urgent, before that', $row && $row['tone'] === 'warning');
+    // The duties pop-up and email read the same row, for an instructor who signs in with a member account.
+    db_insert('members', ['memberId' => 'ASGX-INSM', 'fullName' => 'Ola Instructor', 'email' => 'ola.ins@asgx.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'volunteer', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_exec("UPDATE volunteers SET memberId = 'ASGX-INSM' WHERE volunteerId = 'VOL-INS-26-ASGX'");
+    $d = array_values(array_filter(duties_for('ASGX-INSM'), fn($x) => $x['key'] === 'instructor:handins'))[0] ?? null;
+    chk('homework 7 · the instructor\'s duties carry the hand-ins, to the assignments screen', $d && $d['level'] === 'due');
+    // Past a week: the lead mentor of their centre is nudged, once per stuck hand-in.
+    db_insert('mentors', ['mentorId' => 'MEN-ASGX-LEAD', 'fullName' => 'Lead Asgx', 'email' => 'lead@asgx.example', 'status' => 'active', 'centre' => 'egbeda', 'rank' => 'lead', 'createdAt' => $now, 'updatedAt' => $now]);
+    $insM = ['memberId' => 'ASGX-INSM', 'fullName' => 'Ola Instructor'];
+    chk('homework 7 · no nudge to the lead while the oldest is under a week', duty_tell_handins_lead($insM) === false);
+    db_exec("UPDATE assignment_submissions SET submittedAt = ? WHERE assignmentId = ? AND memberId = 'ASGX-A'", [gmdate('Y-m-d\TH:i:s\Z', time() - 8 * 86400), $aid]);
+    $n1 = duty_tell_handins_lead($insM); $n2 = duty_tell_handins_lead($insM);
+    chk('homework 7 · past a week the instructor\'s lead is nudged, once', $n1 === true && $n2 === false
+        && (int)db_row("SELECT COUNT(*) c FROM mentor_nudges WHERE rule = 'J:handinsOverdue' AND mentorId = 'MEN-ASGX-LEAD'")['c'] === 1);
+    // Time-to-mark is recorded when it is marked.
+    db_exec("UPDATE assignment_submissions SET submittedAt = ? WHERE assignmentId = ? AND memberId = 'ASGX-C'", [gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 3600), $aid]);
+    $sidC = (string)db_row("SELECT submissionId FROM assignment_submissions WHERE assignmentId = ? AND memberId = 'ASGX-C'", [$aid])['submissionId'];
+    staff_assignment_grade($ins + ['submissionId' => $sidC, 'grade' => 7, 'feedback' => 'Nice work.']);
+    $mm = (int)db_row('SELECT markMinutes FROM assignment_submissions WHERE submissionId = ?', [$sidC])['markMinutes'];
+    chk('homework 7 · marking records time-to-mark, submission to mark', $mm >= 119 && $mm <= 121);
+    $ttm = admin_assignment_time_to_mark();
+    chk('homework 7 · …and the Control Room reads it back as hours', $ttm['marked'] >= 1 && $ttm['medianHours'] !== null);
+    chk('homework 7 · marked work leaves the queue', instructor_handins_queue($ins)['count'] === 1);
+    db_exec("DELETE FROM mentor_nudges WHERE rule = 'J:handinsOverdue'"); db_exec("DELETE FROM mentors WHERE mentorId = 'MEN-ASGX-LEAD'");
+    db_exec("DELETE FROM assignment_submissions WHERE submissionId IN ('SUB-HW-FAR', 'SUB-HW-DES')"); db_exec("DELETE FROM assignments WHERE assignmentId IN ('ASG-HW-ALL', 'ASG-HW-DES')");
+    db_exec("UPDATE volunteers SET memberId = '' WHERE volunteerId = 'VOL-INS-26-ASGX'"); db_exec("DELETE FROM member_state WHERE memberId = 'ASGX-INSM'");
+    $GLOBALS['__hw_aid'] = $aid;
+})();
+
+(function () {
+    // 8 · Returned work stays open: counted, reminded and due again on its resubmit date.
+    $ins = $GLOBALS['__asgx_ins']; $aid = $GLOBALS['__hw_aid'];
+    $sidA = (string)db_row("SELECT submissionId FROM assignment_submissions WHERE assignmentId = ? AND memberId = 'ASGX-A'", [$aid])['submissionId'];
+    chk('homework 8 · a resubmit date in the past is refused', (staff_assignment_return($ins + ['submissionId' => $sidA, 'feedback' => 'Add a title.', 'resubmitBy' => '2020-01-01'])['error'] ?? '') === 'date_past');
+    $r = staff_assignment_return($ins + ['submissionId' => $sidA, 'feedback' => 'Add a title.']);
+    $lagos = gmdate('Y-m-d', time() + 3600);
+    chk('homework 8 · returning it sets "resubmit by" — three days unless the marker says', ($r['resubmitBy'] ?? '') === gmdate('Y-m-d', strtotime($lagos . 'T12:00:00Z') + 3 * 86400));
+    chk('homework 8 · a returned hand-in is not "handed in"', !isset(sub_ids_for($aid)['ASGX-A']) && isset(sub_ids_for($aid, true)['ASGX-A']));
+    $today = member_today(['memberId' => 'ASGX-A']);
+    $todo = array_values(array_filter((array)($today['todo'] ?? []), fn($x) => $x['key'] === 'asg-' . $aid))[0] ?? null;
+    chk('homework 8 · it is back on the member\'s Today, to revise', $todo && str_contains($todo['title'], 'Revise') && $todo['tone'] === 'warning');
+    db_exec('UPDATE assignment_submissions SET resubmitBy = ? WHERE submissionId = ?', [gmdate('Y-m-d', time() - 2 * 86400), $sidA]);
+    $todo = array_values(array_filter((array)(member_today(['memberId' => 'ASGX-A'])['todo'] ?? []), fn($x) => $x['key'] === 'asg-' . $aid))[0] ?? null;
+    chk('homework 8 · past its resubmit date it is overdue, like work never handed in', $todo && $todo['tone'] === 'danger' && str_contains($todo['subtitle'], 'Overdue'));
+    $dut = array_values(array_filter(duties_for('ASGX-A'), fn($x) => $x['key'] === 'member:asg-' . $aid))[0] ?? null;
+    chk('homework 8 · …so it is in the duties pop-up and email, urgent', $dut && $dut['level'] === 'urgent');
+    $rem = fn() => (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'ASGX-A' AND title = 'Reminder: Mark me'")['c'];
+    $before = $rem(); $day = strtotime(gmdate('Y-m-d') . 'T10:00:00Z');
+    assignment_due_reminders($day); assignment_due_reminders($day + 3600);
+    chk('homework 8 · the reminder job reminds returned work past its date, once', $rem() === $before + 1);
+    $rm = staff_assignments_remind($ins + ['assignmentId' => $aid, 'force' => true]);
+    chk('homework 8 · the desk\'s "remind" reaches the member whose work came back', (bool)db_row("SELECT 1 FROM assignment_notices WHERE assignmentId = ? AND memberId = 'ASGX-A' AND kind LIKE 'rs_over:%'", [$aid]) && ($rm['reminded'] ?? 0) >= 1);
+    assignment_submit(['memberId' => 'ASGX-A', 'assignmentId' => $aid, 'text' => 'Mine, with a title.']);
+    chk('homework 8 · handed in again, it is done: off Today and back in the marking queue', isset(sub_ids_for($aid)['ASGX-A'])
+        && !array_filter((array)(member_today(['memberId' => 'ASGX-A'])['todo'] ?? []), fn($x) => $x['key'] === 'asg-' . $aid) && instructor_handins_queue($ins)['count'] === 1);
+})();
+
+(function () {
+    // 9 · Parents see the week's homework, for their own children only, and are told once when it is overdue.
+    $ins = $GLOBALS['__asgx_ins']; $now = now_iso(); $GLOBALS['__mail_sink'] = [];
+    db_insert('guardians', ['guardianId' => 'G-ASGX-1', 'email' => 'mum.a@asgx.example', 'fullName' => 'Mum A', 'status' => 'active', 'sessionEpoch' => 1, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'G-ASGX-2', 'email' => 'dad.c@asgx.example', 'fullName' => 'Dad C', 'status' => 'active', 'sessionEpoch' => 1, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'GW-ASGX-A', 'guardianId' => 'G-ASGX-1', 'memberId' => 'ASGX-A', 'relationship' => 'parent', 'status' => 'active', 'via' => 'test', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'GW-ASGX-C', 'guardianId' => 'G-ASGX-2', 'memberId' => 'ASGX-C', 'relationship' => 'parent', 'status' => 'active', 'via' => 'test', 'createdAt' => $now, 'updatedAt' => $now]);
+    $day = strtotime(gmdate('Y-m-d') . 'T10:00:00Z');   // 11:00 Lagos
+    $mk = fn($title, $dueTs) => staff_assignments_save($ins + ['data' => ['title' => $title, 'track' => 'Coding', 'instructions' => 'Do it.', 'status' => 'published', 'proof' => 'text', 'points' => 10,
+        'dueAt' => gmdate('Y-m-d\TH:i:s\Z', $dueTs)]])['assignmentId'] ?? '';
+    $late = $mk('Late one', $day - 5 * 3600);
+    $marked = $mk('Marked one', time() + 3600);
+    assignment_submit(['memberId' => 'ASGX-A', 'assignmentId' => $marked, 'text' => 'A PRIVATE ANSWER']);
+    staff_assignment_grade($ins + ['submissionId' => (string)db_row("SELECT submissionId FROM assignment_submissions WHERE assignmentId = ? AND memberId = 'ASGX-A'", [$marked])['submissionId'], 'grade' => 9, 'feedback' => 'Well argued.']);
+    $w = family_ward(['guardianId' => 'G-ASGX-1', 'linkId' => 'GW-ASGX-A']);
+    $hw = array_column($w['homework']['items'] ?? [], null, 'assignmentId');
+    chk('homework 9 · the family sees this week\'s homework: overdue and marked', ($hw[$late]['state'] ?? '') === 'overdue' && ($hw[$marked]['state'] ?? '') === 'marked');
+    chk('homework 9 · …with the mark and the feedback once it is marked', ($hw[$marked]['mark'] ?? null) === 9 && ($hw[$marked]['outOf'] ?? null) === 10 && ($hw[$marked]['feedback'] ?? '') === 'Well argued.');
+    chk('homework 9 · …and never the child\'s own answer', !str_contains(json_encode($w['homework']), 'PRIVATE ANSWER'));
+    chk('homework 9 · a guardian cannot open another family\'s child', (family_ward(['guardianId' => 'G-ASGX-1', 'linkId' => 'GW-ASGX-C'])['error'] ?? '') === 'not_found');
+    $mailsTo = fn($to) => count(array_filter($GLOBALS['__mail_sink'], fn($m) => ($m['to'] ?? '') === $to && str_contains((string)$m['subject'], 'homework is overdue')));
+    // Quiet hours: 22:00 Lagos tells nobody's family, and does not spend the claim.
+    $night = strtotime(gmdate('Y-m-d') . 'T21:00:00Z');
+    $r = assignment_due_reminders($night);
+    chk('homework 9 · in the 21:00–07:00 quiet hours the family is not messaged', !empty($r['quiet']) && $mailsTo('mum.a@asgx.example') === 0
+        && !db_row("SELECT 1 FROM assignment_notices WHERE assignmentId = ? AND kind = 'family'", [$late]));
+    assignment_due_reminders($day); assignment_due_reminders($day + 3600);
+    chk('homework 9 · overdue: the guardian who takes alerts is told, once per piece of work', $mailsTo('mum.a@asgx.example') === 1);
+    chk('homework 9 · …in their family inbox as well', (int)db_row("SELECT COUNT(*) c FROM guardian_notices WHERE guardianId = 'G-ASGX-1' AND kind = 'homework'")['c'] === 1);
+    $mail = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => ($m['to'] ?? '') === 'mum.a@asgx.example'))[0] ?? ['html' => ''];
+    chk('homework 9 · …naming the work and the date, nothing else about the child', str_contains($mail['html'], 'Late one') && !str_contains($mail['html'], 'asgx.example') && !str_contains($mail['html'], 'ASGX-A Name'));
+    chk('homework 9 · another child\'s guardian hears only about their own child', count(array_filter($GLOBALS['__mail_sink'], fn($m) => ($m['to'] ?? '') === 'dad.c@asgx.example' && str_contains($m['html'], 'ASGX-A'))) === 0);
+    foreach (['guardian_wards' => 'linkId', 'guardians' => 'guardianId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'G%-ASGX-%'");
+    db_exec("DELETE FROM guardian_notices WHERE guardianId LIKE 'G-ASGX-%'");
+    db_exec("DELETE FROM assignment_submissions WHERE assignmentId IN (?, ?, ?)", [$late, $marked, $GLOBALS['__hw_aid']]); db_exec("DELETE FROM assignments WHERE assignmentId IN (?, ?, ?)", [$late, $marked, $GLOBALS['__hw_aid']]);
+    unset($GLOBALS['__mail_sink']);
+})();
+// ── HOMEWORK-DONE-2026-11-19 END ──
+
 (function () {
     $ins = $GLOBALS['__asgx_ins']; $aid = $GLOBALS['__asgx_aid'];
-    foreach (['assignment_submissions' => 'memberId', 'assignment_notices' => 'memberId', 'notifications' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'ASGX-%'");
+    foreach (['assignment_submissions' => 'memberId', 'assignment_notices' => 'memberId', 'notifications' => 'memberId', 'member_state' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'ASGX-%'");
     db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$aid]);
     db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-INS-26-ASGX'");
 })();
