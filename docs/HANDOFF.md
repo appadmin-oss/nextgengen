@@ -7660,3 +7660,18 @@ Owner's paper card *NGG ENTRY STEPS* became the registration checklist's structu
   readable photograph of the signed page (≥1600 × 1000, read from the file); countersign is refused until then
   (`paper_first`); the checklist item needs both. A paper-only family is supported (`signedVia = 'paper'`).
   `NGGApi.uploadDocumentPhoto` keeps the photo at 2000px even without a cloud (the headshot fallback is 1000px).
+
+## 2026-11-19 — Personal timetable first ("My week"); the agreement as a standard document
+
+- Owner: "The timetable is also pretty complicated for kids … Personal timetable first!" New guided flow
+  `src/modules/timetable/tt-myweek.jsx` (STUDY bundle): school as one block, the child's own things by tapping,
+  their NGG sessions pre-ticked, a day-by-day check with overlaps in words. It writes the maker's own document
+  (member_timetables) and replaces only what it made (ids `mw…`) and the NGG sessions. `TimetableMakerPage` routes:
+  ?easy=1 → My week; ?full=1, links and a browser copy → the maker; a signed-in member with nothing saved → My week.
+  The first-visit check is read on the first render (the router rewrites /timetable/me before the maker mounts).
+  Tests: tests/timetable-myweek.test.js (`npm run test:myweek`, in test:all).
+- The registration item became **Personal timetable on the site**: school on ≥3 weekdays AND one thing of the
+  child's own (study/activity, not an NGG session) — `rcl_timetable_own`.
+- The Membership Agreement prints as a standard agreement (assets/report/mou.css; `mou_execution_html`).
+- Known, not caused here: six PHP checks (rulebook ×4, labs quick check, maths lab mini review) fail when the suite
+  runs after midnight Lagos time (UTC 23:00–24:00); they fail on the committed code too.

@@ -1732,10 +1732,14 @@ chk('schools: a school the family typed joins the list once their child is accep
     chk('entry steps · a school timetable counts lessons on school days; a copied NGG session or a weekend study block does not',
         rcl_timetable_days($tt([['kind' => 'class', 'days' => [1, 2]], ['kind' => 'class', 'days' => [3], 'official' => true], ['kind' => 'study', 'days' => [4, 5]], ['kind' => 'class', 'days' => [6]]])) === 2
         && rcl_timetable_days($tt([['kind' => 'class', 'days' => [1, 2, 3, 4, 5]]])) === 5 && rcl_timetable_days('not json') === 0);
-    db_insert('member_timetables', ['memberId' => 'NGG-RCL-M2', 'doc' => $tt([['kind' => 'class', 'days' => [1, 3], 'title' => 'Maths', 'start' => '08:00', 'end' => '09:00']]), 'updatedAt' => $now]);
+    db_insert('member_timetables', ['memberId' => 'NGG-RCL-M2', 'doc' => $tt([['kind' => 'class', 'days' => [1, 3], 'title' => 'School', 'start' => '08:00', 'end' => '14:00'], ['kind' => 'study', 'days' => [1], 'title' => 'Homework', 'start' => '16:00', 'end' => '17:00']]), 'updatedAt' => $now]);
     $tOpen = !$st('NGG-RCL-M2')['auto:timetable'];
-    db_exec("UPDATE member_timetables SET doc = ? WHERE memberId = 'NGG-RCL-M2'", [$tt([['kind' => 'class', 'days' => [1, 2, 3, 4, 5], 'title' => 'Maths', 'start' => '08:00', 'end' => '09:00']])]);
-    chk('entry steps · the timetable item passes only when the school week is on the site', $tOpen && $st('NGG-RCL-M2')['auto:timetable']);
+    db_exec("UPDATE member_timetables SET doc = ? WHERE memberId = 'NGG-RCL-M2'", [$tt([['kind' => 'class', 'days' => [1, 2, 3, 4, 5], 'title' => 'School', 'start' => '08:00', 'end' => '14:00']])]);
+    $tSchoolOnly = !$st('NGG-RCL-M2')['auto:timetable'];
+    db_exec("UPDATE member_timetables SET doc = ? WHERE memberId = 'NGG-RCL-M2'", [$tt([['kind' => 'class', 'days' => [1, 2, 3, 4, 5], 'title' => 'School', 'start' => '08:00', 'end' => '14:00'],
+        ['kind' => 'activity', 'days' => [3], 'title' => 'Chess', 'start' => '10:00', 'end' => '11:00', 'official' => true], ['kind' => 'study', 'days' => [1, 3], 'title' => 'Homework', 'start' => '16:00', 'end' => '17:00']])]);
+    chk('entry steps · the personal timetable item needs school on three weekdays AND something of their own (an NGG session does not count as theirs)',
+        $tOpen && $tSchoolOnly && $st('NGG-RCL-M2')['auto:timetable'] && !rcl_timetable_own($tt([['kind' => 'activity', 'days' => [6], 'official' => true]])));
 
     // The day it is complete is the day they resume — written once.
     $D = 'NGG-RCL-DONE';
@@ -1744,7 +1748,7 @@ chk('schools: a school the family typed joins the list once their child is accep
     db_insert('guardian_wards', ['linkId' => 'GW-RCL-D', 'guardianId' => 'G-RCL-2', 'memberId' => $D, 'relationship' => 'parent', 'status' => 'active', 'via' => 'test', 'createdAt' => $now, 'updatedAt' => $now]);
     foreach (['participation', 'medical', 'data', 'media', 'site_visibility'] as $t) db_insert('consents', ['studentId' => $D, 'type' => $t, 'status' => 'granted', 'method' => 'test', 'actorName' => 'x', 'createdAt' => $now]);
     db_insert('card_issues', ['runId' => 'RUN-RCL-1', 'subjectType' => 'member', 'subjectId' => $D, 'displayId' => '026-977', 'ok' => 1, 'at' => $now]);
-    db_insert('member_timetables', ['memberId' => $D, 'doc' => $tt([['kind' => 'class', 'days' => [1, 2, 3, 4, 5]]]), 'updatedAt' => $now]);
+    db_insert('member_timetables', ['memberId' => $D, 'doc' => $tt([['kind' => 'class', 'days' => [1, 2, 3, 4, 5]], ['kind' => 'study', 'days' => [1]]]), 'updatedAt' => $now]);
     db_insert('mou_agreements', ['mouId' => 'MOU-RCL-D', 'memberId' => $D, 'version' => MOU_VERSION, 'status' => 'signed', 'createdAt' => $now, 'updatedAt' => $now]);
     db_insert('membership_invoices', ['invoiceId' => 'INV-RCL-D', 'memberId' => $D, 'payToken' => 'pt-rcl-d', 'items' => '[]', 'total' => 1, 'status' => 'paid', 'purpose' => 'joining', 'createdAt' => $now, 'paidAt' => $now]);
     rcl_start(db_row('SELECT * FROM members WHERE memberId = ?', [$D]), $SU);

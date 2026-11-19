@@ -17965,6 +17965,7 @@ button.m9x-ev-sum { cursor: pointer; }
 .rcl-field select { min-height: 44px; padding: 8px 10px; border: 1px solid var(--rcl-line); border-radius: var(--rcl-r-ctl); background: var(--rcl-surface); color: var(--rcl-ink); font: 400 14px var(--rcl-font); }
 .rcl-field select:focus-visible { outline: 2px solid var(--rcl-ink); outline-offset: 2px; }
 .rcl-card > .rcl-btn { margin-top: 10px; }
+.rcl-cta { display: inline-flex; align-items: center; margin: 6px 0; text-decoration: none; }
 /* The entry steps — the card NGG hands a family, in its order (domain/registration-checklist.php RCL_STEPS). */
 .rcl-steps { list-style: none; margin: 8px 0 10px; padding: 0; display: grid; gap: 6px; }
 .rcl-steps li { display: grid; grid-template-columns: 22px 1fr auto; align-items: baseline; gap: 8px; font-size: 14px; }

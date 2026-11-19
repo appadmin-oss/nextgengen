@@ -512,7 +512,7 @@ reopened later; the family, the member and the supervisor are told that day.
 |---|---|
 | Orientation | **Orientation attended** — at the centre, covering the policies, the membership fee, the monthly commitment fee and the NGG T-shirt (a note of who came). |
 | Payment | **Joining fees paid** — the joining invoice (membership fee and first month's commitment fee), while fees are switched on. |
-| Submit documents | **File handed in**; **Passport photograph** (on the record); **Membership Agreement (MoU) handed in** (see below); **Latest school report card** (a photo or scan, dated within 400 days); **School timetable on the site** — the member's school week entered at /timetable, signed in as them, with lessons on at least three school days. |
+| Submit documents | **File handed in**; **Passport photograph** (on the record); **Membership Agreement (MoU) handed in** (see below); **Latest school report card** (a photo or scan, dated within 400 days); **Personal timetable on the site** — the member's school week entered at /timetable, signed in as them, with lessons on at least three school days. |
 | Online registration | Guardian linked, consents, date of birth, school, emergency contact, courses placed. |
 | ID card | **ID card printed** (a proof does not count). |
 
@@ -5465,3 +5465,15 @@ the phone's browser, fonts or printer. You will find *Download PDF* and *Downloa
 *Print*; on the family's payment page after paying; in the receipt email; and in Money → Membership payments
 (*PDF*, *Image* beside each paid invoice's receipt number). The image is the receipt cropped to fit a phone screen —
 the easiest thing to forward on WhatsApp. Both are drawn from the receipt as it was issued, so they always match it.
+
+
+## My week — a child's personal timetable
+
+**/timetable?easy=1**, and what a signed-in member with no timetable yet sees at /timetable. Four short screens, all
+by tapping: **School** (which days, when it starts and ends, or "I don't go"), **What else do you do?** (homework,
+study, extra lessons, Arabic school, football, chores, church, mosque, music… then the days, the time and how long),
+**Your NGG sessions** (their own sessions at their centre, already ticked), and **Is this your week?** (day by day;
+anything that overlaps is said in words) then **Save my week**. It saves to their account and meets the registration
+item *Personal timetable on the site*. The full maker — colours, printing, wallpapers, one-off changes — is one link
+away (*Full timetable maker*, or /timetable?full=1). Help a child at the centre: sign in as them and open
+/timetable?easy=1; they can do the rest themselves.

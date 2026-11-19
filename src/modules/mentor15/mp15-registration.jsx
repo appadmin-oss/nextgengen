@@ -173,6 +173,8 @@ function RclProgress({ who, linkId, first }) {
         ? <p className="rcl-meta">Everything is done. {who === "family" ? name + " is" : "You are"} fully registered{d.resumedOn ? " and started lectures on " + new Date(d.resumedOn + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : ""}.</p>
         : <React.Fragment><p className="rcl-meta">{who === "family" ? name + " starts lectures on the day every step is done. Still needed — bring things to " + (d.centre || "the centre") + " on a meeting day:" : "Still to do:"}</p>
             <ul className="rcl-left">{(who === "family" && (d.bring || []).length ? d.bring : d.left).map((t, n) => <li key={n}>{t.charAt(0).toUpperCase() + t.slice(1)}</li>)}</ul></React.Fragment>}
+      {!d.complete && who !== "family" && (d.left || []).includes("Personal timetable on the site") &&
+        <a className="rcl-btn is-main rcl-cta" href="/timetable?easy=1">Make my week now</a>}
       {!d.complete && <p className="rcl-meta">{d.helper ? d.helper + " at the centre is helping " + (who === "family" ? name : "you") + " with this." : "Someone at the centre will be asked to help " + (who === "family" ? name : "you") + "."}</p>}
     </section>
   );

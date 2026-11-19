@@ -111,9 +111,9 @@ const RCL_AUTO = [
     'mou'       => ['step' => 'documents', 'not' => 'online', 'title' => 'Membership Agreement (MoU) handed in', 'help' => 'The family read the agreement online and signed it; the printed copy was signed in ink, brought to the centre, checked, photographed, and countersigned by NGG.',
                     'fix' => 'Members → Agreements: when the family brings the signed paper copy, “Receive the signed copy” (check it and photograph the signed page), then countersign.', 'family' => true,
                     'bring' => 'the printed Membership Agreement, signed by a parent and a witness'],
-    'timetable' => ['step' => 'documents', 'title' => 'School timetable on the site', 'help' => 'The member’s school timetable is entered on the site (Timetable, signed in as the member): lessons on at least three school days.',
-                    'fix' => 'Sit with the member at the centre, sign in as them and fill in their school week at /timetable.', 'family' => true,
-                    'bring' => 'the school timetable, so it can be put on the site (or enter it at /timetable signed in as your child)'],
+    'timetable' => ['step' => 'documents', 'title' => 'Personal timetable on the site', 'help' => 'The member has made their own week on the site (My week at /timetable, signed in as them): school on at least three weekdays, and at least one thing of their own — homework, study, a club, chores.',
+                    'fix' => 'Sit with the member, sign in as them and open /timetable?easy=1: four short steps, all by tapping.', 'family' => true,
+                    'bring' => 'your child’s personal timetable: they make it at /timetable?easy=1, signed in as themselves, in a few minutes'],
     'guardian'  => ['step' => 'online', 'title' => 'Guardian linked', 'help' => 'A parent or guardian has a family account connected to this member.',
                     'fix' => 'Ask the family to sign in at /family and connect; staff approve the request under Inbox → Approvals.', 'family' => false],
     'consents'  => ['step' => 'online', 'title' => 'Consents recorded', 'help' => 'The five consents of membership are answered: taking part, emergency medical care and records granted; photos and the website answered either way.',
@@ -156,7 +156,17 @@ function rcl_verify_fee(array $m, array $f): bool {
     return !empty($f['paid'][(string)$m['memberId']]) || trim((string)($m['feesSettledThrough'] ?? '')) !== '';
 }
 function rcl_verify_mou(array $m, array $f): bool { return !empty($f['mou'][(string)$m['memberId']]); }
-function rcl_verify_timetable(array $m, array $f): bool { return ($f['timetable'][(string)$m['memberId']] ?? 0) >= RCL_TIMETABLE_DAYS; }
+function rcl_verify_timetable(array $m, array $f): bool {
+    $t = $f['timetable'][(string)$m['memberId']] ?? ['days' => 0, 'own' => false];
+    return $t['days'] >= RCL_TIMETABLE_DAYS && $t['own'];
+}
+/** Does a personal timetable hold something of the child's own beyond school: homework, study, a club, chores? */
+function rcl_timetable_own(string $doc): bool {
+    $d = json_decode($doc, true);
+    foreach ((is_array($d) && is_array($d['entries'] ?? null)) ? $d['entries'] : [] as $e)
+        if (is_array($e) && empty($e['official']) && in_array((string)($e['kind'] ?? ''), ['study', 'activity'], true)) return true;
+    return false;
+}
 /** How many school days (Mon–Fri) carry a lesson in a personal timetable document. */
 function rcl_timetable_days(string $doc): int {
     $d = json_decode($doc, true);
@@ -206,7 +216,8 @@ function rcl_facts(array $ids): array {
             $f['consents'][(string)$r['studentId']][(string)$r['type']] = strtolower((string)$r['status']);
         foreach (db_all("SELECT DISTINCT memberId FROM member_collectors WHERE COALESCE(phone,'') <> '' AND memberId IN ($ph)", $chunk) as $r) $f['collector'][(string)$r['memberId']] = true;
         foreach (db_all("SELECT DISTINCT memberId FROM membership_invoices WHERE status = 'paid' AND purpose = 'joining' AND memberId IN ($ph)", $chunk) as $r) $f['paid'][(string)$r['memberId']] = true;
-        foreach (db_all("SELECT memberId, doc FROM member_timetables WHERE memberId IN ($ph)", $chunk) as $r) $f['timetable'][(string)$r['memberId']] = rcl_timetable_days((string)$r['doc']);
+        foreach (db_all("SELECT memberId, doc FROM member_timetables WHERE memberId IN ($ph)", $chunk) as $r)
+            $f['timetable'][(string)$r['memberId']] = ['days' => rcl_timetable_days((string)$r['doc']), 'own' => rcl_timetable_own((string)$r['doc'])];
         // A proof is nobody's card, and neither is one that failed at the cutter (domain/id-studio.php).
         foreach (db_all("SELECT DISTINCT ci.subjectId FROM card_issues ci JOIN card_runs cr ON cr.runId = ci.runId
                          WHERE ci.subjectType = 'member' AND ci.ok = 1 AND cr.mode != 'proof' AND ci.subjectId IN ($ph)", $chunk) as $r) $f['card'][(string)$r['subjectId']] = true;
