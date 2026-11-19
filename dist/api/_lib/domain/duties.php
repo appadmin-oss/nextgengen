@@ -232,7 +232,7 @@ function duty_tell_handins_lead(array $m): bool {
     if ($q['count'] < 1 || $q['oldestDays'] < ASG_MARK_URGENT_DAYS) return false;
     $centre = (string)(($q['centres'] ?? [])[0] ?? '');
     if ($centre === '') { $v = db_row("SELECT centre FROM volunteers WHERE memberId = ? AND role = 'instructor' ORDER BY id LIMIT 1", [(string)$m['memberId']]); $centre = (string)($v['centre'] ?? ''); }
-    $lead = $centre !== '' ? db_row("SELECT mentorId FROM mentors WHERE status = 'active' AND rank = 'lead' AND LOWER(TRIM(centre)) = ? ORDER BY id LIMIT 1", [assignment_centre_key($centre)]) : null;
+    $lead = $centre !== '' ? db_row("SELECT mentorId FROM mentors WHERE status = 'active' AND mentors.rank = 'lead' AND LOWER(TRIM(centre)) = ? ORDER BY id LIMIT 1", [assignment_centre_key($centre)]) : null;
     $first = mp_first((string)$m['fullName']);
     return ms_nudge('J:handinsOverdue:' . (string)$m['memberId'] . ':' . $q['oldestId'], 'J:handinsOverdue', ['audience' => 'lead', 'mentorId' => (string)($lead['mentorId'] ?? ''), 'memberId' => '', 'centre' => $centre,
         'title' => $first . ' has ' . $q['count'] . ' hand-in' . ($q['count'] === 1 ? '' : 's') . ' waiting for a mark — oldest ' . $q['oldestDays'] . ' days',
