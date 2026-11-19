@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 238;
+const NGG_SCHEMA_TARGET = 239;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6614,6 +6614,28 @@ function db_migrate(PDO $db): void {
               actor TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', amount INTEGER NOT NULL DEFAULT 0, at TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_payment_plan_events_plan ON payment_plan_events(planId, id);
+        ",
+        /* 239 — instructor management (domain/instructor-admin.php). A volunteer record gains its working
+           life: leave (from, until, why), offboarding (when, by whom, why — the record is kept, the
+           access is not), the safeguarding check's date and expiry, and the next review. people_notes is
+           the record of what was said and decided about a person — notes, reviews, warnings,
+           commendations, every lifecycle change — with who and when. */
+        239 => "
+            ALTER TABLE volunteers ADD COLUMN leaveFrom TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN leaveUntil TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN leaveReason TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN offboardedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN offboardedBy TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN offboardReason TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN safeguardingCheckedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN safeguardingExpires TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN reviewDue TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS people_notes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectType TEXT NOT NULL, subjectId TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'note',
+              text TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL DEFAULT '', at TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_people_notes_subject ON people_notes(subjectType, subjectId, id);
         ",
     ];
 

@@ -63,6 +63,7 @@ const CR_PAGES = {
     { id: "mentors", label: "Mentors", desc: "The mentor develops the person.", cap: "people" },
     { id: "mentorship", label: "Pairings", desc: "Who mentors whom, and whether the weekly review is happening.", cap: "people" },
     { id: "volunteers", label: "Volunteers", desc: "Everyone helping on Saturdays.", cap: "people" },
+    { id: "instructors", label: "Instructors", desc: "Who teaches what, whether they are cleared to be with children, whether they are filing their classes, and the record of what was decided about them.", cap: "people" },
     { id: "companion", label: "Companion check-ins", desc: "How members say they are doing, between sessions.", cap: "club" },
   ] },
   /* The Anchor Pods workspace (MENTORSHIP.md §4.2; cr-tab-mentorship.jsx).

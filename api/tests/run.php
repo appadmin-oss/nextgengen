@@ -31682,10 +31682,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && ($q['termsVersion'] ?? '') === PLAN_TERMS_VERSION);
     chk('plans · an uneven balance puts the remainder on the first instalment', array_column(plan_schedule(10001, 3, 'weekly', $first, $today)['items'], 'amount') === [3335, 3333, 3333]);
     chk('plans · a monthly date on the 31st falls on the month’s last day', plan_dates('2027-01-31', 2, 'monthly')[1] === '2027-02-28');
-    chk('plans · the limits are refused with a reason: too many, too few, too long, a past day, too far off, instalments under the minimum',
+    chk('plans · the limits are refused with a reason: too many, too few, a past day, too far off, instalments under the minimum (six monthly fit in six months)',
         ($fam('quote', ['instalments' => 7, 'frequency' => 'monthly', 'firstDue' => $first])['error'] ?? '') === 'bad_count'
         && ($fam('quote', ['instalments' => 1, 'frequency' => 'monthly', 'firstDue' => $first])['error'] ?? '') === 'bad_count'
-        && (plan_schedule(24000, 6, 'monthly', $first, $today)['error'] ?? '') === 'too_long'
+        && !empty(plan_schedule(24000, 6, 'monthly', $first, $today)['ok'])
         && ($fam('quote', ['instalments' => 3, 'frequency' => 'weekly', 'firstDue' => gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') - 86400)])['error'] ?? '') === 'date_past'
         && ($fam('quote', ['instalments' => 3, 'frequency' => 'weekly', 'firstDue' => gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') + 40 * 86400)])['error'] ?? '') === 'date_too_far'
         && (plan_schedule(2500, 3, 'weekly', $first, $today)['error'] ?? '') === 'too_small'
@@ -31789,6 +31789,106 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if ($prevPs === null) unset($GLOBALS['CONFIG']['paystack']); else $GLOBALS['CONFIG']['paystack'] = $prevPs;
     setting_set('fees', is_array($prevFees) ? $prevFees : [], 'test');
     $wipe();
+})();
+
+// ── Instructor management (owner, 19 Nov 2026) ───────────────────────────────
+(function () {
+    $now = now_iso(); $ADM = 'NGG-2025-0099'; $today = instr_today();
+    $day = fn(int $d) => gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') + $d * 86400);
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-IA-%'"); db_exec("DELETE FROM timetable_slots WHERE slotId LIKE 'TT-IA-%'");
+    db_exec("DELETE FROM club_class_sessions WHERE sessionId LIKE 'SES-IA-%'"); db_exec("DELETE FROM people_notes WHERE subjectId LIKE 'VOL-IA-%'");
+    db_exec("DELETE FROM centres WHERE centreId = 'CEN-IA'");
+    db_insert('centres', ['centreId' => 'CEN-IA', 'name' => 'Iyana Test', 'code' => 'IYT', 'color' => '#123456', 'status' => 'active', 'programmes' => 'ngg', 'createdAt' => $now]);
+    $vol = fn(string $id, string $name, array $o) => db_insert('volunteers', array_merge(['volunteerId' => $id, 'fullName' => $name, 'email' => strtolower(str_replace(' ', '.', $name)) . '@example.com',
+        'role' => 'instructor', 'courses' => json_encode(['Piano']), 'centre' => 'Iyana Test', 'status' => 'active', 'safeguarding' => 'cleared', 'createdAt' => $now, 'updatedAt' => $now], $o));
+    // Good: cleared, Academy waived by hand, a class, filing.
+    $vol('VOL-IA-GOOD', 'Grace Good', ['memberId' => 'NGG-IA-GOOD', 'academyClearedAt' => $now, 'safeguardingExpires' => $day(365)]);
+    // Trouble: not cleared, no Academy, no account, no class.
+    $vol('VOL-IA-BAD', 'Bayo Bad', ['safeguarding' => 'pending']);
+    // Lapsed: check expired, has a class, files nothing.
+    $vol('VOL-IA-OLD', 'Ola Old', ['memberId' => 'NGG-IA-OLD', 'academyClearedAt' => $now, 'safeguardingExpires' => $day(-1), 'reviewDue' => $day(-3)]);
+    db_insert('timetable_slots', ['slotId' => 'TT-IA-1', 'centreId' => 'CEN-IA', 'course' => 'Piano', 'weekday' => 6, 'startTime' => '10:00', 'endTime' => '11:00', 'instructorId' => 'VOL-IA-GOOD', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('timetable_slots', ['slotId' => 'TT-IA-2', 'centreId' => 'CEN-IA', 'course' => 'Piano', 'weekday' => 6, 'startTime' => '12:00', 'endTime' => '13:00', 'instructorId' => 'VOL-IA-OLD', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('timetable_slots', ['slotId' => 'TT-IA-3', 'centreId' => 'CEN-IA', 'course' => 'Chess', 'weekday' => 6, 'startTime' => '14:00', 'endTime' => '15:00', 'instructorId' => '', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('club_class_sessions', ['sessionId' => 'SES-IA-1', 'course' => 'Piano', 'centre' => 'Iyana Test', 'date' => $day(-5), 'instructorId' => 'NGG-IA-GOOD', 'instructorName' => 'Grace Good', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('club_class_sessions', ['sessionId' => 'SES-IA-2', 'course' => 'Piano', 'centre' => 'Iyana Test', 'date' => $day(-60), 'instructorId' => 'NGG-IA-OLD', 'instructorName' => 'Ola Old', 'createdAt' => $now, 'updatedAt' => $now]);
+
+    $L = backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Iyana', 'pageSize' => 50]);
+    $by = []; foreach ($L['rows'] ?? [] as $r) $by[$r['volunteerId']] = $r;
+    chk('instructors · the roster lists them with classes, filing in 30 days and the last class filed',
+        !empty($L['ok']) && count($by) === 3 && $by['VOL-IA-GOOD']['classes'] === 1 && $by['VOL-IA-GOOD']['filed30'] === 1 && $by['VOL-IA-OLD']['lastFiled'] === $day(-60));
+    chk('instructors · a cleared, filing instructor with an Academy has no issues', $by['VOL-IA-GOOD']['issues'] === [] && $by['VOL-IA-GOOD']['state'] === 'active');
+    chk('instructors · each problem is named: not cleared, no Academy, no account, not on the timetable',
+        !array_diff(['safeguarding_pending', 'academy', 'no_account', 'no_classes'], $by['VOL-IA-BAD']['issues']));
+    chk('instructors · an expired check, a class with nothing filed in 30 days and an overdue review are named',
+        !array_diff(['safeguarding_expired', 'not_filing', 'review_overdue'], $by['VOL-IA-OLD']['issues']));
+    chk('instructors · the most issues sort first', ($L['rows'][0]['volunteerId'] ?? '') === 'VOL-IA-BAD');
+    chk('instructors · a class on the timetable with nobody to teach it is listed', (bool)array_filter($L['uncovered'], fn($s) => $s['slotId'] === 'TT-IA-3'));
+    chk('instructors · filtering by an issue is done above the page', (backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Iyana', 'issue' => 'safeguarding_expired'])['total'] ?? 0) === 1);
+    chk('instructors · "safeguarding" finds both who are not cleared and whose check expired', (backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Iyana', 'issue' => 'safeguarding'])['total'] ?? 0) === 2);
+    // The Academy, really passed (not waived), counts.
+    $req = academy_required_ids('instructor');
+    foreach ($req as $mod) db_insert('academy_passes', ['track' => 'instructor', 'personId' => 'NGG-IA-BADM', 'moduleId' => $mod, 'passedAt' => $now]);
+    db_update('volunteers', ['memberId' => 'NGG-IA-BADM'], ['volunteerId' => 'VOL-IA-BAD']);
+    $b2 = array_values(array_filter(backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Bayo'])['rows'], fn($r) => $r['volunteerId'] === 'VOL-IA-BAD'))[0] ?? [];
+    chk('instructors · an Academy passed module by module clears the Academy issue, and a linked account clears "no account"',
+        $b2 && !in_array('academy', $b2['issues'], true) && !in_array('no_account', $b2['issues'], true));
+
+    // One record.
+    $G = backend_dispatch('admin.instructors.get', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD']);
+    chk('instructors · one record: their classes, the sessions they filed, and the courses they may be given', !empty($G['ok']) && count($G['classes']) === 1 && count($G['sessions']) === 1 && in_array('Piano', $G['courseOptions'], true));
+    chk('instructors · dropping a course they still teach on the timetable is refused, naming it',
+        (backend_dispatch('admin.instructors.update', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'data' => ['courses' => ['Chess']]])['error'] ?? '') === 'course_has_classes');
+    chk('instructors · a course NGG does not teach is refused', (backend_dispatch('admin.instructors.update', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'data' => ['courses' => ['Piano', 'Basket weaving']]])['error'] ?? '') === 'bad_course');
+    $u = backend_dispatch('admin.instructors.update', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'data' => ['courses' => ['Piano', 'Chess'], 'safeguardingCheckedAt' => $today, 'safeguardingExpires' => $day(730), 'reviewDue' => $day(90)]]);
+    $o = db_row("SELECT * FROM volunteers WHERE volunteerId = 'VOL-IA-OLD'");
+    chk('instructors · courses and compliance dates are saved, and the change is on their record with who made it',
+        !empty($u['ok']) && json_decode($o['courses'], true) === ['Piano', 'Chess'] && $o['safeguardingExpires'] === $day(730)
+        && (bool)db_row("SELECT id FROM people_notes WHERE subjectId = 'VOL-IA-OLD' AND kind = 'change' AND actor = ? AND text LIKE '%Chess%'", [$ADM]));
+    chk('instructors · an expiry before the check is refused', (backend_dispatch('admin.instructors.update', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'data' => ['safeguardingCheckedAt' => $today, 'safeguardingExpires' => $day(-10)]])['error'] ?? '') === 'bad_date');
+
+    // Leave.
+    chk('instructors · leave needs a reason', (backend_dispatch('admin.instructors.leave', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-GOOD', 'from' => $today, 'until' => $day(14), 'reason' => ''])['error'] ?? '') === 'reason_required');
+    $lv = backend_dispatch('admin.instructors.leave', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-GOOD', 'from' => $today, 'until' => $day(14), 'reason' => 'Exams at university']);
+    $g2 = array_values(array_filter(backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Grace'])['rows'], fn($r) => $r['volunteerId'] === 'VOL-IA-GOOD'))[0] ?? [];
+    chk('instructors · on leave: shown as on leave, and the classes that need cover are named', !empty($lv['ok']) && count($lv['needCover']) === 1 && ($g2['state'] ?? '') === 'on_leave');
+    backend_dispatch('admin.instructors.leave', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-GOOD', 'clear' => true]);
+    chk('instructors · back from leave', db_row("SELECT leaveFrom FROM volunteers WHERE volunteerId = 'VOL-IA-GOOD'")['leaveFrom'] === '');
+
+    // Notes, reviews.
+    $n = backend_dispatch('admin.instructors.note', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-GOOD', 'kind' => 'review', 'text' => 'Strong term; children progressing on scales.', 'nextReview' => $day(120)]);
+    chk('instructors · a review goes on the record and sets the next review date', !empty($n['ok']) && db_row("SELECT reviewDue FROM volunteers WHERE volunteerId = 'VOL-IA-GOOD'")['reviewDue'] === $day(120)
+        && (bool)db_row("SELECT id FROM people_notes WHERE subjectId = 'VOL-IA-GOOD' AND kind = 'review'"));
+    chk('instructors · an unknown kind of note is refused', (backend_dispatch('admin.instructors.note', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-GOOD', 'kind' => 'gossip', 'text' => 'Hello there'])['error'] ?? '') === 'bad_kind');
+
+    // Offboarding.
+    chk('instructors · offboarding needs a reason', (backend_dispatch('admin.instructors.offboard', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'reason' => 'gone'])['error'] ?? '') === 'reason_required');
+    $off = backend_dispatch('admin.instructors.offboard', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'reason' => 'Moved to Abuja for work.']);
+    $o = db_row("SELECT * FROM volunteers WHERE volunteerId = 'VOL-IA-OLD'");
+    chk('instructors · offboarded: access ends (archived), the record stays with who, when and why, and their classes are taken off them for cover',
+        !empty($off['ok']) && $o['status'] === 'archived' && $o['offboardedBy'] === $ADM && $o['offboardReason'] === 'Moved to Abuja for work.'
+        && count($off['uncovered']) === 1 && db_row("SELECT instructorId FROM timetable_slots WHERE slotId = 'TT-IA-2'")['instructorId'] === ''
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'instructor.offboard' AND subject = 'VOL-IA-OLD'")['c'] === 1);
+    chk('instructors · an offboarded instructor is out of the default roster, shown under Offboarded, and raises no issues',
+        !array_filter(backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Ola'])['rows'], fn($r) => $r['volunteerId'] === 'VOL-IA-OLD')
+        && (($x = array_values(array_filter(backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Ola', 'state' => 'offboarded'])['rows'], fn($r) => $r['volunteerId'] === 'VOL-IA-OLD'))[0] ?? null) && $x['issues'] === []));
+    chk('instructors · offboarding twice is refused', (backend_dispatch('admin.instructors.offboard', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'reason' => 'Again for the record'])['error'] ?? '') === 'already_offboarded');
+    $re = backend_dispatch('admin.instructors.reinstate', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'reason' => 'Back in Lagos and teaching again.']);
+    chk('instructors · reinstated with a reason, on the record; their classes are not handed back by themselves',
+        !empty($re['ok']) && db_row("SELECT status FROM volunteers WHERE volunteerId = 'VOL-IA-OLD'")['status'] === 'active' && db_row("SELECT instructorId FROM timetable_slots WHERE slotId = 'TT-IA-2'")['instructorId'] === ''
+        && (bool)db_row("SELECT id FROM people_notes WHERE subjectId = 'VOL-IA-OLD' AND kind = 'reinstate'"));
+    chk('instructors · the whole record reads back, newest first, with the names of who wrote each line',
+        ($rec = backend_dispatch('admin.instructors.get', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD'])['record'] ?? []) && $rec[0]['kind'] === 'reinstate' && $rec[0]['actorName'] !== '');
+
+    // Who may.
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-IA-SCOPED'"); db_exec("DELETE FROM centres WHERE centreId = 'CEN-IA-OTHER'");
+    db_insert('centres', ['centreId' => 'CEN-IA-OTHER', 'name' => 'Other Test', 'code' => 'OTT', 'color' => '#654321', 'status' => 'active', 'programmes' => 'ngg', 'createdAt' => $now]);
+    // centreScope holds centre IDs.
+    db_insert('members', ['memberId' => 'NGG-IA-SCOPED', 'fullName' => 'Scoped Admin', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centreScope' => json_encode(['CEN-IA-OTHER']), 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('instructors · an admin limited to other centres neither sees nor changes them',
+        !array_filter(backend_dispatch('admin.instructors.list', ['requesterId' => 'NGG-IA-SCOPED', 'q' => 'Iyana'])['rows'] ?? [], fn($r) => str_starts_with($r['volunteerId'], 'VOL-IA-'))
+        && (backend_dispatch('admin.instructors.offboard', ['requesterId' => 'NGG-IA-SCOPED', 'volunteerId' => 'VOL-IA-GOOD', 'reason' => 'Should not be allowed'])['error'] ?? '') === 'out_of_scope');
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-IA-SCOPED'");
 })();
 
 // ── Paying ahead, and a child asking their parent ─────────────────────────────

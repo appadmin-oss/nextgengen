@@ -5374,3 +5374,21 @@ CREATE TABLE IF NOT EXISTS payment_plan_events (
   KEY idx_payment_plan_events_plan (planId, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (238) ON DUPLICATE KEY UPDATE version = version;
+
+-- 239 — instructor management (domain/instructor-admin.php): leave, offboarding, safeguarding expiry, reviews; the people record.
+ALTER TABLE volunteers ADD COLUMN leaveFrom VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN leaveUntil VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN leaveReason VARCHAR(600) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN offboardedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN offboardedBy VARCHAR(80) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN offboardReason VARCHAR(600) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN safeguardingCheckedAt VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN safeguardingExpires VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN reviewDue VARCHAR(10) NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS people_notes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectType VARCHAR(24) NOT NULL, subjectId VARCHAR(64) NOT NULL, kind VARCHAR(24) NOT NULL DEFAULT 'note',
+  text VARCHAR(2000) NOT NULL DEFAULT '', actor VARCHAR(80) NOT NULL DEFAULT '', at VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_people_notes_subject (subjectType, subjectId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (239) ON DUPLICATE KEY UPDATE version = version;

@@ -2192,6 +2192,16 @@
         voidPayout:  (payoutId, reason) => request('/admin/volunteer-pay.php', { body: { action: 'void', payoutId, reason } }),
         bank:        (volunteerId, d) => request('/admin/volunteer-pay.php', { body: Object.assign({ action: 'bank', volunteerId }, d) }),
       },
+      // Instructor management (domain/instructor-admin.php, Mentors & volunteers → Instructors).
+      instructors: {
+        list:      (o) => request('/admin/instructors.php' + qs(Object.assign({ view: 'list' }, o || {}))),
+        get:       (volunteerId) => request('/admin/instructors.php' + qs({ view: 'get', volunteerId })),
+        update:    (volunteerId, data) => request('/admin/instructors.php', { body: { action: 'update', volunteerId, data } }),
+        leave:     (volunteerId, d) => request('/admin/instructors.php', { body: Object.assign({ action: 'leave', volunteerId }, d) }),
+        offboard:  (volunteerId, reason) => request('/admin/instructors.php', { body: { action: 'offboard', volunteerId, reason } }),
+        reinstate: (volunteerId, reason) => request('/admin/instructors.php', { body: { action: 'reinstate', volunteerId, reason } }),
+        note:      (volunteerId, kind, text, nextReview) => request('/admin/instructors.php', { body: { action: 'note', volunteerId, kind, text, nextReview } }),
+      },
       // Instalment plans (domain/payment-plans.php, Money → Instalment plans).
       payplans: {
         list:   (o) => request('/admin/payplans.php' + qs(Object.assign({ view: 'list' }, o || {}))),
