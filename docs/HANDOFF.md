@@ -7567,3 +7567,79 @@ the family chooses how much.
 - **Not run in this session:** a plugin added mid-session refuses any shell command that names a file
   holding the organisation's contact address, which includes `api/tests/run.php` and most browser
   suites. The PHP suite and the browser suites must be run before release.
+
+## 19 Nov 2026 (later) — CI; instalment plans with tracking; instructor management
+
+**CI (`.github/workflows/checks.yml`).** The owner has no shell, and this session's container refuses to
+run `api/tests/run.php` (see above). GitHub Actions now runs on every push:
+- the build, `build.test.js` and `no-important.test.js`;
+- the PHP suite, on SQLite (it writes its own config; no secrets needed);
+- Chromium, then the route registry suite.
+
+The PHP step prints only failures and totals, because the runner has no mail transport and stderr is noise.
+`package-lock.json` is ignored, so it uses `npm install`. Adding more browser suites is a matter of adding steps.
+
+**Instalment plans (owner: "a proper tracking and accountability feature for the installments").**
+`domain/payment-plans.php` and migration 238 add three tables:
+- `payment_plans`: the agreement. Who agreed, when, the terms version, the source (family or staff),
+  and `startPaid`, the payments on the account when it began.
+- `payment_plan_items`: the dated instalments.
+- `payment_plan_events`: the accountability log. Created, reminded, missed, paid, broken, completed,
+  cancelled, note.
+
+How it behaves:
+- **Progress is never stored.** It is `min(total − payments since the start, payable today)`, laid over
+  the instalments in order, so a desk payment or a waiver moves a plan exactly as an online payment does.
+- **Health** is on track, behind, broken (more than `PLAN_GRACE_DAYS` = 14 days late), completed or
+  cancelled.
+- **Reminders.** `plan_reminders_run` runs from `dues_notices_run` (new notice kinds `plan_due`,
+  `plan_late`, `plan_broken`, `plan_ended`). A kept plan excuses the family from the arrears reminder
+  (`onPlan`).
+- **Ops.**
+  - Family: `family.payplan.quote|create|pay` through `api/family/account.php`. The name avoids the
+    existing `family.plan.sign`, which is the school-results plan.
+  - Staff: `admin.payplans.list|get|for|create|cancel|note` (`fees`, centre-scoped), at
+    `api/admin/payplans.php`.
+- **Screens.**
+  - Control Room: Money → Instalment plans.
+  - Family app: the plan card, the offer, and the set-up sheet. These are in `family-portal-v3.dc.html`,
+    recompiled.
+- **Paying an instalment.** "Pay this instalment" makes a `part` invoice tagged `plan:<id>`, exempt from
+  the ₦1,000 minimum because the amount is the agreed one.
+- **Merge policy:** both tables are BLOCK.
+- **The member route stays as it was:** a member-side op never carries an amount
+  (the existing READ-ONLY test).
+
+**Instructor management (owner: "ent-grade people and Instructor management").**
+`domain/instructor-admin.php` and migration 239 build on the existing data:
+- **Volunteer rows** gain leave (from, until, reason), offboarding (when, by whom, why), the safeguarding
+  check date and expiry, and a review date.
+- **`people_notes`** is a person's record (`subjectType` `volunteer` for now; it is built to take other
+  kinds of person).
+- **The roster** is read in a fixed number of grouped queries: volunteers, timetable slots
+  (`instructorId` = volunteerId), filed sessions (`club_class_sessions.instructorId` = the member
+  account), and Academy passes (`instr_academy_done`, which applies the renewal rule).
+- **Issues are derived:** safeguarding pending, expired or expiring; Academy; no account; no classes; not
+  filing; review overdue.
+- **Ops.** `admin.instructors.list|get|update|leave|offboard|reinstate|note` (`people`, scoped by the
+  volunteer's centre), at `api/admin/instructors.php`.
+- **Screen:** Mentors & volunteers → Instructors.
+- **Offboarding** archives the volunteer (every portal gate reads status `active`) and clears their
+  timetable slots for cover, in one transaction.
+- **A course still taught on the timetable cannot be removed.**
+- **The progress cell** in `cr-blocks.jsx` takes an optional `tone`, so an on-time plan at 25% is not
+  drawn as low (CONTRACT.md).
+
+**Not built, said so:**
+- Paying a chosen charge (dues or fines) separately. The ledger is one pool, oldest charges first.
+- Management of staff and mentors beyond what exists. `people_notes` and the screen pattern are ready
+  for them, but only instructors use them today.
+
+**Verification**
+- Browser probes, driven in this container with real cookies and a real PHP server:
+  - plans: 16 checks, covering a parent setting a plan up, a desk payment moving it, and staff listing,
+    opening, noting and ending it;
+  - instructors: 10 checks, covering the figures, the filters, the drawer, leave with cover named, a
+    note, and offboarding with the class handed back.
+  - No page errors in either.
+- PHP checks for both are in `run.php` and run in CI.
