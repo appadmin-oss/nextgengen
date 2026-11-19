@@ -2628,7 +2628,7 @@
       status:      (to, ids) => request(path, { body: { action: 'status', to, ids } }),
       remind:      (assignmentId, force) => request(path, { body: { action: 'remind', assignmentId, force: !!force } }),
       grade:       (submissionId, grade, feedback, email) => request(path, { body: { action: 'grade', submissionId, grade, feedback: feedback || '', email: !!email } }),
-      giveBack:    (submissionId, feedback) => request(path, { body: { action: 'return', submissionId, feedback } }),
+      giveBack:    (submissionId, feedback, resubmitBy) => request(path, { body: { action: 'return', submissionId, feedback, resubmitBy: resubmitBy || '' } }),
       suggest:     (submissionId) => request(path, { body: { action: 'suggest', submissionId }, timeout: 90000 }),
       draft:       (unitId, ai) => request(path, { body: { action: 'draft', unitId, ai: !!ai }, timeout: 90000 }),
       auto:        (on) => request(path, { body: { action: 'auto', on: !!on }, timeout: 60000 }),

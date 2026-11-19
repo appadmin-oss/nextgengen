@@ -5457,17 +5457,9 @@ CREATE TABLE IF NOT EXISTS whatsapp_optout (
   phone VARCHAR(32) NOT NULL PRIMARY KEY, at VARCHAR(32) NOT NULL DEFAULT '', via VARCHAR(24) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (241) ON DUPLICATE KEY UPDATE version = version;
--- 242: instalment plans (domain/fee-plans.php)
-CREATE TABLE IF NOT EXISTS fee_plans (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  planId VARCHAR(24) NOT NULL, memberId VARCHAR(48) NOT NULL, guardianId VARCHAR(48) NOT NULL DEFAULT '',
-  source VARCHAR(12) NOT NULL DEFAULT 'family', agreedVia VARCHAR(12) NOT NULL DEFAULT 'app',
-  signedName VARCHAR(160) NOT NULL DEFAULT '', termsVersion VARCHAR(16) NOT NULL DEFAULT '', note VARCHAR(400) NOT NULL DEFAULT '',
-  count INT NOT NULL DEFAULT 0, cadence VARCHAR(12) NOT NULL DEFAULT 'monthly', startDate VARCHAR(10) NOT NULL DEFAULT '',
-  total INT NOT NULL DEFAULT 0, scheduleJson TEXT, status VARCHAR(12) NOT NULL DEFAULT 'pending',
-  createdBy VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
-  decidedBy VARCHAR(48) NOT NULL DEFAULT '', decidedAt VARCHAR(32) NOT NULL DEFAULT '', declineReason VARCHAR(400) NOT NULL DEFAULT '',
-  cancelReason VARCHAR(400) NOT NULL DEFAULT '', completedAt VARCHAR(32) NOT NULL DEFAULT '',
-  UNIQUE KEY uq_fee_plan (planId), KEY idx_fee_plans_member (memberId, status), KEY idx_fee_plans_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── 242 · Assignments: a returned hand-in's "resubmit by" date, and time-to-mark ──
+ALTER TABLE assignment_submissions ADD COLUMN resubmitBy VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE assignment_submissions ADD COLUMN markMinutes INT NULL;
+CREATE INDEX idx_sub_status ON assignment_submissions(status);
 INSERT INTO schema_version (version) VALUES (242) ON DUPLICATE KEY UPDATE version = version;

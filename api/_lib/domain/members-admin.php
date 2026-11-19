@@ -287,7 +287,6 @@ function member_event_sentence(string $event, array $meta): string {
 function member_merge_policy(): array {
     return [
         'member_ledger'          => 'BLOCK',          // money: never combined silently
-        'fee_plans'              => 'BLOCK',          // an instalment plan reads that member's ledger: money, so never moved silently
         'membership_invoices'    => 'BLOCK',          // a joining invoice and its receipt name one member
         'offline_payments'       => 'BLOCK',          // evidence of money paid for one member
         'mou_agreements'         => 'BLOCK',          // a signed Membership Agreement names one child and their family; never re-addressed

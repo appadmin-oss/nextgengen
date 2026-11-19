@@ -118,7 +118,7 @@ const FEES_DEFAULTS = [
     'remindEnabled' => false,
     'remindEveryDays' => 14,
     /* The longest an instalment plan may run, first instalment to last
-       (domain/fee-plans.php). Admin-set; the server refuses a longer one. */
+       (domain/payment-plans.php). Admin-set; the server refuses a longer one. */
     'planMaxDays' => 120,
     'remindMinBalance' => 1,
     /* Notices BEFORE a charge falls due (domain/dues-notices.php): the month's
@@ -1719,8 +1719,6 @@ function admin_fees_member(array $p): array {
         'voidReason' => (string)($e['voidReason'] ?? ''),
     ], fees_entries($id));
     return ['ok' => true, 'account' => [
-        /* Instalment plans on this account, newest first (domain/fee-plans.php). */
-        'plans' => function_exists('fee_plan_view') ? array_map('fee_plan_view', db_all('SELECT * FROM fee_plans WHERE memberId = ? ORDER BY id DESC LIMIT 5', [(string)$m['memberId']])) : [],
         'memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'],
         'centre' => (string)($m['centre'] ?? ''), 'status' => (string)($m['status'] ?? ''),
         'guardian' => ['name' => (string)($m['parentName'] ?? ''), 'phone' => (string)($m['parentPhone'] ?? ''),

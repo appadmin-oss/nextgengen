@@ -2252,11 +2252,6 @@
         /* Find anybody's account, not only a debtor's — the arrears list holds
            people who owe, so it could never answer "has Ada paid?". */
         lookup:      (q) => request('/admin/fees.php' + qs({ view: 'lookup', q })),
-        /* Instalment plans (domain/fee-plans.php): a family asks, staff approve. */
-        plans:       (status) => request('/admin/fees.php' + qs({ view: 'plans', status: status || 'open' })),
-        planCreate:  (body) => request('/admin/fees.php', { body: Object.assign({ action: 'planCreate' }, body) }),
-        planDecide:  (planId, decision, reason) => request('/admin/fees.php', { body: { action: 'planDecide', planId, decision, reason } }),
-        planCancel:  (planId, reason) => request('/admin/fees.php', { body: { action: 'planCancel', planId, reason } }),
         payment:     (memberId, amount, method, reference, note) => request('/admin/fees.php', { body: { action: 'payment', memberId, amount, method, reference, note } }),
         void:        (entryId, reason) => request('/admin/fees.php', { body: { action: 'void', entryId, reason } }),
         mou:         (memberId) => request('/admin/fees.php', { body: { action: 'mou', memberId } }),
@@ -2628,7 +2623,7 @@
       status:      (to, ids) => request(path, { body: { action: 'status', to, ids } }),
       remind:      (assignmentId, force) => request(path, { body: { action: 'remind', assignmentId, force: !!force } }),
       grade:       (submissionId, grade, feedback, email) => request(path, { body: { action: 'grade', submissionId, grade, feedback: feedback || '', email: !!email } }),
-      giveBack:    (submissionId, feedback) => request(path, { body: { action: 'return', submissionId, feedback } }),
+      giveBack:    (submissionId, feedback, resubmitBy) => request(path, { body: { action: 'return', submissionId, feedback, resubmitBy: resubmitBy || '' } }),
       suggest:     (submissionId) => request(path, { body: { action: 'suggest', submissionId }, timeout: 90000 }),
       draft:       (unitId, ai) => request(path, { body: { action: 'draft', unitId, ai: !!ai }, timeout: 90000 }),
       auto:        (on) => request(path, { body: { action: 'auto', on: !!on }, timeout: 60000 }),

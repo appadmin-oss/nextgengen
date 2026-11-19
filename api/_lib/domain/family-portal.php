@@ -147,8 +147,6 @@ function family_fees_view(array $m): ?array {
         'ahead' => !$inv && !empty($cfg['enabled']) && function_exists('membership_advance_plan') && member_is_ngg($m) ? membership_advance_plan($m) : null,
         // What the child asked of their parents lately (member_family_nudge).
         'asked' => function_exists('family_nudges_of') ? family_nudges_of($mid, 14) : null,
-        /* Instalment plans (domain/fee-plans.php): the plan in play, or the offer to ask for one. */
-        'plans' => function_exists('family_fee_plan_block') ? family_fee_plan_block($m, (int)$a['payable']) : null,
         'claim' => ($c = db_row("SELECT amount, reference, createdAt FROM member_requests WHERE memberId = ? AND kind = 'payment' AND status = 'open' ORDER BY id DESC LIMIT 1", [$mid]))
             ? ['amount' => (int)$c['amount'], 'reference' => (string)$c['reference'], 'at' => substr((string)$c['createdAt'], 0, 10)] : null,
     ];

@@ -7687,6 +7687,34 @@ the existing Kapso integration (domain/kapso.php), not through Make: the site al
   photo → kept via `photo_store_put` and recorded as a `family_sent` submission; STOP/START → `whatsapp_optout`
   (migration 241). A button for a child is honoured only from a number that child's reminder went to.
 - Tests: PHP "whatsapp ·" (13), each core rule proven to fail when removed.
+
+## 2026-11-19 — Homework that gets done: the marking prompt, returned work stays open, families see it
+
+Merged afv/brave-faraday-pdlh7o (it already carried this branch's 2 November audit as patch 92668895; every conflict
+took its version). Then three changes, migration **242** (`assignment_submissions.resubmitBy`, `.markMinutes`,
+index on status):
+- **Marking prompt.** `assignment_marking_queue($g)` — submitted hand-ins the marker may open, checked exactly as
+  `staff_assignment_submission_gate` does (can-mark + member centre in reach), one query. `instructor_today` adds
+  the `handins` row ("N hand-ins to mark — oldest X days"; danger at `ASG_MARK_URGENT_DAYS` = 7), so the duty
+  pop-up and the daily email carry it; `duty_tell_handins_lead` nudges the centre's lead mentor once per oldest
+  hand-in. Time-to-mark: `markMinutes` written on grade and return; `admin_assignment_time_to_mark()` on the
+  overview (median, p90 hours, 90 days). The ip6 duty button opens Assignments.
+- **Returned is open.** `assignment_sub_open()` is the one definition; `sub_ids_for()` excludes returned (the
+  first-publish notice passes `$withReturned`). Return takes `resubmitBy` (default `ASG_RESUBMIT_DAYS` = 3,
+  refused if past). member_today lists it ("Revise and hand in again"), `assignment_due_reminders` reminds it under
+  `rs_soon:`/`rs_over:` + date (assignment_notices.kind is VARCHAR(16)). `assign_due` is hourly now (claims make it
+  idempotent; needed so a family message held by quiet hours goes at 07:00, not 24 hours later).
+- **Families.** `family_homework()` inside `family_ward()` (so only through the guardian's own active link):
+  due this week or still owed, state, mark and feedback once marked, never the answer. `assignment_tell_family()`
+  at the overdue stage: claim `family` per assignment per child; guardians taking alerts get inbox + email,
+  `rcl_wa_phones()` via `sms_send` (WhatsApp first, SMS fallback); parentEmail only when no guardian took it;
+  never between 21:00 and 07:00 Lagos (no claim taken). The duties email's week-old copy to parentEmail skips
+  homework already sent this way.
+- Deliberately unchanged: the evidence fine (`policy_evidence_fines_run`) still counts a returned hand-in as
+  evidence uploaded — fining a child for work a marker sent back is a policy question, not a counting one.
+- Tests: PHP "homework 7/8/9" (29 checks); reach scoping, returned-is-open (sub_ids_for and Today), guardian
+  scoping, once-only and quiet hours each mutated and seen to fail.
+
 ## 2026-11-19 — Instalment plans (schema 242, `domain/fee-plans.php`)
 
 Owner's brief: a parent sets up a plan in the family app (Fees → Set up a

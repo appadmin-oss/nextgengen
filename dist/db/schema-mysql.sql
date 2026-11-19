@@ -5457,6 +5457,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_optout (
   phone VARCHAR(32) NOT NULL PRIMARY KEY, at VARCHAR(32) NOT NULL DEFAULT '', via VARCHAR(24) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (241) ON DUPLICATE KEY UPDATE version = version;
+<<<<<<< HEAD
 -- 242: instalment plans (domain/fee-plans.php)
 CREATE TABLE IF NOT EXISTS fee_plans (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -5470,4 +5471,11 @@ CREATE TABLE IF NOT EXISTS fee_plans (
   cancelReason VARCHAR(400) NOT NULL DEFAULT '', completedAt VARCHAR(32) NOT NULL DEFAULT '',
   UNIQUE KEY uq_fee_plan (planId), KEY idx_fee_plans_member (memberId, status), KEY idx_fee_plans_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+=======
+
+-- ── 242 · Assignments: a returned hand-in's "resubmit by" date, and time-to-mark ──
+ALTER TABLE assignment_submissions ADD COLUMN resubmitBy VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE assignment_submissions ADD COLUMN markMinutes INT NULL;
+CREATE INDEX idx_sub_status ON assignment_submissions(status);
+>>>>>>> origin/claude/stoic-hamilton-1f18hh
 INSERT INTO schema_version (version) VALUES (242) ON DUPLICATE KEY UPDATE version = version;

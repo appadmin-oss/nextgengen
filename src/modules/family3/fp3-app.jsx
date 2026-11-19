@@ -29,10 +29,6 @@ const FP3_SUB_INTERNAL = { requests: "req" };
 const FP3_STF = ["all", "charges", "payments", "fines", "place"];
 const FP3_RELATIONSHIPS_FALLBACK = { parent: "Parent", guardian: "Guardian", carer: "Carer", relative: "Relative" };
 const FP3_ERRORS = {
-  /* Instalment plans (domain/fee-plans.php). */
-  name_required: "Type your full name to agree.", terms_not_agreed: "Tick the box to agree to the terms.",
-  plan_exists: "There is already a plan for this child.", too_long: "That plan would run longer than NGG allows. Choose fewer instalments or a shorter gap.",
-  nothing_owed: "There is nothing to put on a plan.", too_small: "The amount is too small to split.", bad_count: "Choose between 2 and 6 instalments.",
   bad_email: "That doesn’t look like an email address.", invalid: "That code isn’t right. Check the latest email and try again.",
   expired: "That code has expired. Ask for a new one.", already_used: "That link has already been used. Ask for a new one.",
   too_many_attempts: "Too many tries. Wait fifteen minutes, or ask for a new code.", suspended: "This family account is suspended. Contact the centre.",
@@ -352,7 +348,7 @@ class Fp3Portal extends React.Component {
        payment made offline. */
     const wl = active && loaded;
     out.mainSlotEnd = sec === "today" && wl ? <Fp3TodayMore key={w.linkId} c={this} w={w}/>
-      : sec === "money" && wl ? <div className="fp3x-more" key={w.linkId}>{w.fees.enabled ? <><Fp3Plan c={this} w={w}/><Fp3Ahead c={this} w={w}/><Fp3Paid c={this} w={w}/></> : null}<Fp3Docs c={this} w={w}/></div>
+      : sec === "money" && wl ? <div className="fp3x-more" key={w.linkId}>{w.fees.enabled ? <><Fp3Ahead c={this} w={w}/><Fp3Paid c={this} w={w}/></> : null}<Fp3Docs c={this} w={w}/></div>
       // Anchor Circle, in the family account: the child's week on Growth (domain/circle.php).
       : sec === "progress" && wl ? <div className="fp3x-more" key={w.linkId}><Fp3Anchor c={this} linkId={w.linkId} first={w.member.first} role="parent"/></div>
       : sec === "account" ? <React.Fragment>
@@ -773,78 +769,6 @@ function fp3Asks(x) {
   return [{ badge: first + " asked about fees", h: first + " asked you to pay their fees", s: "Pay online here, by transfer, or ahead for the months to come. Already paid by transfer or at the desk? Press I’ve paid on Fees and give the reference.", cta: F.payable > 0 ? "Pay " + "₦" + Number(F.payable).toLocaleString("en") : "Pay the joining invoice" }];
 }
 
-/**
- * Fees → Payment plan (domain/fee-plans.php). A parent picks 2 to 6
- * instalments and how often, and sees the exact dates and amounts — worked out
- * by the SERVER (fees.plan.preview), never added up here. They read the terms,
- * type their name and tick to agree. The plan then waits for NGG to approve it,
- * and the card says so; a running plan shows each instalment and what has been
- * paid towards it. Any payment counts, however it is made.
- */
-function Fp3Plan({ c, w }) {
-  const P = w.fees.plans, first = w.member.first, N = n => c.naira(n);
-  const O = P && P.offer, plan = P && P.plan;
-  const [open, setOpen] = React.useState(false);
-  const [count, setCount] = React.useState(3), [cad, setCad] = React.useState("monthly");
-  const [pv, setPv] = React.useState(null), [name, setName] = React.useState(""), [ok, setOk] = React.useState(false);
-  const [busy, setBusy] = React.useState(false), [err, setErr] = React.useState("");
-  React.useEffect(() => {
-    if (!open || !O) return;
-    let live = true; setPv(null); setErr("");
-    NGGApi.family.act("fees.plan.preview", { linkId: w.linkId, count, cadence: cad })
-      .then(r => { if (live) setPv(r); }).catch(e => { if (live) { setPv(null); setErr(fp3Err(e)); } });
-    return () => { live = false; };
-  }, [open, count, cad]);
-  if (!P || (!O && !plan)) return null;
-  const STATE = { paid: "Paid", part: "Part paid", due: "Due", overdue: "Overdue" };
-  const send = () => {
-    if (busy || !pv || !c.can()) return;
-    setBusy(true); setErr("");
-    NGGApi.family.act("fees.plan.create", { linkId: w.linkId, count, cadence: cad, signedName: name, agreed: ok })
-      .then(() => { setBusy(false); setOpen(false); c.toast("Sent. NGG will look at the plan and tell you when it is approved."); c.loadWard(w.linkId); })
-      .catch(e => { setBusy(false); setErr(fp3Err(e)); });
-  };
-  const live = plan && (plan.status === "pending" || plan.status === "active");
-  return (
-    <section className="fp3x-card" aria-labelledby={"fp3x-pl-" + w.linkId}>
-      <div className="fp3x-card-h">
-        <span className="fp3x-ic" aria-hidden="true"><i className="ph ph-calendar-check"/></span>
-        <div>
-          <h2 id={"fp3x-pl-" + w.linkId}>Payment plan</h2>
-          <p>{live ? (plan.status === "pending" ? "Waiting for NGG to approve a plan for " + N(plan.total) + " in " + plan.count + " instalments. Nothing changes until it is approved."
-                : N(plan.paid) + " of " + N(plan.total) + " paid. " + (plan.next ? "Next: " + N(plan.next.amount) + " by " + fp3Date(plan.next.date) + "." : ""))
-              : plan && plan.status === "declined" ? "Your last plan was not approved: " + plan.declineReason
-              : plan && plan.status === "cancelled" ? "Your last plan was ended: " + plan.cancelReason
-              : "Pay what " + first + " owes in 2 to 6 instalments. NGG approves every plan."}</p>
-        </div>
-      </div>
-      {live && plan.status === "active" && <ul className="fp3x-lines" aria-label="Instalments">
-        {plan.schedule.map(it => <li key={it.n}><span>{"Instalment " + it.n}<small>{fp3Date(it.date) + " · " + STATE[it.state]}</small></span><b>{N(it.amount)}</b></li>)}
-      </ul>}
-      {live && <p className="fp3x-fine">Any payment counts towards the plan — online, by transfer or cash at the desk. New monthly fees are charged as normal and are not part of it.</p>}
-      {O && !open && <button type="button" className="fp3x-go" onClick={() => setOpen(true)}>Set up a payment plan</button>}
-      {O && open && <React.Fragment>
-        <div className="fp3x-opts" role="group" aria-label="How many instalments">
-          {O.counts.map(n => <button key={n} type="button" aria-pressed={n === count ? "true" : "false"} className={"fp3x-opt" + (n === count ? " is-on" : "")} onClick={() => setCount(n)}><b>{n}</b><span>instalments</span></button>)}
-        </div>
-        <div className="fp3x-modes" role="group" aria-label="How often">
-          {O.cadences.map(k => <button key={k.key} type="button" aria-pressed={k.key === cad ? "true" : "false"} className={"fp3x-mode" + (k.key === cad ? " is-on" : "")} onClick={() => setCad(k.key)}>{k.label}</button>)}
-        </div>
-        {pv && pv.schedule ? <ul className="fp3x-lines" aria-label="The dates and amounts" aria-live="polite">
-          {pv.schedule.map(it => <li key={it.n}><span>{"Instalment " + it.n}<small>{fp3Date(it.date)}</small></span><b>{N(it.amount)}</b></li>)}
-          <li className="is-total"><span>Total</span><b>{N(O.payable)}</b></li>
-        </ul> : !err && <p className="fp3x-fine" aria-live="polite">Working out the dates…</p>}
-        <div className="fp3x-terms" role="note"><b>The terms</b><ul>{O.terms.lines.map((l, i) => <li key={i}>{l}</li>)}</ul></div>
-        <label className="fp3x-field"><span>Your full name</span><input type="text" autoComplete="name" maxLength={160} value={name} onChange={e => setName(e.target.value)}/></label>
-        <label className="fp3x-tick"><input type="checkbox" checked={ok} onChange={e => setOk(e.target.checked)}/><span>I have read the terms and agree to pay on these dates.</span></label>
-        {err && <p className="fp3x-err" role="alert">{err}</p>}
-        <button type="button" className="fp3x-go" onClick={send} disabled={busy || !pv || !pv.schedule}>{busy ? "Sending…" : "Ask NGG for this plan"}</button>
-        <button type="button" className="fp3x-ghost" onClick={() => setOpen(false)}>Not now</button>
-      </React.Fragment>}
-    </section>
-  );
-}
-
 /** Fees → Pay ahead: months of the commitment fee (and any renewal among them), priced by the server. */
 function Fp3Ahead({ c, w }) {
   const A = w.fees.ahead, first = w.member.first, N = n => c.naira(n);
@@ -1049,6 +973,7 @@ function Fp3TodayMore({ c, w }) {
           : !evs.length ? <p className="fp3x-empty">Nothing on the calendar yet. Events at {w.member.centre} show here as soon as they’re planned.</p>
           : <ul className="fp3x-evs">{evs.map(e => <li key={e.id}><span className="fp3x-date" aria-hidden="true"><b>{e.dd}</b>{e.mm}</span><span><b>{e.title}</b><small>{[e.date, e.time, e.where].filter(Boolean).join(" · ")}</small></span>{e.expected ? <em>{S.rsvp[e.id] === "yes" ? "Coming" : S.rsvp[e.id] ? "Replied" : "Families expected"}</em> : null}</li>)}</ul>}
       </section>
+      <Fp3Homework w={w} first={first}/>
       <section className="fp3x-card" aria-labelledby="fp3x-ln">
         <div className="fp3x-h-row"><h2 id="fp3x-ln" className="fp3x-h">What {first} is learning</h2><span className="fp3x-meta">{L.completed || 0} of {L.total || 0} lessons done</span></div>
         <div className="fp3x-bar" role="progressbar" aria-label={first + "’s lessons"} aria-valuemin="0" aria-valuemax="100" aria-valuenow={L.pct || 0}><span style={{ width: (L.pct || 0) + "%" }}/></div>
@@ -1059,6 +984,31 @@ function Fp3TodayMore({ c, w }) {
   );
 }
 
+
+/* ── This week's homework ────────────────────────────────────────────────────
+   Read-only (family_homework): what the instructor set that is due this week
+   or still open past its date, and where it stands. A mark and its feedback
+   show once the work is marked; work sent back shows what to change and the
+   new date. The child's own answer is theirs and is not shown here. */
+const FP3_HW = { overdue: ["Overdue", "is-warn"], returned: ["Sent back to improve", "is-warn"], todo: ["To do", ""], handed_in: ["Handed in", ""], marked: ["Marked", ""] };
+function Fp3Homework({ w, first }) {
+  const H = w.homework || { items: [] };
+  return (
+    <section className="fp3x-card" aria-labelledby="fp3x-hw">
+      <div className="fp3x-h-row"><h2 id="fp3x-hw" className="fp3x-h">This week’s homework</h2>
+        <span className="fp3x-meta">{H.overdue ? H.overdue + " overdue" : H.open ? H.open + " still to do" : H.items.length ? "All handed in" : ""}</span></div>
+      {H.items.length ? <ul className="fp3x-evs">{H.items.map(h => {
+        const [label, tone] = FP3_HW[h.state] || [h.state, ""];
+        const when = h.state === "marked" || h.state === "handed_in" ? (h.handedIn ? "handed in " + h.handedIn + (h.late ? " (late)" : "") : "") : (h.due ? (h.returned ? "hand in again by " : "due ") + h.due : "");
+        return <li key={h.id}><span className="fp3x-ic" aria-hidden="true"><i className={h.state === "marked" ? "ph ph-seal-check" : "ph ph-pencil-simple-line"}/></span>
+          <span><b>{h.title}</b><small>{[h.course, when, h.mark !== null ? "mark " + h.mark + (h.outOf ? "/" + h.outOf : "") : ""].filter(Boolean).join(" · ")}</small>
+            {h.feedback ? <small>{(h.returned ? "What to change: " : "Feedback: ") + h.feedback}</small> : null}</span>
+          <em className={tone || undefined}>{label}</em></li>;
+      })}</ul>
+        : <p className="fp3x-empty">Nothing set for {first} this week. Homework from the instructors shows here, with the mark once it is marked.</p>}
+    </section>
+  );
+}
 
 /* ── Anchor, in the family account ──────────────────────────────────────────
    The child's week as their circle of adults sees it (family.anchor): the

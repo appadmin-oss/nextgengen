@@ -1,6 +1,11 @@
 {
+<<<<<<< HEAD
   "buildId": "6ee38ad5ad",
   "builtAt": "2026-11-19T18:14:52.163Z",
+=======
+  "buildId": "44128ec200",
+  "builtAt": "2026-11-19T12:31:23.729Z",
+>>>>>>> origin/claude/stoic-hamilton-1f18hh
   "bundle": {
     "file": "app.07965b56d5.min.js",
     "bytes": 1673492,
@@ -8,9 +13,15 @@
     "files": 31
   },
   "more": {
+<<<<<<< HEAD
     "file": "app-more.244934bdd5.min.js",
     "bytes": 3880072,
     "gzipBytes": 1108535,
+=======
+    "file": "app-more.bce212339a.min.js",
+    "bytes": 3870670,
+    "gzipBytes": 1106180,
+>>>>>>> origin/claude/stoic-hamilton-1f18hh
     "files": 64,
     "list": [
       "src/modules/idcards/ids-core.jsx",
@@ -80,9 +91,9 @@
     ]
   },
   "study": {
-    "file": "app-study.d0f910e056.min.js",
-    "bytes": 718276,
-    "gzipBytes": 203584,
+    "file": "app-study.a1a565d914.min.js",
+    "bytes": 718701,
+    "gzipBytes": 203672,
     "files": 19,
     "list": [
       "chess-engine.jsx",
@@ -108,16 +119,25 @@
   },
   "assets": {
     "app.min.js": "app.07965b56d5.min.js",
+<<<<<<< HEAD
     "app-more.min.js": "app-more.244934bdd5.min.js",
     "app-study.min.js": "app-study.d0f910e056.min.js",
+=======
+    "app-more.min.js": "app-more.bce212339a.min.js",
+    "app-study.min.js": "app-study.a1a565d914.min.js",
+>>>>>>> origin/claude/stoic-hamilton-1f18hh
     "styles.css": "styles.f4fb558cb8.css",
     "styles-app.css": "styles-app.2c0f6e227a.css",
     "data.js": "data.ec97c65376.js",
     "photos.js": "photos.36b0b4ea72.js",
+<<<<<<< HEAD
     "api-client.js": "api-client.609cc3e227.js",
+=======
+    "api-client.js": "api-client.9533ba826a.js",
+>>>>>>> origin/claude/stoic-hamilton-1f18hh
     "outbox.js": "outbox.042a8c9122.js",
     "styles-app-public.css": "styles-app-public.74238a9606.css",
     "phosphor.css": "phosphor-used.b694d33560.css"
   },
-  "node": "v22.23.5"
+  "node": "v22.23.4"
 }

@@ -18,7 +18,11 @@
      deploy shows up without anybody hunting for a hard refresh.
    ================================================================ */
 
+<<<<<<< HEAD
 const CACHE_VERSION = 'ngg-6ee38ad5ad';
+=======
+const CACHE_VERSION = 'ngg-44128ec200';
+>>>>>>> origin/claude/stoic-hamilton-1f18hh
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 
@@ -42,7 +46,11 @@ const PRECACHE = [
   '/styles-app-public.74238a9606.css',
   '/data.ec97c65376.js',
   '/photos.36b0b4ea72.js',
+<<<<<<< HEAD
   '/api-client.609cc3e227.js',
+=======
+  '/api-client.9533ba826a.js',
+>>>>>>> origin/claude/stoic-hamilton-1f18hh
   '/outbox.042a8c9122.js',
   '/app.07965b56d5.min.js',
   '/vendor/react.production.min.js',

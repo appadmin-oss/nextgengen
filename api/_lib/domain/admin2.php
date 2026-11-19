@@ -616,6 +616,8 @@ function admin_overview(array $p): array {
             'published' => $one("SELECT COUNT(*) c FROM assignments WHERE status='published'"),
             'submitted' => $one("SELECT COUNT(*) c FROM assignment_submissions"),
             'toGrade'   => $one("SELECT COUNT(*) c FROM assignment_submissions WHERE status='submitted'"),
+            // Time-to-mark (assignment_mark_minutes): how long a hand-in waited for a mark or a return, last 90 days.
+            'timeToMark' => admin_assignment_time_to_mark(),
         ],
         'events'     => ['upcoming' => $one("SELECT COUNT(*) c FROM events WHERE status='published' AND startAt >= ?", [gmdate('Y-m-d\TH:i:s\Z')])],
         'newsletter' => ['subscribers' => $one("SELECT COUNT(*) c FROM newsletter WHERE status='subscribed'")],
@@ -634,6 +636,17 @@ function admin_overview(array $p): array {
            of check-ins, not a rate: nothing records how many were expected. */
         'checkins'   => admin_overview_checkins(),
     ]];
+}
+
+/** Median and 90th-percentile hours from hand-in to mark, over hand-ins marked in the last 90 days. Nulls when none was measured. */
+function admin_assignment_time_to_mark(int $days = 90): array {
+    try {
+        $mins = array_map('intval', array_column(db_all("SELECT markMinutes FROM assignment_submissions WHERE markMinutes IS NOT NULL AND gradedAt >= ? ORDER BY markMinutes",
+            [gmdate('Y-m-d\\TH:i:s\\Z', time() - $days * 86400)]), 'markMinutes'));
+    } catch (Throwable $e) { $mins = []; }
+    $n = count($mins);
+    $at = static fn(float $q) => $n ? round($mins[min($n - 1, (int)floor($q * ($n - 1) + 0.5))] / 60, 1) : null;
+    return ['marked' => $n, 'medianHours' => $at(0.5), 'p90Hours' => $at(0.9), 'days' => $days];
 }
 
 function admin_overview_waiting(): array {

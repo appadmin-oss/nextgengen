@@ -6707,23 +6707,20 @@ function db_migrate(PDO $db): void {
         241 => "
             CREATE TABLE IF NOT EXISTS whatsapp_optout (phone TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT '', via TEXT NOT NULL DEFAULT '');
         ",
-        /* Instalment plans (domain/fee-plans.php). One row per plan; the
-           schedule is fixed JSON, and what has been paid is READ from the
-           ledger, never stored here. */
+
+        /*
+         * Hand-ins that get marked and returned work that comes back
+         * (assignments.php). `resubmitBy` is the date a RETURNED hand-in is
+         * due again (set when it is returned, default three days), so it is
+         * reminded and counted open like overdue work instead of reading as
+         * handed in. `markMinutes` is how long a hand-in waited, from its
+         * (latest) submission to being marked or returned — time-to-mark, so
+         * "are instructors marking?" has a measured answer.
+         */
         242 => "
-            CREATE TABLE IF NOT EXISTS fee_plans (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              planId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL, guardianId TEXT NOT NULL DEFAULT '',
-              source TEXT NOT NULL DEFAULT 'family', agreedVia TEXT NOT NULL DEFAULT 'app',
-              signedName TEXT NOT NULL DEFAULT '', termsVersion TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
-              count INTEGER NOT NULL DEFAULT 0, cadence TEXT NOT NULL DEFAULT 'monthly', startDate TEXT NOT NULL DEFAULT '',
-              total INTEGER NOT NULL DEFAULT 0, scheduleJson TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'pending',
-              createdBy TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '',
-              decidedBy TEXT NOT NULL DEFAULT '', decidedAt TEXT NOT NULL DEFAULT '', declineReason TEXT NOT NULL DEFAULT '',
-              cancelReason TEXT NOT NULL DEFAULT '', completedAt TEXT NOT NULL DEFAULT ''
-            );
-            CREATE INDEX IF NOT EXISTS idx_fee_plans_member ON fee_plans(memberId, status);
-            CREATE INDEX IF NOT EXISTS idx_fee_plans_status ON fee_plans(status);
+            ALTER TABLE assignment_submissions ADD COLUMN resubmitBy TEXT DEFAULT '';
+            ALTER TABLE assignment_submissions ADD COLUMN markMinutes INTEGER;
+            CREATE INDEX IF NOT EXISTS idx_sub_status ON assignment_submissions(status);
         ",
     ];
 

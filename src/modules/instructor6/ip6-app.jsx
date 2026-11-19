@@ -678,7 +678,7 @@ class Ip6Portal extends React.Component {
     /* First visit: a short tour. Any visit with something due: the duty reminder,
        whose buttons open the screen that does it. */
     const dutyGo = d => { const k = String(d.key || '').replace(/^instructor:/, '');
-      const scr = /^log-/.test(k) ? 'log' : k === 'marking' ? 'marking' : /^(plan|carry)/.test(k) ? 'plan' : k === 'safeguarding' ? 'students' : 'today';
+      const scr = /^log-/.test(k) ? 'log' : k === 'marking' ? 'marking' : k === 'handins' ? 'assignments' : /^(plan|carry)/.test(k) ? 'plan' : k === 'safeguarding' ? 'students' : 'today';
       this.goTop(scr); return true; };
     v.openPlace = () => set({ placeOpen: true });
     v.openCheck = () => set({ checkOpen: true });
