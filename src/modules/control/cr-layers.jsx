@@ -140,8 +140,9 @@ function CrFormSheet({ f, phone, onClose, toast }) {
     } else if (x.type === "switch") {
       return (
         <div key={x.id} className="cr-ff">
-          <div className="cr-ff-check" style={{ justifyContent: "space-between" }}><span className="cr-ff-l" id={id + "-l"}>{x.l}</span><CrSwitch on={!!v} onChange={b => set(x.id, b)} label={x.l}/></div>
-          {x.help && <span className="cr-ff-help">{x.help}</span>}
+          <div className="cr-ff-check" style={{ justifyContent: "space-between" }} id={id} tabIndex={-1}><span className="cr-ff-l" id={id + "-l"}>{x.l}</span><CrSwitch on={!!v} onChange={b => set(x.id, b)} label={x.l}/></div>
+          {x.help && !err && <span className="cr-ff-help">{x.help}</span>}
+          {err && <span className="cr-ff-err" id={id + "-err"}><CrIcon n="warning-circle"/>{err}</span>}
         </div>
       );
     } else if (x.type === "signature") {
@@ -154,7 +155,7 @@ function CrFormSheet({ f, phone, onClose, toast }) {
         </div>
       );
     } else if (x.type === "file") {
-      control = <input id={id} type="file" accept={x.accept} aria-invalid={err ? true : undefined} aria-describedby={desc} onChange={e => set(x.id, e.target.files && e.target.files[0] ? e.target.files[0] : "")}/>;
+      control = <input id={id} type="file" accept={x.accept} capture={x.capture} aria-invalid={err ? true : undefined} aria-describedby={desc} onChange={e => set(x.id, e.target.files && e.target.files[0] ? e.target.files[0] : "")}/>;
     } else {
       control = <input id={id} type={x.type || "text"} inputMode={x.im || (x.num ? "decimal" : x.email ? "email" : undefined)} autoComplete={x.ac || "off"} enterKeyHint={phone ? "next" : undefined}
                        placeholder={x.ph} maxLength={x.max} value={v == null ? "" : v} aria-invalid={err ? true : undefined} aria-describedby={desc} onChange={e => set(x.id, e.target.value)}/>;

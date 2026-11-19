@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Instalment plans — paying what is owed in 2 to 6 parts (schema 240).
+ * Instalment plans — paying what is owed in 2 to 6 parts (schema 242).
  *
  * How one comes to exist:
  *   • A parent sets one up in the family app (Fees → Set up a payment plan):

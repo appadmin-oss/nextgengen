@@ -11,7 +11,9 @@
    The tab id is not "registration": that old section id is an alias for the
    Summer School check-in desks (CR_ALIASES) and must keep resolving. */
 
-const CR_RCL_FILTERS = [["open", "Still registering"], ["unassigned", "Nobody helping yet"], ["mine", "Mine to help"], ["done", "Registered"], ["all", "Everyone"]];
+const CR_RCL_FILTERS = [["open", "Still registering"], ["followup", "Needs a follow-up"], ["unassigned", "Nobody helping yet"], ["mine", "Mine to help"], ["done", "Registered"], ["all", "Everyone"]];
+/* The entry steps, in the order of the card NGG hands a family (domain/registration-checklist.php RCL_STEPS). */
+const CR_RCL_STEPS = [["orientation", "Orientation"], ["payment", "Payment"], ["documents", "Submit documents"], ["online", "Online registration"], ["idcard", "ID card"]];
 const CR_RCL_EVIDENCE = [["photo", "A photo"], ["document", "A document"], ["none", "A note, no file"]];
 const CR_RCL_ERR = {
   out_of_scope: "not in a centre you administer", not_found: "not found", own_account: "your own account", not_a_member: "not an NGG member",
@@ -85,25 +87,58 @@ async function crRclOpen(ctx, memberId) {
   const mine = c.supervisorId && c.supervisorId === d.me;
   const title = k => ((items.find(i => i.key === k) || {}).title) || "An item no longer on the checklist";
   const open = items.filter(i => !i.done), done = items.filter(i => i.done);
+  const fus = d.followups || [];
   ctx.drawer({
     title: m.fullName, name: m.fullName, photo: m.photoUrl || null, sub: [m.displayId || m.memberId, m.centre].filter(Boolean).join(" · "),
-    stats: [["Done", c.done + " of " + c.total], ["Helping", c.supervisorName || "Nobody yet"], ["At the centre today", c.supervisorId ? (d.supervisorPresentToday ? "Yes" : "No") : "—"]],
+    stats: [["Done", c.done + " of " + c.total], ["Helping", c.supervisorName || "Nobody yet"],
+      c.resumedOn ? ["Resumed", crDate(c.resumedOn)] : ["Next follow-up", c.nextFollowUpOn ? crDate(c.nextFollowUpOn) + (c.nextFollowUpOn <= (d.today || "") ? " · due" : "") : "Not set"]],
     sections: [
+      { h: "Entry steps", text: (c.steps || []).map(x => (x.complete ? "✓ " : "· ") + x.label + " — " + x.done + " of " + x.total).join("\n")
+          + "\n" + (c.resumedOn ? "✓ Attend lectures — resumed " + crDate(c.resumedOn) : "· Attend lectures — the day every step is done") + (c.stalled ? "\n\nNo progress in two weeks: follow up with the family." : "") },
       { h: "Still to do", empty: "Nothing left. They are registered.", list: open.map(i => ({
           icon: i.kind === "auto" ? "database" : i.evidence === "photo" ? "camera" : i.evidence === "document" ? "file-text" : "note-pencil",
-          t: i.title + (i.status === "rejected" ? " · reopened" : ""),
+          t: (i.stepLabel ? i.stepLabel + " · " : "") + i.title + (i.status === "rejected" ? " · reopened" : ""),
           s: i.status === "rejected" ? "Rejected: " + i.rejectReason : i.kind === "auto" ? "From the record. " + i.fix : [i.help, i.presence ? "Needs the supervisor at the centre." : "", i.maxAgeDays ? "Evidence from the last " + i.maxAgeDays + " days." : ""].filter(Boolean).join(" "),
           act: mine ? { l: i.kind === "auto" ? "Check again" : "Submit", run: () => crRclSubmit(ctx, m, i) } : null })) },
       { h: "Done", empty: "Nothing yet.", list: done.map(i => ({ icon: "check-circle", t: i.title, s: i.kind === "auto" ? "The record shows it." : "Verified " + crDate(i.verifiedAt),
           act: i.kind === "admin" ? { l: "Reject", run: () => crRclReject(ctx, m, i) } : null })) },
       { h: "Evidence submitted", empty: "Nothing submitted yet.", list: (d.submissions || []).slice(0, 20).map(x => ({
-          icon: x.verdict === "accepted" || x.verdict === "record_passes" ? "seal-check" : "x-circle", t: title(x.itemKey), s: x.reason, m: crDate(x.at),
+          icon: x.verdict === "accepted" || x.verdict === "record_passes" ? "seal-check" : x.verdict === "family_sent" ? "whatsapp-logo" : "x-circle",
+          t: x.verdict === "family_sent" ? "Sent by the family on WhatsApp" + (x.note ? " · “" + x.note + "”" : "") : title(x.itemKey), s: x.reason, m: crDate(x.at),
           act: x.url ? { l: "Open file", run: () => window.open(x.url, "_blank", "noopener") } : null })) },
-    ],
+      (d.whatsapp || []).length ? { h: "WhatsApp", list: d.whatsapp.map(w => ({ icon: w.dir === "in" ? "chat-circle-text" : "paper-plane-tilt",
+          t: (w.dir === "in" ? "The family: " : "NGG: ") + w.body, s: w.dir === "out" ? (w.status === "failed" ? "Not delivered — sent by SMS instead" : w.status ? "Message " + w.status : "") : "", m: crDate(String(w.at).slice(0, 10)) })) } : null,
+      { h: "Follow-ups", empty: "None logged yet. Call or message the family, then log what they said.", list: fus.map(f => ({
+          icon: f.outcome === "reached" || f.outcome === "promised" ? "phone-call" : f.outcome === "withdrawing" ? "warning" : "phone-x",
+          t: f.channelLabel + " · " + f.outcomeLabel, s: [f.note, f.nextOn ? "Next: " + crDate(f.nextOn) : ""].filter(Boolean).join(" · "), m: (f.byName || "") + " · " + crDate(String(f.at).slice(0, 10)) })) },
+    ].filter(Boolean),
     actions: [
-      { l: c.supervisorId ? "Change who is helping" : "Assign a supervisor", primary: true, run: () => crRclAssign(ctx, [m.memberId], m.fullName) },
+      c.status !== "done" ? { l: "Log a follow-up", primary: true, run: () => crRclFollowup(ctx, m, d, false) } : null,
+      { l: c.supervisorId ? "Change who is helping" : "Assign a supervisor", primary: c.status === "done", run: () => crRclAssign(ctx, [m.memberId], m.fullName) },
       { l: "Open their record", run: () => { ctx.closeDrawer(); ctx.go("members", "members", m.memberId); } },
+    ].filter(Boolean),
+  });
+}
+
+/** Log a call, a message or a visit, and when to try next. `asSupervisor` posts through the supervisor's own route. */
+function crRclFollowup(ctx, m, d, asSupervisor) {
+  const plus = n => { const t = new Date((d.today || new Date().toISOString().slice(0, 10)) + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+  ctx.form({
+    title: "Follow up · " + m.fullName, submit: "Log it", busyLabel: "Saving…",
+    intro: "Say what you did and what the family said. Set the next day to try: the follow-up comes back to you then.",
+    values: { channel: "call", outcome: "reached", nextOn: plus(3) },
+    fields: [
+      { id: "channel", l: "How", type: "select", req: true, opts: Object.entries(d.channels || {}) },
+      { id: "outcome", l: "What happened", type: "select", req: true, opts: Object.entries(d.outcomes || {}) },
+      { id: "note", l: "Note", type: "textarea", max: 500, help: "What they said, what they will bring, and when." },
+      { id: "nextOn", l: "Follow up next on", type: "date", req: true, help: "Within 60 days." },
     ],
+    onSubmit: async v => {
+      const body = { memberId: m.memberId, channel: v.channel, outcome: v.outcome, note: v.note || "", nextOn: v.nextOn };
+      const r = asSupervisor ? await NGGApi.member.regcheck.followup(body) : await NGGApi.admin.regcheck.act("followup", body);
+      ctx.closeDrawer(); ctx.reload(); return r;
+    },
+    done: (v, r) => "Logged. Next follow-up " + crDate(r.nextOn || v.nextOn) + ".",
   });
 }
 
@@ -153,9 +188,10 @@ function crRclItemForm(ctx, it) {
   ctx.form({
     title: it ? "Change “" + it.title + "”" : "Add an item", submit: it ? "Save" : "Add", busyLabel: "Saving…",
     intro: "Every NGG member’s checklist gets it. The supervisor submits the evidence; the server checks it.",
-    values: it ? { title: it.title, help: it.help, evidence: it.evidence, presence: !!it.presence, maxAgeDays: it.maxAgeDays ? String(it.maxAgeDays) : "" } : { evidence: "photo" },
+    values: it ? { title: it.title, help: it.help, evidence: it.evidence, presence: !!it.presence, maxAgeDays: it.maxAgeDays ? String(it.maxAgeDays) : "", step: it.step || "documents" } : { evidence: "photo", step: "documents" },
     fields: [
       { id: "title", l: "Title", type: "text", req: true, max: 160, ph: "Photo with their guardian at the centre" },
+      { id: "step", l: "Entry step", type: "select", req: true, opts: CR_RCL_STEPS, help: "Where it sits on the card the family is handed." },
       { id: "help", l: "What the supervisor should do", type: "textarea", max: 600 },
       { id: "evidence", l: "Evidence", type: "select", req: true, opts: CR_RCL_EVIDENCE },
       { id: "presence", l: "The supervisor must be at the member’s centre that day", type: "switch", help: "Checked against their check-in at the gate." },
@@ -163,7 +199,7 @@ function crRclItemForm(ctx, it) {
     ],
     onSubmit: async v => {
       const r = await NGGApi.admin.regcheck.act("item.save", { itemId: it ? it.itemId : "", title: v.title, help: v.help || "", evidence: v.evidence, presence: !!v.presence,
-        maxAgeDays: v.evidence === "none" ? 0 : Number(v.maxAgeDays || 0) });
+        maxAgeDays: v.evidence === "none" ? 0 : Number(v.maxAgeDays || 0), step: v.step || "documents" });
       ctx.reload(); return r;
     },
     done: it ? "Saved." : "Added to every checklist.",
@@ -175,7 +211,7 @@ function crRclItemOpen(ctx, it) {
     catch (e) { ctx.toast(crErr(e), null, true); } };
   const live = it.status === "active";
   ctx.drawer({
-    title: it.title, sub: it.evidenceLabel + (it.presence ? " · at the centre" : "") + (live ? "" : " · retired"), icon: "list-checks",
+    title: it.title, sub: ((CR_RCL_STEPS.find(x => x[0] === it.step) || [0, ""])[1] + " · ") + it.evidenceLabel + (it.presence ? " · at the centre" : "") + (live ? "" : " · retired"), icon: "list-checks",
     stats: [["Evidence", it.evidenceLabel], ["Age limit", it.maxAgeDays ? it.maxAgeDays + " days" : "None"], ["Verified for", crPlural(it.verified || 0, "member")]],
     sections: [{ h: "What the supervisor does", text: it.help || "No help written yet." }],
     actions: live ? [
@@ -197,7 +233,8 @@ function crRclServer() {
         { k: "progress", pct: x.total ? Math.round(x.done / x.total * 100) : 0, t: x.done + " of " + x.total },
         { k: "text", t: (x.left || []).slice(0, 3).join(", ") + ((x.left || []).length > 3 ? " and " + ((x.left || []).length - 3) + " more" : "") || "Nothing left" },
         { k: "text", t: x.supervisorName || "Nobody yet", s: x.supervisorName ? "Since " + crDate(x.assignedAt) : "" },
-        { k: "status", t: x.status === "done" ? "Registered" : x.supervisorId ? "In progress" : "Needs a supervisor", tone: x.status === "done" ? "ok" : x.supervisorId ? "warn" : "bad" },
+        { k: "status", t: x.status === "done" ? (x.resumedOn ? "Resumed " + crDate(x.resumedOn) : "Registered") : x.stalled ? "Stalled · follow up" : x.supervisorId ? "In progress" : "Needs a supervisor",
+          tone: x.status === "done" ? "ok" : x.stalled || !x.supervisorId ? "bad" : "warn", s: x.status !== "done" && x.nextFollowUpOn ? "Follow up " + crDate(x.nextFollowUpOn) : "" },
       ] })) };
     },
   };
@@ -227,13 +264,16 @@ Object.assign(CR_TAB_DEFS, {
       return [
         { type: "kpis", span: 6, items: [
           { l: "Still registering", v: crNum(c.open || 0), tone: c.open ? "down" : "flat" },
+          { l: "Needs a follow-up", v: crNum(c.followup || 0), tone: c.followup ? "down" : "flat", s: "Due, or stalled two weeks" },
           { l: "Nobody helping yet", v: crNum(c.unassigned || 0), tone: c.unassigned ? "down" : "flat" },
           { l: "Registered", v: crNum(c.done || 0), tone: "up" },
           { l: "No checklist yet", v: crNum(d.unstarted || 0), tone: d.unstarted ? "down" : "flat" },
         ] },
         c.unassigned ? { type: "note", span: 6, icon: "hand-heart", tone: "warn", text: crPlural(c.unassigned, "member") + (c.unassigned === 1 ? " has" : " have") + " nobody helping them register.",
           sub: "Select them and choose “Assign a supervisor”. The suggestions are people actually seen at their centre, with the reasons." } : null,
-        { type: "table", span: 6, title: "Members registering", sub: "Progress counts the record’s own items and the items below. Open a member to see what is left and the evidence.", server: d.server,
+        c.followup ? { type: "note", span: 6, icon: "phone-call", tone: "warn", text: crPlural(c.followup, "registration") + " need" + (c.followup === 1 ? "s" : "") + " a follow-up today.",
+          sub: "Show “Needs a follow-up”, open each, call or message the family, and log what they said with the next day to try." } : null,
+        { type: "table", span: 6, title: "Members registering", sub: "The entry steps: orientation, payment, documents, online registration, ID card. A member resumes lectures on the day the last one is done.", server: d.server,
           search: "Name, ID or supervisor", cols: [{ l: "Member" }, { l: "Progress" }, { l: "What is left", wrap: true, sort: false }, { l: "Helping", sort: false }, { l: "Status", sort: false }],
           filtersInit: { status: c.unassigned ? "unassigned" : "open" },
           filters: [{ id: "status", l: "Show", opts: CR_RCL_FILTERS.map(f => ({ v: f[0], l: f[1], n: c[f[0]] })) }],
@@ -259,7 +299,7 @@ Object.assign(CR_TAB_DEFS, {
    phone; here staff send or resend the link (and copy it for WhatsApp),
    countersign as NGG's representative — witnessing too, when nobody did at
    home — open the printable copy, or withdraw one started in error. */
-const CR_MOU_FILTERS = [["awaiting_ngg", "To countersign"], ["awaiting_family", "Waiting on the family"], ["none", "Not started"], ["signed", "Signed"], ["void", "Withdrawn"], ["all", "Everyone"]];
+const CR_MOU_FILTERS = [["paper", "Paper copy to receive"], ["awaiting_ngg", "To countersign"], ["awaiting_family", "Waiting on the family"], ["none", "Not started"], ["signed", "Signed"], ["void", "Withdrawn"], ["all", "Everyone"]];
 const CR_MOU_STATE = { awaiting_ngg: ["To countersign", "warn"], awaiting_family: ["With the family", "neutral"], signed: ["Signed", "ok"], void: ["Withdrawn", "bad"], none: ["Not started", "bad"] };
 const crMouCtx = { current: null };
 function crMouWhen(iso) { return iso ? crDate(String(iso).slice(0, 10)) : ""; }
@@ -280,19 +320,69 @@ async function crMouOpen(ctx, mouId) {
     sections: [
       { h: "Signatures", text: "Family: " + who(P.family, P.family && P.family.relation) + "\nWitness: " + (r.needsWitness ? "Nobody at home — you witness when you countersign" : who(P.witness)) + "\nNGG: " + who(P.ngg, P.ngg && P.ngg.role) },
       r.family ? { h: "The family", text: [fam.fatherName && "Father: " + fam.fatherName, fam.motherName && "Mother: " + fam.motherName, fam.guardianName && "Guardian: " + fam.guardianName, fam.phone, fam.email, fam.address].filter(Boolean).join("\n") } : null,
+      { h: "The signed paper copy", text: r.paper ? "Received at " + (r.paper.centre || "the centre") + " " + crMouWhen(r.paper.at) + ", checked and photographed by " + r.paper.by + "." + (r.signedVia === "paper" ? " Signed on paper only." : "")
+          : r.status === "void" ? "—" : "Not yet. The family prints the agreement, signs it in ink with a witness, and brings it here. Check it, photograph the signed page, then countersign." },
       { h: "Sent", text: r.sentAt ? "Emailed " + crMouWhen(r.sentAt) + " to " + (r.sentTo || "—") + (r.viewedAt ? ". Opened " + crMouWhen(r.viewedAt) + "." : ". Not opened yet.") : "Not emailed — no address on the record. Copy the link and send it." },
       r.status === "awaiting_ngg" || r.status === "signed" ? { h: "The check", text: "Answered the five questions" + (r.quizAttempts > 1 ? " (" + r.quizAttempts + " tries)" : "") + ". Off-site activities: " + (r.tripsChoice === "granted" ? "yes" : "no") + "." } : null,
       r.voidReason ? { h: "Withdrawn", text: r.voidReason } : null,
     ].filter(Boolean),
     actions: [
-      r.status === "awaiting_ngg" ? { l: "Countersign", primary: true, run: () => { ctx.closeDrawer(); crMouCountersign(ctx, r); } } : null,
-      r.status !== "void" && r.status !== "awaiting_family" ? { l: "Open the copy (PDF)", run: () => window.open(NGGApi.admin.mou.docUrl(r.mouId), "_blank", "noopener") } : null,
-      r.status === "awaiting_family" ? { l: "Resend to the family", primary: true, run: async () => {
+      r.status !== "void" && !r.paper ? { l: "Receive the signed copy", primary: true, run: () => { ctx.closeDrawer(); crMouPaper(ctx, r); } } : null,
+      r.status === "awaiting_ngg" && r.paper ? { l: "Countersign", primary: true, run: () => { ctx.closeDrawer(); crMouCountersign(ctx, r); } } : null,
+      r.paper && r.paper.url ? { l: "See the photograph", run: () => window.open(r.paper.url, "_blank", "noopener") } : null,
+      r.status !== "void" ? { l: r.status === "awaiting_family" || !r.paper ? "Print it to sign in ink" : "Open the copy (PDF)", run: () => window.open(NGGApi.admin.mou.docUrl(r.mouId), "_blank", "noopener") } : null,
+      r.status === "awaiting_family" ? { l: "Resend to the family", run: async () => {
         try { const x = await NGGApi.admin.mou.act("resend", { mouId: r.mouId }); ctx.closeDrawer(); ctx.toast((x.sentTo || []).length ? "Sent to " + x.sentTo.join(", ") + ". The old link no longer works." : "No email on the record — copy the link instead.");
           crMouCopyLink(ctx, x.link); ctx.reload(); }
         catch (e) { ctx.toast(crErr(e), null, true); } } } : null,
       r.status !== "void" && r.status !== "signed" ? { l: "Withdraw", run: () => { ctx.closeDrawer(); crMouVoid(ctx, r); } } : null,
     ].filter(Boolean),
+  });
+}
+
+/** The width and height of a picture the browser can open (the server re-reads it where it can). */
+function crImageSize(file) {
+  return new Promise(res => { const u = URL.createObjectURL(file), im = new Image();
+    im.onload = () => { res({ width: im.naturalWidth, height: im.naturalHeight }); URL.revokeObjectURL(u); };
+    im.onerror = () => { res({ width: 0, height: 0 }); URL.revokeObjectURL(u); }; im.src = u; });
+}
+
+/** The inked copy is at the centre: check it, photograph the signed page. Paper-only families: copy what the paper says. */
+function crMouPaper(ctx, r) {
+  const paperOnly = r.status === "awaiting_family";
+  const checks = r.paperChecks || {};
+  ctx.form({
+    title: "Receive the signed copy · " + r.fullName, submit: "Receive it", busyLabel: "Checking…",
+    intro: (paperOnly ? "The family has not signed online: the paper is their signature. Copy what it says. " : "")
+      + "Check every point with the paper in your hand. If one is not right, give it back to the family to put right — do not receive it.",
+    // Every check starts OFF and must be turned on by the person holding the paper.
+    values: Object.assign(Object.fromEntries(Object.keys(checks).map(k => ["check_" + k, false])), paperOnly ? { trips: "" } : {}),
+    fields: [
+      ...Object.entries(checks).map(([k, l]) => ({ id: "check_" + k, l, type: "switch", check: (v, vals) => vals["check_" + k] === true ? "" : "Not yet — give the copy back to put this right." })),
+      { id: "photo", l: "Photograph of the signed page", type: "file", req: true, accept: "image/*", capture: "environment",
+        help: "Use the phone’s camera, the whole page filling the picture, every word readable. At least " + (r.paperMinLong || 1600) + " pixels on the long side." },
+      paperOnly ? { id: "signerName", l: "Parent or guardian who signed", req: true, max: 120, ph: "As written on the paper" } : null,
+      paperOnly ? { id: "signerRel", l: "They are the", type: "select", req: true, opts: [["Father", "Father"], ["Mother", "Mother"], ["Guardian", "Guardian"]] } : null,
+      paperOnly ? { id: "witnessName", l: "Witness’s name", req: true, max: 120 } : null,
+      paperOnly ? { id: "trips", l: "Off-site activities (clause 8)", type: "select", req: true, opts: [["granted", "Yes — consent given"], ["declined", "No"]] } : null,
+    ].filter(Boolean),
+    onSubmit: async v => {
+      const f = v.photo;
+      const size = f ? await crImageSize(f) : { width: 0, height: 0 };
+      /* The cloud when there is one; this site's own photo store when there is not — a centre must be able to
+         receive the copy whatever the storage is doing. Sized as a 'proof' (2000px): every word stays readable. */
+      const up = await NGGApi.uploadDocumentPhoto(f);
+      if (!up || !up.url || /^data:/.test(up.url)) throw new Error("The photograph couldn’t be stored. Check the connection and try again.");
+      // The type its name says (the server reads the real one from the file wherever it can).
+      const ext = ((up.url.split("?")[0].match(/\.(jpe?g|png|webp)$/i) || [])[1] || "jpg").toLowerCase();
+      const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+      const body = { mouId: r.mouId, url: up.url, mime, bytes: up.bytes || f.size || 0, width: size.width, height: size.height,
+        checks: Object.fromEntries(Object.keys(checks).map(k => [k, !!v["check_" + k]])) };
+      if (paperOnly) Object.assign(body, { signerName: v.signerName.trim(), signerRel: v.signerRel, witnessName: v.witnessName.trim(), trips: v.trips });
+      const x = await NGGApi.admin.mou.act("paper", body);
+      await ctx.reload(); return x;
+    },
+    done: (v, x) => x.canCountersign ? "Received. Countersign it next." : "Received.",
   });
 }
 
@@ -336,7 +426,8 @@ function crMouServer(ctx) {
       return { total: rows.length, rows: rows.slice(page * pageSize, page * pageSize + pageSize).map(x => ({ key: x.memberId + (x.mouId ? ":" + x.mouId : ""), memberId: x.memberId,
         open: x.mouId ? () => crMouOpen(crMouCtx.current || ctx, x.mouId) : null, cells: [
           { k: "person", t: x.fullName, s: [x.displayId || x.memberId, x.centre].filter(Boolean).join(" · "), photo: x.photoUrl || null },
-          { k: "status", t: (CR_MOU_STATE[x.status] || ["—"])[0] + (x.needsWitness ? " · needs a witness" : ""), tone: (CR_MOU_STATE[x.status] || [0, "neutral"])[1] },
+          { k: "status", t: (CR_MOU_STATE[x.status] || ["—"])[0] + (x.mouId && x.status !== "void" && !x.paper ? " · paper copy not in" : "") + (x.needsWitness ? " · needs a witness" : ""),
+            tone: x.mouId && x.status !== "void" && !x.paper && x.status !== "awaiting_family" ? "warn" : (CR_MOU_STATE[x.status] || [0, "neutral"])[1] },
           { k: "text", t: x.parties && x.parties.family ? x.parties.family.name : "—", s: x.parties && x.parties.family ? crMouWhen(x.parties.family.at) : "" },
           { k: "text", t: x.sentAt ? crMouWhen(x.sentAt) : x.mouId ? "Not emailed" : "—", s: x.viewedAt ? "Opened" : "" },
         ] })) };
@@ -361,16 +452,17 @@ Object.assign(CR_TAB_DEFS, {
       const c = d.counts;
       return [
         { type: "kpis", span: 6, items: [
+          { l: "Paper copy to receive", v: crNum(c.paper || 0), tone: c.paper ? "down" : "flat", s: "Signed online, ink copy not in" },
           { l: "To countersign", v: crNum(c.awaiting_ngg || 0), tone: c.awaiting_ngg ? "down" : "flat", s: "Signed by the family" },
           { l: "With the family", v: crNum(c.awaiting_family || 0), tone: "flat" },
           { l: "Signed", v: crNum(c.signed || 0), tone: "up" },
           { l: "Not started", v: crNum(c.none || 0), tone: c.none ? "down" : "flat" },
         ] },
         c.awaiting_ngg ? { type: "note", span: 6, icon: "signature", tone: "warn", text: crPlural(c.awaiting_ngg, "family has", "families have") + " signed and " + (c.awaiting_ngg === 1 ? "is" : "are") + " waiting on NGG’s countersignature.", sub: "Open one to countersign. If nobody witnessed it at home, you witness it as you sign." } : null,
-        { type: "table", span: 6, title: "Membership Agreements", sub: "The family signs on their phone from the emailed link. Open a row to resend, countersign or print.", server: d.server,
+        { type: "table", span: 6, title: "Membership Agreements", sub: "The family reads and signs online, then prints it, signs in ink and brings it here. Open a row to receive the paper copy, countersign, print or resend.", server: d.server,
           cols: [{ l: "Member" }, { l: "Where it stands", sort: false }, { l: "Family signed", sort: false }, { l: "Sent", sort: false }],
           search: "Name or ID",
-          filtersInit: { status: c.awaiting_ngg ? "awaiting_ngg" : c.none ? "none" : "all" },
+          filtersInit: { status: c.paper ? "paper" : c.awaiting_ngg ? "awaiting_ngg" : c.none ? "none" : "all" },
           filters: [{ id: "status", l: "Show", opts: CR_MOU_FILTERS.map(f => ({ v: f[0], l: f[1], n: f[0] === "all" ? undefined : c[f[0]] })) }],
           bulk: [{ l: "Send the agreement", max: d.max, run: keys => { crMouStart(ctx, keys.map(k => String(k).split(":")[0])); return false; } }],
           emptyText: "Nobody here. Change “Show” to see the others." },

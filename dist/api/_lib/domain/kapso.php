@@ -40,6 +40,9 @@ function kapso_cfg(): array
         'template' => trim((string)($c['template'] ?? '')) ?: 'ngg_message',
         'template_lang' => trim((string)($c['template_lang'] ?? '')) ?: 'en',
         'webhook_secret' => trim((string)($c['webhook_secret'] ?? '')),
+        // Optional: an approved template with ONE body parameter and three quick-reply buttons, so the buttons
+        // reach a family outside the 24-hour window too. Blank: the plain template, with "reply 1, 2 or 3".
+        'reply_template' => trim((string)($c['reply_template'] ?? '')),
     ];
 }
 function kapso_on(): bool { $c = kapso_cfg(); return $c['api_key'] !== '' && $c['phone_number_id'] !== ''; }
@@ -105,6 +108,55 @@ function kapso_send_text(string $e164, string $text): array
     return kapso_send_template($e164, $text);
 }
 
+/**
+ * A message the person can ANSWER with a tap: $buttons = [[id, title], …] (at most 3, titles ≤ 20 characters).
+ *   · inside the 24-hour window: an interactive message with reply buttons;
+ *   · outside it, with a reply template configured: that template, its quick replies carrying our ids;
+ *   · otherwise: the plain template, the choices written as "Reply 1 …, 2 …, 3 …" (typed replies are read too).
+ * `$kind` is recorded on the message, so an answer can be traced to what it answers. Never throws.
+ */
+function kapso_send_buttons(string $e164, string $text, array $buttons, string $kind = ''): array
+{
+    if (!kapso_on()) return ['ok' => false, 'error' => 'kapso_off'];
+    $buttons = array_slice(array_values($buttons), 0, 3);
+    $c = kapso_cfg();
+    $to = kapso_wa_number($e164);
+    if (kapso_window_open($e164)) {
+        $r = kapso_http('POST', '/messages', ['messaging_product' => 'whatsapp', 'recipient_type' => 'individual', 'to' => $to, 'type' => 'interactive',
+            'interactive' => ['type' => 'button', 'body' => ['text' => mb_substr($text, 0, 1024)],
+                'action' => ['buttons' => array_map(static fn($b) => ['type' => 'reply', 'reply' => ['id' => mb_substr((string)$b[0], 0, 256), 'title' => mb_substr((string)$b[1], 0, 20)]], $buttons)]]]);
+        $id = (string)($r['json']['messages'][0]['id'] ?? '');
+        if (!empty($r['ok']) && $id !== '') { kapso_log($id, 'out', $e164, $text, 'sent', $kind); return ['ok' => true, 'id' => $id, 'how' => 'buttons']; }
+    }
+    if ($c['reply_template'] !== '') {
+        $comp = [['type' => 'body', 'parameters' => [['type' => 'text', 'text' => kapso_param($text)]]]];
+        foreach ($buttons as $i => $b) $comp[] = ['type' => 'button', 'sub_type' => 'quick_reply', 'index' => (string)$i, 'parameters' => [['type' => 'payload', 'payload' => (string)$b[0]]]];
+        $r = kapso_http('POST', '/messages', ['messaging_product' => 'whatsapp', 'recipient_type' => 'individual', 'to' => $to, 'type' => 'template',
+            'template' => ['name' => $c['reply_template'], 'language' => ['code' => $c['template_lang']], 'components' => $comp]]);
+        $id = (string)($r['json']['messages'][0]['id'] ?? '');
+        if (!empty($r['ok']) && $id !== '') { kapso_log($id, 'out', $e164, $text, 'sent', $kind); return ['ok' => true, 'id' => $id, 'how' => 'reply_template']; }
+    }
+    $menu = implode(' · ', array_map(static fn($b, $i) => ($i + 1) . ' = ' . $b[1], $buttons, array_keys($buttons)));
+    $r = kapso_send_template($e164, $text . ' Reply ' . $menu . '.');
+    if (!empty($r['ok'])) { db_update('whatsapp_messages', ['kind' => $kind], ['wamid' => $r['id']]); $r['how'] = 'numbers'; }
+    return $r;
+}
+
+/** The answer a message carries: a reply button's id and title (interactive or template quick reply), else ['','']. */
+function kapso_button_of(array $msg): array
+{
+    $type = (string)($msg['type'] ?? '');
+    if ($type === 'interactive') {
+        $b = (array)($msg['interactive']['button_reply'] ?? []);
+        return [(string)($b['id'] ?? ''), (string)($b['title'] ?? '')];
+    }
+    if ($type === 'button') return [(string)($msg['button']['payload'] ?? ''), (string)($msg['button']['text'] ?? '')];
+    return ['', ''];
+}
+
+/** A number that answered STOP. */
+function kapso_opted_out(string $e164): bool { try { return (bool)db_row('SELECT 1 x FROM whatsapp_optout WHERE phone = ?', [$e164]); } catch (Throwable $e) { return false; } }
+
 /** When this person last wrote to us on WhatsApp (ISO), or ''. */
 function kapso_last_inbound(string $e164): string
 {
@@ -157,10 +209,17 @@ function kapso_receive(array $ev): array
     if ($wamid === '' || $e164 === '') return ['ok' => true, 'skipped' => 'no_sender'];
     if (db_row('SELECT wamid FROM whatsapp_messages WHERE wamid = ?', [$wamid])) return ['ok' => true, 'duplicate' => true];
     $type = (string)($msg['type'] ?? 'text');
-    $text = trim((string)($msg['text']['body'] ?? ($msg['kapso']['content'] ?? '')));
+    [, $btnTitle] = kapso_button_of($msg);
+    $text = trim((string)($msg['text']['body'] ?? ($btnTitle !== '' ? $btnTitle : ($msg[$type]['caption'] ?? ($msg['kapso']['content'] ?? '')))));
     if ($text === '') $text = '(' . ($type === 'text' ? 'an empty message' : 'a ' . $type . ' — open WhatsApp to see it') . ')';
     $text = mb_substr($text, 0, 4000);
     kapso_log($wamid, 'in', $e164, $text, 'received', $type);
+    /* An answer to a registration reminder acts by itself (domain/registration-checklist.php): a date, a
+       request for help, a photo of a document, STOP. Whatever it does not understand goes to the inbox. */
+    if (function_exists('rcl_wa_inbound')) {
+        try { $h = rcl_wa_inbound($e164, $msg, $text); if (!empty($h['handled'])) return ['ok' => true] + $h; }
+        catch (Throwable $e) { error_log('[kapso] registration reply: ' . $e->getMessage()); }
+    }
 
     $who = kapso_who($e164);
     $name = $who['name'] !== '' ? $who['name'] : (trim((string)($ev['conversation']['contact_name'] ?? '')) ?: $e164);

@@ -129,6 +129,7 @@ const SERVICE_KEYS = [
                      ['whatsapp.kapso.phone_number_id', 'Phone number ID', 'text', false, 'The WhatsApp number’s ID in Kapso (digits).'],
                      ['whatsapp.kapso.template', 'Template name', 'text', true, 'Blank: ngg_message. Must be approved by Meta.'],
                      ['whatsapp.kapso.template_lang', 'Template language', 'text', true, 'Blank: en. The language code the template was approved in.'],
+                     ['whatsapp.kapso.reply_template', 'Reply-button template', 'text', true, 'Optional. A Utility template with body “Next Generation Genius: {{1}}” and three quick-reply buttons (This Saturday · Next week · I need help), so families can answer registration reminders with a tap at any time. Blank: they reply 1, 2 or 3.'],
                      ['whatsapp.kapso.webhook_secret', 'Webhook secret', 'secret', true, 'The webhook’s secret key in Kapso. Without it, replies are refused.']]],
     'smsgate' => ['group' => 'sms', 'label' => 'SMS Gateway for Android (free)', 'link' => 'https://sms-gate.app',
         'what' => 'Free and open source: sends text messages from the programme\'s own Android phone and SIM, with no monthly fee and no message cap. Install the SMS Gateway app (Play Store or sms-gate.app), turn on Cloud Server, and copy the username and password it shows. Messages cost only what the SIM\'s carrier charges — put an SMS bundle on it. Used first for Nigerian numbers.', 'test' => '',

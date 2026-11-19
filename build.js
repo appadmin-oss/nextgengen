@@ -108,6 +108,7 @@ const ORDER = [
   'src/modules/timetable/tt-ui.jsx',
   'src/modules/timetable/tt-views.jsx',
   'src/modules/timetable/tt-layers.jsx',
+  'src/modules/timetable/tt-myweek.jsx',
   'src/modules/timetable/tt-app.jsx',
   'page-blog.jsx',
   'page-dashboard.jsx',

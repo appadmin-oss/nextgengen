@@ -243,10 +243,12 @@ header('Content-Type: text/html; charset=utf-8'); readfile(${JSON.stringify(path
     p = await go('/timetable', { seed: JSON.stringify({ s: { title: 'Mine' }, entries: [], ex: {} }) });
     chk('a timetable already in this browser opens the maker', new URL(p.url()).pathname === '/timetable' && (await p.inputValue('.tt-head-title')) === 'Mine');
     await p.context().close();
+    // Personal timetable first (owner, 19 Nov 2026): a member with nothing saved makes their week in "My week".
     p = await ctx({ mid: 'NGG-TL-1' });
     await p.goto(BASE + '/timetable');
-    await p.waitForURL(/\/timetable\/about$/, { timeout: 60000 });
-    chk('a signed-in member with nothing saved is shown the landing', true);
+    await waitForBoot(p);
+    chk('a signed-in member with nothing saved is given "My week", the guided personal timetable',
+      await p.waitForSelector('.tsw', { timeout: 60000 }).then(() => true, () => false) && new URL(p.url()).pathname === '/timetable');
     await p.context().close();
     p = await go('/timetable', { mid: 'NGG-TL-2' });
     await p.waitForFunction(() => document.querySelector('.tt-head-title') && document.querySelector('.tt-head-title').value === 'Ada’s week', null, { timeout: 15000 }).catch(() => {});

@@ -5425,7 +5425,39 @@ CREATE TABLE IF NOT EXISTS mou_agreements (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (239) ON DUPLICATE KEY UPDATE version = version;
 
--- 240: instalment plans (domain/fee-plans.php)
+-- ── 240 · NGG entry steps: checklist steps, resumption day, follow-ups, the signed paper MoU ──
+ALTER TABLE reg_checklist_items ADD COLUMN step VARCHAR(16) NOT NULL DEFAULT 'documents';
+ALTER TABLE reg_checklists ADD COLUMN resumedOn VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE reg_checklists ADD COLUMN lastProgressAt VARCHAR(40) NOT NULL DEFAULT '';
+ALTER TABLE reg_checklists ADD COLUMN nextFollowUpOn VARCHAR(10) NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS reg_checklist_followups (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, channel VARCHAR(16) NOT NULL DEFAULT 'call', outcome VARCHAR(24) NOT NULL DEFAULT '', note VARCHAR(500) NOT NULL DEFAULT '',
+  nextOn VARCHAR(10) NOT NULL DEFAULT '', byId VARCHAR(64) NOT NULL DEFAULT '', byName VARCHAR(160) NOT NULL DEFAULT '', createdAt VARCHAR(40) NOT NULL DEFAULT '',
+  KEY idx_rcl_fu (memberId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE INDEX idx_rcl_next ON reg_checklists(status, nextFollowUpOn);
+ALTER TABLE mou_agreements ADD COLUMN signedVia VARCHAR(12) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperUrl VARCHAR(600) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperChecks VARCHAR(400) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperReceivedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperReceivedBy VARCHAR(48) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperByName VARCHAR(160) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperCentre VARCHAR(120) NOT NULL DEFAULT '';
+INSERT IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+  VALUES ('RCI-ORIENTATION', 'Orientation attended', 'The child and a parent or guardian came to orientation at the centre, and it covered the policies, the membership fee, the monthly commitment fee and the NGG T-shirt. Note who came and any question they asked.', 'none', 1, 0, 10, 'active', 'orientation', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+INSERT IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+  VALUES ('RCI-FILE', 'File handed in', 'The member’s file (folder) has been handed in at the centre, with their name on it.', 'none', 1, 0, 20, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+INSERT IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+  VALUES ('RCI-REPORTCARD', 'Latest school report card', 'Photograph or scan the member’s most recent school report card: every page, readable. Give the date on it.', 'document', 0, 400, 30, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+INSERT INTO schema_version (version) VALUES (240) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 241 · WhatsApp replies: a number that answered STOP to registration reminders ──
+CREATE TABLE IF NOT EXISTS whatsapp_optout (
+  phone VARCHAR(32) NOT NULL PRIMARY KEY, at VARCHAR(32) NOT NULL DEFAULT '', via VARCHAR(24) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (241) ON DUPLICATE KEY UPDATE version = version;
+-- 242: instalment plans (domain/fee-plans.php)
 CREATE TABLE IF NOT EXISTS fee_plans (
   id INT AUTO_INCREMENT PRIMARY KEY,
   planId VARCHAR(24) NOT NULL, memberId VARCHAR(48) NOT NULL, guardianId VARCHAR(48) NOT NULL DEFAULT '',
@@ -5438,4 +5470,4 @@ CREATE TABLE IF NOT EXISTS fee_plans (
   cancelReason VARCHAR(400) NOT NULL DEFAULT '', completedAt VARCHAR(32) NOT NULL DEFAULT '',
   UNIQUE KEY uq_fee_plan (planId), KEY idx_fee_plans_member (memberId, status), KEY idx_fee_plans_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-INSERT INTO schema_version (version) VALUES (240) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (242) ON DUPLICATE KEY UPDATE version = version;

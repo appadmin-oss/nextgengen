@@ -7644,7 +7644,50 @@ Owner: "Remove everything that is irrelevant", then "Please create a test for th
 - Kept on purpose, because only a test still uses them: AdminAssessment, AdminTournaments,
   idsCardsInRange, idsStock. Removing them means deleting their tests too, so that is the owner's call.
 
-## 2026-11-19 — Instalment plans (schema 240, `domain/fee-plans.php`)
+## 2026-11-18 — NGG entry steps, the resumption day, follow-ups, the paper MoU
+
+Owner's paper card *NGG ENTRY STEPS* became the registration checklist's structure (docs/ENTRY-STEPS.md):
+
+- Items are grouped by step (`RCL_STEPS`: orientation, payment, documents, online, ID card). Migration 240 adds
+  `reg_checklist_items.step` and three default items: Orientation attended, File handed in, Latest school report card.
+- New automatic item **School timetable on the site** (member_timetables, lessons on ≥3 weekdays).
+- **Resumption = completion.** `reg_checklists.resumedOn` is written the day the last item is done, once; the family,
+  member and supervisor are told. Not the day the member was accepted.
+- **Follow-ups.** Family reminders on day 1/3/7 then weekly, phrased as what to bring and where; a follow-up log
+  (`reg_checklist_followups`) with a required next date; supervisor told when one falls due; centre staff told when a
+  registration stalls 14 days. List filter *Needs a follow-up*.
+- **The MoU is printed, signed in ink and brought to the centre.** `admin.mou.paper` records the checked copy and a
+  readable photograph of the signed page (≥1600 × 1000, read from the file); countersign is refused until then
+  (`paper_first`); the checklist item needs both. A paper-only family is supported (`signedVia = 'paper'`).
+  `NGGApi.uploadDocumentPhoto` keeps the photo at 2000px even without a cloud (the headshot fallback is 1000px).
+
+## 2026-11-19 — Personal timetable first ("My week"); the agreement as a standard document
+
+- Owner: "The timetable is also pretty complicated for kids … Personal timetable first!" New guided flow
+  `src/modules/timetable/tt-myweek.jsx` (STUDY bundle): school as one block, the child's own things by tapping,
+  their NGG sessions pre-ticked, a day-by-day check with overlaps in words. It writes the maker's own document
+  (member_timetables) and replaces only what it made (ids `mw…`) and the NGG sessions. `TimetableMakerPage` routes:
+  ?easy=1 → My week; ?full=1, links and a browser copy → the maker; a signed-in member with nothing saved → My week.
+  The first-visit check is read on the first render (the router rewrites /timetable/me before the maker mounts).
+  Tests: tests/timetable-myweek.test.js (`npm run test:myweek`, in test:all).
+- The registration item became **Personal timetable on the site**: school on ≥3 weekdays AND one thing of the
+  child's own (study/activity, not an NGG session) — `rcl_timetable_own`.
+- The Membership Agreement prints as a standard agreement (assets/report/mou.css; `mou_execution_html`).
+- Known, not caused here: six PHP checks (rulebook ×4, labs quick check, maths lab mini review) fail when the suite
+  runs after midnight Lagos time (UTC 23:00–24:00); they fail on the committed code too.
+
+## 2026-11-19 — WhatsApp replies that act (registration)
+
+Owner: "Make + Kapso for WhatsApp onboarding … people could also respond … instead of relying on humans". Built on
+the existing Kapso integration (domain/kapso.php), not through Make: the site already decides who to remind and when.
+- `kapso_send_buttons`: interactive reply buttons in the 24-hour window; outside it the optional `reply_template`
+  (quick replies carrying `rcl:<memberId>:sat|next|help`), else the plain template with "Reply 1, 2 or 3".
+- `rcl_wa_remind` sends each family reminder stage on WhatsApp too (claimed once per stage per number).
+- `rcl_wa_inbound` (called by `kapso_receive` before the inbox): dates → follow-up + next date; help → staff + helper;
+  photo → kept via `photo_store_put` and recorded as a `family_sent` submission; STOP/START → `whatsapp_optout`
+  (migration 241). A button for a child is honoured only from a number that child's reminder went to.
+- Tests: PHP "whatsapp ·" (13), each core rule proven to fail when removed.
+## 2026-11-19 — Instalment plans (schema 242, `domain/fee-plans.php`)
 
 Owner's brief: a parent sets up a plan in the family app (Fees → Set up a
 payment plan: 2–6 instalments, weekly / every two weeks / monthly, exact dates

@@ -815,6 +815,28 @@
        hands back the image inline when there is not. Never fails because
        Cloudinary is unconfigured. */
     uploadOrInline: uploadOrInline,
+    /* A photo of a signed document that must stay READABLE (the inked Membership
+       Agreement): the cloud at the 'proof' size (2000px) when there is one; else
+       the same 2000px copy into this site's photo store — never the 1000px inline
+       size the headshot fallback uses, at which a signature page cannot be read. */
+    uploadDocumentPhoto: async (file, onProgress) => {
+      const cfg = await getConfig();
+      if (cfg && cfg.uploads && cfg.uploads.enabled) {
+        try { return Object.assign({ local: false }, await uploadFile(file, 'proof', onProgress)); } catch (_) { /* the photo store below */ }
+      }
+      let url = file;
+      try { const tools = await ensureImageTools(); const prep = await tools.prepare(file, SHRINK.proof); url = !prep.skipped && prep.blob ? prep.blob : file; } catch (_) {}
+      let data = typeSendable(url && url.type) ? await blobToDataUrl(url) : '';
+      for (const step of [{ maxPx: 2000, quality: 0.8 }, { maxPx: 1800, quality: 0.72 }]) {
+        if (data && data.length <= 4600000 && /^data:image\/(jpeg|png|webp);/.test(data)) break;
+        const shrunk = await canvasShrink(file, step.maxPx, step.quality, 320);
+        if (!shrunk) break;
+        data = await blobToDataUrl(shrunk);
+      }
+      const stored = await storeInPieces(data, onProgress);
+      if (!stored) throw new Error('The photograph couldn’t be stored. Check the connection and try again.');
+      return { url: stored, local: true };
+    },
     /* A photo of a document (a school report) as a data URL, at the size the
        'proof' preset uses: every score on it has to stay readable, which the
        1000px inline size does not promise. Never above 3.5MB of base64, the
@@ -1134,6 +1156,7 @@
         mine:     () => request('/member/registration-checklist.php' + qs({ view: 'mine' })),
         progress: () => request('/member/registration-checklist.php' + qs({ view: 'progress' })),
         submit:   (body) => request('/member/registration-checklist.php', { body: Object.assign({}, body || {}, { action: 'submit' }) }),
+        followup: (body) => request('/member/registration-checklist.php', { body: Object.assign({}, body || {}, { action: 'followup' }) }),
       },
       volunteerBank: (d) => request('/member/volunteer-pay.php', { body: { action: 'bank', bankName: d.bankName, accountNumber: d.accountNumber, accountName: d.accountName } }),
       /* Self-service. No memberId travels in any of these — the server reads it
@@ -1426,6 +1449,8 @@
       // The Membership Agreement by its private link (domain/mou.php).
       mou:               (token) => request('/public/mou.php' + qs({ token })),
       mouSign:           (body) => request('/public/mou.php', { body }),
+      // The agreement to print and sign in ink (the family's own link).
+      mouPrintUrl:       (token) => '/api/public/mou.php' + qs({ print: token }),
       membershipInvoice: (token) => request('/public/membership-pay.php' + qs({ token })),
       photoFraming:      (urls) => request('/public/photo-framing.php' + qs({ u: JSON.stringify(urls) })),
       membershipPay:     (token) => request('/public/membership-pay.php', { body: { action: 'init', token } }),

@@ -342,6 +342,7 @@ function member_merge_policy(): array {
         'reg_checklist_state'    => 'MOVE_UNIQUE',
         'reg_checklist_submissions' => 'MOVE',
         'reg_checklist_sends'    => 'MOVE',
+        'reg_checklist_followups' => 'MOVE',         // the follow-up log is the survivor's history too
         'guardian_notices'       => 'MOVE',           // a report about the child stays about the child
         'mentor_slots'           => 'MOVE',           // a booked family meeting follows the child
         'member_collectors'      => 'MOVE',           // who may collect them is a fact about the child

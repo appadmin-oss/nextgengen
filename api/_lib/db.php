@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 240;
+const NGG_SCHEMA_TARGET = 242;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6668,10 +6668,49 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_mou_token ON mou_agreements(tokenHash);
             CREATE INDEX IF NOT EXISTS idx_mou_doc ON mou_agreements(docTokenHash);
         ",
+        /* 240 — NGG ENTRY STEPS (owner, 18 Nov 2026: the paper card "Enquiry · Orientation · Payment ·
+           Submit documents · Online registration · ID card · Attend lectures"). The registration checklist
+           groups its items by those steps (`step` on an admin item; the automatic ones carry theirs in code),
+           and three of the card's items become default admin items, kept retirable like any other.
+           The day the checklist is complete is the day the member RESUMES (`resumedOn`, written once) — not
+           the day they were accepted. Follow-ups are logged (reg_checklist_followups) with the next date, so a
+           stalled registration is somebody's call to make, on a day. The Membership Agreement is printed,
+           signed in ink and brought to the centre: staff check it and photograph the signed page (paper*). */
+        240 => "
+            ALTER TABLE reg_checklist_items ADD COLUMN step TEXT NOT NULL DEFAULT 'documents';
+            ALTER TABLE reg_checklists ADD COLUMN resumedOn TEXT NOT NULL DEFAULT '';
+            ALTER TABLE reg_checklists ADD COLUMN lastProgressAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE reg_checklists ADD COLUMN nextFollowUpOn TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS reg_checklist_followups (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL, channel TEXT NOT NULL DEFAULT 'call', outcome TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+              nextOn TEXT NOT NULL DEFAULT '', byId TEXT NOT NULL DEFAULT '', byName TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_rcl_fu ON reg_checklist_followups(memberId, id);
+            CREATE INDEX IF NOT EXISTS idx_rcl_next ON reg_checklists(status, nextFollowUpOn);
+            ALTER TABLE mou_agreements ADD COLUMN signedVia TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperUrl TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperChecks TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperReceivedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperReceivedBy TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperByName TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperCentre TEXT NOT NULL DEFAULT '';
+            INSERT OR IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+              VALUES ('RCI-ORIENTATION', 'Orientation attended', 'The child and a parent or guardian came to orientation at the centre, and it covered the policies, the membership fee, the monthly commitment fee and the NGG T-shirt. Note who came and any question they asked.', 'none', 1, 0, 10, 'active', 'orientation', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+            INSERT OR IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+              VALUES ('RCI-FILE', 'File handed in', 'The member’s file (folder) has been handed in at the centre, with their name on it.', 'none', 1, 0, 20, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+            INSERT OR IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+              VALUES ('RCI-REPORTCARD', 'Latest school report card', 'Photograph or scan the member’s most recent school report card: every page, readable. Give the date on it.', 'document', 0, 400, 30, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+        ",
+        /* 241 — WhatsApp replies (owner, 19 Nov 2026: "people could also respond"). A family that answers STOP
+           gets no more registration reminders on WhatsApp until it answers START: one row per number. */
+        241 => "
+            CREATE TABLE IF NOT EXISTS whatsapp_optout (phone TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT '', via TEXT NOT NULL DEFAULT '');
+        ",
         /* Instalment plans (domain/fee-plans.php). One row per plan; the
            schedule is fixed JSON, and what has been paid is READ from the
            ledger, never stored here. */
-        240 => "
+        242 => "
             CREATE TABLE IF NOT EXISTS fee_plans (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               planId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL, guardianId TEXT NOT NULL DEFAULT '',

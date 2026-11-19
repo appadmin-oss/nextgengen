@@ -127,8 +127,11 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await fam.click('[role=radio]:has-text("NGG will witness")');
     await fam.screenshot({ path: path.join(SHOTS, 'sign.png'), fullPage: true });
     await fam.click('button:has-text("Sign the agreement")');
-    chk('signed: the family is told, and that their copy is on its way', await fam.waitForSelector('text=Thank you — it’s signed', { timeout: 20000 }).then(() => true, () => false)
+    chk('signed: the family is told, and that their copy is on its way', await fam.waitForSelector('text=Thank you — now print it and sign in ink', { timeout: 20000 }).then(() => true, () => false)
       && /family\.mou@example\.org/.test(await fam.innerText('.mou-done')));
+    // The owner's rule: the agreement is printed, signed in ink and brought to the centre.
+    chk('…and told the next step: print it, sign in ink with a witness, bring it to the centre — with a button to print it',
+        /bring it to Egbeda/i.test(await fam.innerText('.mou-done')) && await fam.$('.mou-done a.mou-btn[href*="print="]').then(Boolean));
     await fam.screenshot({ path: path.join(SHOTS, 'done.png') });
     const row = JSON.parse(php(`echo json_encode(db_row("SELECT status, clientName, clientRel, tripsChoice, witnessSignedAt FROM mou_agreements WHERE memberId = 'NGG-MOU-1'"));`));
     chk('the record: waiting on NGG, signed by the mother, trips declined, no witness yet', row.status === 'awaiting_ngg' && row.clientName === 'Kemi Adeyemi' && row.clientRel === 'Mother' && row.tripsChoice === 'declined' && row.witnessSignedAt === '');
@@ -143,8 +146,31 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     const ad = await sctx.newPage(); const aerr = []; ad.on('pageerror', e => aerr.push(String(e).slice(0, 200)));
     await ad.goto(BASE + '/control/members/agreements', { waitUntil: 'domcontentloaded' });
     await waitForBoot(ad);
-    chk('Members → Agreements lists it to countersign, needing a witness', await ad.waitForFunction(() => /Tobi Adeyemi/.test(document.body.innerText) && /needs a witness/i.test(document.body.innerText), null, { timeout: 60000 }).then(() => true, () => false));
+    chk('Members → Agreements lists it with the paper copy still to come, needing a witness', await ad.waitForFunction(() => /Tobi Adeyemi/.test(document.body.innerText) && /paper copy not in/i.test(document.body.innerText) && /needs a witness/i.test(document.body.innerText), null, { timeout: 60000 }).then(() => true, () => false));
     await ad.screenshot({ path: path.join(SHOTS, 'control-list.png') });
+    await ad.click('text=Tobi Adeyemi');
+    chk('countersigning waits for the paper: the drawer offers to receive the signed copy, not to countersign',
+        await ad.waitForSelector('[role=dialog] button:has-text("Receive the signed copy")', { timeout: 15000 }).then(() => true, () => false)
+        && !(await ad.$('[role=dialog] button:has-text("Countersign")')));
+    // The inked copy arrives: every check, and a photograph of the signed page from the camera.
+    const pagePhoto = path.join(TMP, 'signed-page.jpg');
+    php('$im = imagecreatetruecolor(2000, 1500); imagefill($im, 0, 0, imagecolorallocate($im, 248, 248, 246)); imagestring($im, 5, 200, 700, "Signed: Kemi Adeyemi", imagecolorallocate($im, 10, 10, 10)); imagejpeg($im, ' + JSON.stringify(pagePhoto) + ', 80);');
+    await ad.click('[role=dialog] button:has-text("Receive the signed copy")');
+    await ad.waitForSelector('form[role=dialog] [role=switch]');
+    await ad.click('form[role=dialog] button[type=submit]');
+    chk('a check left off stops it, saying what to put right', await ad.waitForSelector('text=Not yet — give the copy back', { timeout: 10000 }).then(() => true, () => false));
+    for (const sw of await ad.$$('form[role=dialog] [role=switch]')) await sw.click();
+    await ad.setInputFiles('form[role=dialog] input[type=file]', pagePhoto);
+    await ad.screenshot({ path: path.join(SHOTS, 'control-paper.png') });
+    await ad.click('form[role=dialog] button[type=submit]');
+    const got = await ad.waitForFunction(() => /Countersign it next/.test(document.body.innerText), null, { timeout: 30000 }).then(() => true, () => false);
+    if (!got) console.error('  receive said: ' + (await ad.innerText('body')).split('\n').filter(l => /photo|could|not|refus|error/i.test(l)).slice(0, 6).join(' | '));
+    const pr = JSON.parse(php(`echo json_encode(db_row("SELECT paperReceivedAt, paperByName, paperUrl FROM mou_agreements WHERE memberId = 'NGG-MOU-1'"));`));
+    chk('received: the photograph is stored and the receipt recorded with who took it', got && pr.paperReceivedAt !== '' && pr.paperByName === 'Agnes Coordinator' && pr.paperUrl !== '');
+    // Received, it leaves "Paper copy to receive" and waits under "To countersign".
+    await ad.goto(BASE + '/control/members/agreements', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(ad);
+    await ad.waitForFunction(() => /Tobi Adeyemi/.test(document.body.innerText), null, { timeout: 60000 });
     await ad.click('text=Tobi Adeyemi');
     await ad.click('[role=dialog] button:has-text("Countersign")');
     await ad.waitForSelector('text=Your role');
@@ -160,7 +186,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     const doc = ((final && final.html) || '').match(/\/api\/public\/mou\.php\?doc=[A-Za-z0-9_-]+/);
     const page = await (await browser.newContext()).newPage();
     const resp = await page.goto(BASE + (doc ? doc[0] : '/nope'));
-    chk('the printable copy opens from the email: every clause and three signatures', resp && resp.status() === 200 && (await page.$$('.rp-sign-img')).length === 3 && /Ending the Agreement early/.test(await page.innerText('body')));
+    chk('the printable copy opens from the email: every clause and three signatures', resp && resp.status() === 200 && (await page.$$('.md-sig-img')).length === 3 && /Ending the Agreement early/.test(await page.innerText('body')));
     await page.screenshot({ path: path.join(SHOTS, 'document.png'), fullPage: true });
     chk('no page errors in the Control Room', aerr.length === 0);
     if (aerr.length) console.error(aerr.join('\n'));

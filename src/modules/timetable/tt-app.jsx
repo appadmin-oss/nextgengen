@@ -148,7 +148,7 @@ function ttFirstVisit() {
   if (!/^\/timetable\/?$/.test(window.location.pathname)) return false;
   if (/#t=/.test(TT_BOOT_URL.hash)) return false;
   const q = new URLSearchParams(TT_BOOT_URL.search);
-  if (["k", "mode", "import", "signin", "centre"].some(k => q.has(k))) return false;
+  if (["k", "mode", "import", "signin", "centre", "easy", "full"].some(k => q.has(k))) return false;
   try { if (localStorage.getItem(TT_STORE) || localStorage.getItem(TT_STORE_V1)) return false; } catch (_) { return false; }
   try {
     const r = document.referrer ? new URL(document.referrer) : null;
@@ -165,8 +165,36 @@ function ttFirstVisit() {
  * The landing is never a gate: if the check cannot be made, the maker opens.
  */
 function TimetableMakerPage({ setPage }) {
+  /* Personal timetable first (owner, 19 Nov 2026): a child makes their week in the guided "My week"
+     (tt-myweek.jsx). ?easy=1 opens it; ?full=1 is the full maker; a signed-in member with no
+     timetable yet gets "My week" at /timetable, and the maker is one link away. */
+  const q = new URLSearchParams(window.location.search);
+  // Read on the first render: the router may rewrite the address (/timetable/me → /timetable) before the maker mounts.
+  const [firstVisit] = React.useState(ttFirstVisit);
+  const [pick] = React.useState(() => q.get("easy") === "1" ? "easy" : q.get("full") === "1" || q.has("k") || q.has("mode") || q.has("import") || q.has("centre") || /#t=/.test(window.location.hash) || ttReadLocal() ? "full" : "auto");   // a week already kept in this browser opens in the maker
   const auth = useAuth() || {};
-  const [open, setOpen] = React.useState(() => !ttFirstVisit());
+  const [first, setFirst] = React.useState(pick === "auto" ? null : pick);
+  // Never wait long on who is signed in: after 3s the maker opens, as it always did.
+  React.useEffect(() => {
+    if (first !== null) return undefined;
+    const t = setTimeout(() => setFirst(f => f === null ? "full" : f), 3000);
+    return () => clearTimeout(t);
+  }, [first]);
+  React.useEffect(() => {
+    if (first !== null || auth.loading) return undefined;
+    if (!auth.member) { setFirst("full"); return undefined; }
+    let live = true;
+    NGGApi.member.myTimetable().then(r => { if (live) setFirst(r && r.timetable ? "full" : "easy"); }, () => { if (live) setFirst("full"); });
+    return () => { live = false; };
+  }, [first, auth.loading, auth.member]);
+  if (first === null) return <div className="tt-app" aria-busy="true"/>;
+  if (first === "easy") return <TtMyWeek/>;
+  return <TtMakerGate setPage={setPage} firstVisit={firstVisit}/>;
+}
+
+function TtMakerGate({ setPage, firstVisit }) {
+  const auth = useAuth() || {};
+  const [open, setOpen] = React.useState(() => !firstVisit);
   React.useEffect(() => {
     if (open || auth.loading) return undefined;
     const toLanding = () => window.location.replace("/timetable/about");

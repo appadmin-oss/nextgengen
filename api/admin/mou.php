@@ -2,7 +2,7 @@
 /**
  * Admin: Membership Agreements (domain/mou.php). Capability: people (scoped to the requester's centres).
  *   GET  ?view=list&status=&q=   · ?view=get&mouId=   · ?view=doc&mouId= (printable page)
- *   POST {action: start|resend|countersign|void, …}
+ *   POST {action: start|resend|paper|countersign|void, …}
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_admin();
@@ -12,6 +12,7 @@ const MOU_ACTIONS = [
     'resend'      => ['admin.mou.resend', ['mouId']],
     'countersign' => ['admin.mou.countersign', ['mouId', 'role', 'signature']],
     'void'        => ['admin.mou.void', ['mouId', 'reason']],
+    'paper'       => ['admin.mou.paper', ['mouId', 'url', 'mime', 'bytes', 'width', 'height', 'checks', 'signerName', 'signerRel', 'trips', 'witnessName']],
 ];
 if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'list');

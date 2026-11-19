@@ -4,6 +4,7 @@
  *   GET  ?view=mine      the members I supervise (a staff, mentor or volunteer sign-in)
  *   GET  ?view=progress  my own registration (a member)
  *   POST {action: 'submit', memberId, itemKey, url?, mime?, bytes?, capturedOn?, note?}
+ *   POST {action: 'followup', memberId, channel, outcome, note?, nextOn}
  * Every check — assigned to me, the evidence, the day, the centre — is the domain's.
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
@@ -14,10 +15,13 @@ if ($method === 'GET') {
     $res = gs_call($view === 'progress' ? 'member.regcheck.progress' : 'member.regcheck.mine', ['requesterId' => $s['mid']]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
-    if ((string)($b['action'] ?? '') !== 'submit') json_error('unknown_action', 400);
+    $act = (string)($b['action'] ?? '');
+    if (!in_array($act, ['submit', 'followup'], true)) json_error('unknown_action', 400);
     rate_limit_check_actor('regcheck.submit', (string)$s['mid']);
-    $res = gs_call('member.regcheck.submit', ['requesterId' => $s['mid'], 'ip' => client_ip()]
-        + array_intersect_key($b, array_flip(['memberId', 'itemKey', 'url', 'mime', 'bytes', 'capturedOn', 'note'])));
+    $res = $act === 'followup'
+        ? gs_call('member.regcheck.followup', ['requesterId' => $s['mid'], 'ip' => client_ip()] + array_intersect_key($b, array_flip(['memberId', 'channel', 'outcome', 'note', 'nextOn'])))
+        : gs_call('member.regcheck.submit', ['requesterId' => $s['mid'], 'ip' => client_ip()]
+            + array_intersect_key($b, array_flip(['memberId', 'itemKey', 'url', 'mime', 'bytes', 'capturedOn', 'note'])));
 } else {
     json_error('method_not_allowed', 405);
 }

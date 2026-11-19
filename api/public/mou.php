@@ -3,6 +3,7 @@
  * Public: the Membership Agreement by its private link (domain/mou.php).
  *   GET  ?token=…   the agreement to read, its questions, the details to confirm
  *   GET  ?doc=…     the signed copy, as a printable page ("Print or save as PDF")
+ *   GET  ?print=…   the agreement to print and sign in ink, by the family's link
  *   POST {token, answers, family, member, trips, clientName, clientRel, clientSignature, agree, witness?}
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
@@ -11,6 +12,16 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'GET' && isset($_GET['doc'])) {
     $res = gs_call('public.mou.doc', ['doc' => (string)$_GET['doc']]);
     if (empty($res['ok'])) { http_response_code(404); header('Content-Type: text/plain; charset=utf-8'); echo 'This copy is not available. Ask NGG for a new link: next@afrovanguard.org.ng'; exit; }
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: private, no-store');
+    header('X-Robots-Tag: noindex');
+    echo $res['html'];
+    exit;
+}
+if ($method === 'GET' && isset($_GET['print'])) {
+    // The agreement to print and sign in ink, by the family's own link.
+    $res = gs_call('public.mou.print', ['token' => (string)$_GET['print']]);
+    if (empty($res['ok'])) { http_response_code(404); header('Content-Type: text/plain; charset=utf-8'); echo 'This link is not valid any more. Ask NGG for a new one: next@afrovanguard.org.ng'; exit; }
     header('Content-Type: text/html; charset=utf-8');
     header('Cache-Control: private, no-store');
     header('X-Robots-Tag: noindex');

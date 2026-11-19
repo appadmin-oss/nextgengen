@@ -1,6 +1,6 @@
 {
-  "buildId": "8a7b4709b8",
-  "builtAt": "2026-11-19T17:41:25.049Z",
+  "buildId": "6ee38ad5ad",
+  "builtAt": "2026-11-19T17:53:27.534Z",
   "bundle": {
     "file": "app.07965b56d5.min.js",
     "bytes": 1673492,
@@ -8,9 +8,9 @@
     "files": 31
   },
   "more": {
-    "file": "app-more.447f5bc1b1.min.js",
-    "bytes": 3866488,
-    "gzipBytes": 1104977,
+    "file": "app-more.244934bdd5.min.js",
+    "bytes": 3880072,
+    "gzipBytes": 1108535,
     "files": 64,
     "list": [
       "src/modules/idcards/ids-core.jsx",
@@ -80,10 +80,10 @@
     ]
   },
   "study": {
-    "file": "app-study.9c0477397a.min.js",
-    "bytes": 703932,
-    "gzipBytes": 199581,
-    "files": 18,
+    "file": "app-study.d0f910e056.min.js",
+    "bytes": 718276,
+    "gzipBytes": 203584,
+    "files": 19,
     "list": [
       "chess-engine.jsx",
       "lesson-blocks.jsx",
@@ -100,6 +100,7 @@
       "src/modules/timetable/tt-ui.jsx",
       "src/modules/timetable/tt-views.jsx",
       "src/modules/timetable/tt-layers.jsx",
+      "src/modules/timetable/tt-myweek.jsx",
       "src/modules/timetable/tt-app.jsx",
       "src/modules/learn/lrn-exam.jsx",
       "page-learn.jsx"
@@ -107,16 +108,16 @@
   },
   "assets": {
     "app.min.js": "app.07965b56d5.min.js",
-    "app-more.min.js": "app-more.447f5bc1b1.min.js",
-    "app-study.min.js": "app-study.9c0477397a.min.js",
-    "styles.css": "styles.f305e4795f.css",
-    "styles-app.css": "styles-app.50c30262e1.css",
+    "app-more.min.js": "app-more.244934bdd5.min.js",
+    "app-study.min.js": "app-study.d0f910e056.min.js",
+    "styles.css": "styles.f4fb558cb8.css",
+    "styles-app.css": "styles-app.2c0f6e227a.css",
     "data.js": "data.ec97c65376.js",
     "photos.js": "photos.36b0b4ea72.js",
-    "api-client.js": "api-client.ba39e0691a.js",
+    "api-client.js": "api-client.609cc3e227.js",
     "outbox.js": "outbox.042a8c9122.js",
-    "styles-app-public.css": "styles-app-public.2499395664.css",
-    "phosphor.css": "phosphor-used.37d82d13fc.css"
+    "styles-app-public.css": "styles-app-public.74238a9606.css",
+    "phosphor.css": "phosphor-used.b694d33560.css"
   },
   "node": "v22.23.5"
 }

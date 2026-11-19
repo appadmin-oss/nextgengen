@@ -18,7 +18,7 @@
      deploy shows up without anybody hunting for a hard refresh.
    ================================================================ */
 
-const CACHE_VERSION = 'ngg-8a7b4709b8';
+const CACHE_VERSION = 'ngg-6ee38ad5ad';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 
@@ -36,13 +36,13 @@ const FINGERPRINTED = /\.[0-9a-f]{10}\.(?:min\.)?(?:js|css)$/;
 const PRECACHE = [
   '/',
   '/index.html',
-  '/styles.f305e4795f.css',
+  '/styles.f4fb558cb8.css',
   /* The slim sheet public pages use (build.js). The full one comes with the signed-in bundle, when needed:
      precaching 1.1 MB of Control Room styles in the background of a first visit was data nobody asked for. */
-  '/styles-app-public.2499395664.css',
+  '/styles-app-public.74238a9606.css',
   '/data.ec97c65376.js',
   '/photos.36b0b4ea72.js',
-  '/api-client.ba39e0691a.js',
+  '/api-client.609cc3e227.js',
   '/outbox.042a8c9122.js',
   '/app.07965b56d5.min.js',
   '/vendor/react.production.min.js',

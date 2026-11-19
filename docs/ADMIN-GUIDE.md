@@ -499,6 +499,26 @@ registration checklist; a member accepted from an application gets theirs at
 once. A named **supervisor** at the member's centre helps them through it, and
 the member and their guardians see how far along they are.
 
+**It follows the NGG entry steps** — the card NGG hands a family: *Enquiry ·
+Orientation · Payment · Submit documents · Online registration · ID card · Attend
+lectures.* Every item sits in one step, and the checklist reads in that order.
+Enquiry is behind the family before the checklist exists (the application at
+/join). **Attend lectures is not an item anyone ticks: the day the last item is
+done is the day the member resumes.** That date is recorded once (*Resumed* on
+the member's checklist, and on the list) and never moves, even if an item is
+reopened later; the family, the member and the supervisor are told that day.
+
+| Step | Items on every checklist by default |
+|---|---|
+| Orientation | **Orientation attended** — at the centre, covering the policies, the membership fee, the monthly commitment fee and the NGG T-shirt (a note of who came). |
+| Payment | **Joining fees paid** — the joining invoice (membership fee and first month's commitment fee), while fees are switched on. |
+| Submit documents | **File handed in**; **Passport photograph** (on the record); **Membership Agreement (MoU) handed in** (see below); **Latest school report card** (a photo or scan, dated within 400 days); **Personal timetable on the site** — the member's school week entered at /timetable, signed in as them, with lessons on at least three school days. |
+| Online registration | Guardian linked, consents, date of birth, school, emergency contact, courses placed. |
+| ID card | **ID card printed** (a proof does not count). |
+
+Orientation, the file and the report card are ordinary items staff added: you
+may change, reorder or retire them like any other. A new item asks for its step.
+
 The checklist has two kinds of item:
 
 - **From the record.** Guardian linked, consents recorded (taking part,
@@ -523,6 +543,7 @@ The checklist has two kinds of item:
 | Add, change, reorder or retire an item | **Add an item** at the top; open an item under **Items staff added** to **Change**, **Move up**, **Move down** or **Retire** it. A retired item leaves every checklist but keeps its history; **Bring it back** restores it. |
 | Start checklists for members who joined before this existed | **Start N checklists** at the top (at most 500 a press; it says how many are left). Nobody is told until a supervisor is assigned. |
 | Help a member yourself | Assign yourself, then use **Show: Mine to help**. Open the member and press **Submit** (or **Check again** for an item from the record). |
+| Chase the ones that are stuck | **Show: Needs a follow-up** — a follow-up is due today, or nothing has moved in 14 days. Open each, call or message the family, then **Log a follow-up**: how, what happened, a note, and the day to try next (required while they are still registering, at most 60 days ahead). Every follow-up is listed on the member, newest first. |
 
 **Who may supervise.** Staff holding `people` whose centres include the
 member's; an NGG mentor at that centre whose screening is recorded; an NGG
@@ -541,10 +562,19 @@ than the item allows, comes from the member's assigned supervisor, and — when
 the item says so — the supervisor checked in at the member's centre that day.
 A refused attempt says why in words, and is kept.
 
-**Who is told.** The supervisor, in the app, when they are assigned and once a
-week while any of their members has items open. The guardians, by email and
-in the family account, once a week, with only the things the family can do
-(consents, the photo, date of birth, school, an emergency contact, the fee).
+**Who is told — the follow-ups.** Nothing waits on somebody remembering.
+- **The family**, by email and in the family account, on day 1, day 3 and
+  day 7 after the checklist starts, then weekly — only while something is
+  needed from them, and in words of what to **bring** and **where** ("the
+  printed Membership Agreement, signed by a parent and a witness … bring
+  things to Egbeda on a meeting day"). It stops the day registration is done.
+- **The supervisor**, in the app, when assigned, once a week while any of
+  their members is open, and on the day a follow-up they logged falls due.
+- **Staff with `people` for that centre**, once a day, when a registration
+  has made no progress in 14 days, or a follow-up is due and nobody is
+  helping. A follow-up logged as *They may not continue* goes to the inbox
+  as a member request, for a person to decide.
+- Every checklist starts with its first follow-up due three days on.
 The member sees "Your registration: 6 of 9 done" on **Me**, with what is left
 and the supervisor's first name; a guardian sees the same on **Today**. Neither
 sees any evidence, or anyone else's.
@@ -5385,6 +5415,14 @@ a storage outage.
 
 **Members → Agreements.** The Membership Agreement is the MoU, signed online.
 
+- **It is a scholarship.** Clause 3 states that the member's place is an **NGG scholarship** — ₦1,500,000 over the
+  three years by default — funded by NGG, and that what the family pays is a contribution, not the price of the place.
+  The printed copy opens with the award (the child's name, the value, the family's contribution); the family's page
+  and every email carry it too. Change the figure under **Money → Amounts → Scholarship value of an NGG place**. It is
+  stated, never charged, and an agreement keeps the figure it was signed with.
+- **Not for online members.** Members whose centre is an online one have different terms: this agreement is never
+  sent to them, they are not listed under *Not started*, and it is not on their registration checklist.
+
 - **It starts by itself** when you press *Accept & create member* on an NGG application: the family gets the
   welcome email and, after it, a private link to read and sign. For members who joined before, press
   *Send to N members without one* (or select some under *Not started* and choose *Send the agreement*).
@@ -5392,7 +5430,21 @@ a storage outage.
   questions (a wrong answer shows what the agreement says; they try again — nobody is locked out), confirms
   their details and the off-site trips choice, and signs: a typed full name and a signature (drawn, or made from
   the typed name). A witness signs on the same screen, or they leave it to NGG. They are emailed their copy at once.
-- **You countersign.** It appears under *To countersign*. Open it, press *Countersign*, give your role and sign.
+- **Then it is printed, signed in ink and brought to the centre.** After signing online the family is shown
+  (and emailed) *Print the agreement to sign*: the printed copy carries the agreement's number and version at the
+  foot of every page and a section to sign in ink — parent or guardian, witness, and NGG. No printer: open the
+  agreement here and press *Print it to sign in ink*.
+- **You receive the paper copy.** It is listed under *Paper copy to receive*. Open it → *Receive the signed copy*,
+  and with the paper in your hand turn on each check: every page there with this agreement's number; a parent or
+  guardian signed and dated it in ink; a witness signed and printed their name; the names match the record;
+  nothing crossed out or added. If one is not true, give it back to the family — do not receive it. Then take a
+  photograph of the signed page with the phone's camera (the whole page filling the picture; at least 1600 × 1000
+  pixels, or it is refused as too small to read). Who received it, where and when are recorded; *See the
+  photograph* opens it later.
+- **A family that cannot sign online** signs the paper only: print it from here, they sign at the centre, and when
+  you receive it you also type what the paper says — who signed (father, mother or guardian), the witness's name
+  and the off-site activities answer. Their consents are recorded from it.
+- **You countersign** — only after the paper copy is received. It appears under *To countersign*. Open it, press *Countersign*, give your role and sign.
   If nobody witnessed it at home, you are the witness too, and the copy says so. The family is emailed the
   completed agreement with a link to the printable copy (*Print or save as PDF*).
 - **Resend** makes a new link and stops the old one; the link is also copied so you can send it by WhatsApp.
@@ -5401,7 +5453,9 @@ a storage outage.
   updates, photos and the website (granted) and off-site trips (as chosen) to the consents ledger.
 - **The money in it is the website's.** The monthly contribution, membership fee and training place are read
   from Money → Amounts on the day the family signs and frozen on that agreement.
-- The registration checklist's item *Membership Agreement signed* is done once NGG has countersigned.
+- The registration checklist's item *Membership Agreement (MoU) handed in* is done once the paper copy is received
+  **and** NGG has countersigned. An agreement countersigned before the paper step existed needs its paper copy
+  received too.
 - A member with a signed agreement cannot be merged without a person deciding: the agreement names one child.
 
 ## Receipts as PDF and image
@@ -5411,3 +5465,36 @@ the phone's browser, fonts or printer. You will find *Download PDF* and *Downloa
 *Print*; on the family's payment page after paying; in the receipt email; and in Money → Membership payments
 (*PDF*, *Image* beside each paid invoice's receipt number). The image is the receipt cropped to fit a phone screen —
 the easiest thing to forward on WhatsApp. Both are drawn from the receipt as it was issued, so they always match it.
+
+
+## My week — a child's personal timetable
+
+**/timetable?easy=1**, and what a signed-in member with no timetable yet sees at /timetable. Four short screens, all
+by tapping: **School** (which days, when it starts and ends, or "I don't go"), **What else do you do?** (homework,
+study, extra lessons, Arabic school, football, chores, church, mosque, music… then the days, the time and how long),
+**Your NGG sessions** (their own sessions at their centre, already ticked), and **Is this your week?** (day by day;
+anything that overlaps is said in words) then **Save my week**. It saves to their account and meets the registration
+item *Personal timetable on the site*. The full maker — colours, printing, wallpapers, one-off changes — is one link
+away (*Full timetable maker*, or /timetable?full=1). Help a child at the centre: sign in as them and open
+/timetable?easy=1; they can do the rest themselves.
+
+
+## WhatsApp: families answer registration reminders
+
+When WhatsApp (Kapso) is set up (Settings → API keys → WhatsApp (Kapso)), every registration reminder also goes on
+WhatsApp, to the guardians on the family account (else the parent phone on the record), with three answers:
+**This Saturday · Next week · I need help**. Families answer with a tap, or by typing 1, 2 or 3.
+
+| They answer | What happens, with nobody at a desk |
+|---|---|
+| This Saturday / Next week | A follow-up is logged as theirs (*The family, on WhatsApp*) and the next follow-up is set for the day after. They are thanked and told what to bring. |
+| I need help | Logged as *needs help*, due tomorrow; the staff inbox and the child's helper are told to call. |
+| A photo or document | Kept on this site and put on the child's registration as *Sent by the family on WhatsApp*. The helper checks it and submits it against the right item — a photo never ticks anything by itself. |
+| STOP / START | No more WhatsApp reminders (email continues) / reminders again. |
+| Anything else | The Control Room inbox, as before. |
+
+Open a child under Members → Registration to see the WhatsApp conversation. **Buttons at any time:** WhatsApp
+allows free buttons only within 24 hours of the family's last message. To have tappable buttons on every reminder,
+get a Utility template approved in Kapso with the body *Next Generation Genius: {{1}}* and three quick-reply buttons
+(This Saturday · Next week · I need help), and put its name in **Reply-button template**. Without it, families
+reply 1, 2 or 3, which works the same.

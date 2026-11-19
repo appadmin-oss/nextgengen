@@ -105,6 +105,9 @@ const FEES_DEFAULTS = [
     /* Three years, split. Training accrues the fee; service earns it off. */
     'trainingMonths' => 18,
     'serviceMonths'  => 18,
+    /* What an NGG place is worth: the scholarship the Membership Agreement awards (owner, 18 Nov 2026:
+       "the MoU should project that it is a scholarship of 1.5 million"). Stated, never charged. */
+    'scholarshipValue' => 1500000,
     /* The ceiling on what a single member's account may reach. Reached, it stops
        accruing and says so, rather than growing into a number nobody will ever
        pay. Zero means no ceiling — available, but not the default. */
@@ -372,6 +375,7 @@ function fees_settings_save(array $in, string $by): array {
             ? (string)$in['trainingBasis'] : (string)$cur['trainingBasis'],
         'trainingMonths' => $phase($in['trainingMonths'] ?? null, (int)$cur['trainingMonths']),
         'serviceMonths'  => $phase($in['serviceMonths'] ?? null, (int)$cur['serviceMonths']),
+        'scholarshipValue' => fees_money($in['scholarshipValue'] ?? null, (int)($cur['scholarshipValue'] ?? FEES_DEFAULTS['scholarshipValue'])),
         'balanceCap'     => fees_money($in['balanceCap'] ?? null, (int)$cur['balanceCap']),
         'remindEnabled'  => $bool('remindEnabled'),
         /* Floored, not just validated. An admin who types 1 gets the floor and is
