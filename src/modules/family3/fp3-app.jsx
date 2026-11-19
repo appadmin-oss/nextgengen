@@ -973,6 +973,7 @@ function Fp3TodayMore({ c, w }) {
           : !evs.length ? <p className="fp3x-empty">Nothing on the calendar yet. Events at {w.member.centre} show here as soon as they’re planned.</p>
           : <ul className="fp3x-evs">{evs.map(e => <li key={e.id}><span className="fp3x-date" aria-hidden="true"><b>{e.dd}</b>{e.mm}</span><span><b>{e.title}</b><small>{[e.date, e.time, e.where].filter(Boolean).join(" · ")}</small></span>{e.expected ? <em>{S.rsvp[e.id] === "yes" ? "Coming" : S.rsvp[e.id] ? "Replied" : "Families expected"}</em> : null}</li>)}</ul>}
       </section>
+      <Fp3Homework w={w} first={first}/>
       <section className="fp3x-card" aria-labelledby="fp3x-ln">
         <div className="fp3x-h-row"><h2 id="fp3x-ln" className="fp3x-h">What {first} is learning</h2><span className="fp3x-meta">{L.completed || 0} of {L.total || 0} lessons done</span></div>
         <div className="fp3x-bar" role="progressbar" aria-label={first + "’s lessons"} aria-valuemin="0" aria-valuemax="100" aria-valuenow={L.pct || 0}><span style={{ width: (L.pct || 0) + "%" }}/></div>
@@ -983,6 +984,31 @@ function Fp3TodayMore({ c, w }) {
   );
 }
 
+
+/* ── This week's homework ────────────────────────────────────────────────────
+   Read-only (family_homework): what the instructor set that is due this week
+   or still open past its date, and where it stands. A mark and its feedback
+   show once the work is marked; work sent back shows what to change and the
+   new date. The child's own answer is theirs and is not shown here. */
+const FP3_HW = { overdue: ["Overdue", "is-warn"], returned: ["Sent back to improve", "is-warn"], todo: ["To do", ""], handed_in: ["Handed in", ""], marked: ["Marked", ""] };
+function Fp3Homework({ w, first }) {
+  const H = w.homework || { items: [] };
+  return (
+    <section className="fp3x-card" aria-labelledby="fp3x-hw">
+      <div className="fp3x-h-row"><h2 id="fp3x-hw" className="fp3x-h">This week’s homework</h2>
+        <span className="fp3x-meta">{H.overdue ? H.overdue + " overdue" : H.open ? H.open + " still to do" : H.items.length ? "All handed in" : ""}</span></div>
+      {H.items.length ? <ul className="fp3x-evs">{H.items.map(h => {
+        const [label, tone] = FP3_HW[h.state] || [h.state, ""];
+        const when = h.state === "marked" || h.state === "handed_in" ? (h.handedIn ? "handed in " + h.handedIn + (h.late ? " (late)" : "") : "") : (h.due ? (h.returned ? "hand in again by " : "due ") + h.due : "");
+        return <li key={h.id}><span className="fp3x-ic" aria-hidden="true"><i className={h.state === "marked" ? "ph ph-seal-check" : "ph ph-pencil-simple-line"}/></span>
+          <span><b>{h.title}</b><small>{[h.course, when, h.mark !== null ? "mark " + h.mark + (h.outOf ? "/" + h.outOf : "") : ""].filter(Boolean).join(" · ")}</small>
+            {h.feedback ? <small>{(h.returned ? "What to change: " : "Feedback: ") + h.feedback}</small> : null}</span>
+          <em className={tone || undefined}>{label}</em></li>;
+      })}</ul>
+        : <p className="fp3x-empty">Nothing set for {first} this week. Homework from the instructors shows here, with the mark once it is marked.</p>}
+    </section>
+  );
+}
 
 /* ── Anchor, in the family account ──────────────────────────────────────────
    The child's week as their circle of adults sees it (family.anchor): the

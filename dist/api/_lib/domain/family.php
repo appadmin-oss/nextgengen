@@ -399,6 +399,8 @@ function family_ward(array $p): array {
         // Invoices, receipts, acknowledgements and Math Lab certificates, each with its private link (documents.php).
         'documents' => function_exists('documents_for_member') ? documents_for_member($mid) : [],
         'requests' => array_map('member_request_public', $reqs),
+        // This week's homework (family_homework): read-only, this ward only.
+        'homework' => family_homework($m),
         // Excused absences this session, of the two allowed (member_excuses, POLICY §1.1).
         'excuses' => function_exists('member_excuses') ? array_diff_key(member_excuses($m), ['days' => 1]) : null,
         // The time a Saturday starts for the leave-notice warning (member_leave_notice): the same policy value the server uses.
@@ -410,6 +412,48 @@ function family_ward(array $p): array {
                bill (FEES_SPEC_v2 §4), so it is not offered either. */
             db_all("SELECT entryId, note, amount, createdAt FROM member_ledger WHERE memberId = ? AND direction = 'charge' AND kind NOT IN ('training', 'writeoff') AND (voidedAt IS NULL OR voidedAt = '') ORDER BY id DESC LIMIT 10", [$mid])),
     ] + (function_exists('family_v3_ward') ? family_v3_ward($m, $gid) : []);
+}
+
+/**
+ * "This week's homework" for one ward, for the family: every assignment due
+ * this week (Monday to Sunday, Lagos) or still open past its date — never
+ * handed in, or returned and not handed in again — with where it stands:
+ * to do, overdue, handed in, marked, sent back. The mark and the feedback
+ * appear once the work is MARKED (returned work shows what to change); the
+ * child's own answer, files and links are never sent. Reached only through
+ * family_ward(), which resolves the ward through the guardian's own active
+ * link, so a guardian sees their own children's homework and nobody else's.
+ */
+function family_homework(array $m): array {
+    if (!function_exists('assignment_list_for_member') || !member_is_ngg($m)) return ['weekOf' => '', 'items' => [], 'open' => 0, 'overdue' => 0];
+    $now = time();
+    $today = gmdate('Y-m-d', $now + 3600);
+    $mon = gmdate('Y-m-d', strtotime($today . 'T12:00:00Z') - ((int)gmdate('N', strtotime($today . 'T12:00:00Z')) - 1) * 86400);
+    $sun = gmdate('Y-m-d', strtotime($mon . 'T12:00:00Z') + 6 * 86400);
+    $items = [];
+    foreach ((array)(assignment_list_for_member(['memberId' => (string)$m['memberId']])['assignments'] ?? []) as $a) {
+        $sub = $a['submission'];
+        $returned = $sub && $sub['status'] === 'returned';
+        $open = !$sub || ($returned && !empty($a['canSubmit']));
+        $due = $returned ? (string)$sub['resubmitBy'] : substr((string)$a['dueAt'], 0, 10);
+        $thisWeek = $due !== '' && $due >= $mon && $due <= $sun;
+        // Overdue by the deadline's own time (a bare date is the end of that day, Lagos), not by the date alone.
+        $dueTs = $returned ? assignment_due_ts(['dueAt' => (string)$sub['resubmitBy']]) : assignment_due_ts($a);
+        $overdue = $open && $dueTs && $dueTs < $now && $a['state'] !== 'closed';
+        if (!$thisWeek && !$overdue) continue;
+        $state = !$sub ? ($overdue ? 'overdue' : 'todo') : ($sub['status'] === 'graded' ? 'marked' : ($returned ? ($overdue ? 'overdue' : 'returned') : 'handed_in'));
+        $marked = $sub && $sub['status'] === 'graded';
+        $items[] = ['assignmentId' => (string)$a['assignmentId'], 'title' => (string)$a['title'], 'course' => (string)$a['track'],
+            'dueOn' => $due, 'state' => $state, 'returned' => $returned, 'handedInOn' => $sub ? substr((string)$sub['submittedAt'], 0, 10) : '',
+            'late' => (bool)$a['late'] && (bool)$sub,
+            'mark' => $marked && $sub['grade'] !== null ? (int)$sub['grade'] : null, 'outOf' => $marked ? (int)$a['points'] : null,
+            'feedback' => ($marked || $returned) ? (string)$sub['feedback'] : ''];
+    }
+    $rank = ['overdue' => 0, 'returned' => 1, 'todo' => 2, 'handed_in' => 3, 'marked' => 4];
+    usort($items, static fn($x, $y) => [$rank[$x['state']], $x['dueOn']] <=> [$rank[$y['state']], $y['dueOn']]);
+    return ['weekOf' => $mon, 'weekTo' => $sun, 'items' => $items,
+            'open' => count(array_filter($items, static fn($i) => in_array($i['state'], ['todo', 'overdue', 'returned'], true))),
+            'overdue' => count(array_filter($items, static fn($i) => $i['state'] === 'overdue'))];
 }
 
 /**
