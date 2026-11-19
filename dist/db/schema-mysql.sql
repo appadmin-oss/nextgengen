@@ -5392,3 +5392,7 @@ CREATE TABLE IF NOT EXISTS people_notes (
   KEY idx_people_notes_subject (subjectType, subjectId, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (239) ON DUPLICATE KEY UPDATE version = version;
+
+-- 240 — a payment that names the charges it pays (fees_allocate).
+ALTER TABLE member_ledger ADD COLUMN appliesTo VARCHAR(2000) NOT NULL DEFAULT '';
+INSERT INTO schema_version (version) VALUES (240) ON DUPLICATE KEY UPDATE version = version;

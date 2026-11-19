@@ -7643,3 +7643,41 @@ How it behaves:
     note, and offboarding with the class handed back.
   - No page errors in either.
 - PHP checks for both are in `run.php` and run in CI.
+
+## 19 Nov 2026 (latest) — Paying a chosen charge
+
+The owner asked for this "only if you think it is cool". It is, for one concrete reason:
+- A suspended child is let back in when the re-entry fine is marked paid, and unpaid fines freeze awards.
+  `policy_fines_sync` decides "paid" from the ledger, which paid the oldest charges first.
+- So a family paying exactly the re-entry fee while older dues were outstanding saw the money go to the old
+  dues, and the child stayed out. The only fixes were a waiver, or clearing the whole balance.
+
+**How it works.**
+- **Migration 240.** `member_ledger.appliesTo` is a JSON list of the charge entryIds a credit names.
+- **`fees_allocate()`** in `fees.php` is now THE allocator. It covers the named charges first (up to what
+  each owes), then pours what is left, and every unnamed credit, oldest first.
+- **Every reader uses it:** `fees_charges_left`, `fees_unpaid_of`, `fees_entry_left` (and so
+  `policy_fines_sync`), and `fees_clear_unpaid_of`. They had four copies of the oldest-first loop, and
+  now have one.
+- **Totals cannot change.** The same money meets the same charges, so payable, outstanding, reports and
+  statements' totals are identical. A test pins this.
+- **`fees_post`** keeps only names that are this member's live charges. A foreign or unknown id is dropped
+  and that money goes to the pool.
+
+**Surfaces.**
+- **Staff.** `admin.fees.payment` takes `appliesTo`. The Record a payment form has *What it pays
+  (optional)*.
+- **Families.** `family.fees.pay` takes `charges`, and `membership_charges_invoice` makes a `part` invoice
+  with one line per charge (periodKey `charge:<entryId>`).
+  - `membership_settle` posts the payment with `appliesTo` read from those lines.
+  - Checkout withdraws the link (`charges_changed`) when a named charge now owes less than its line.
+- **The family payload** carries `open` (charge by charge, from `fees_account_statement`). Each fine
+  carries its sanction `id`, so "Pay this fine" finds its charge (`sanction-<id>`).
+- **Family app.** The Pay sheet has a third mode, *Choose what to pay*, with tickable charges. Each unpaid
+  fine has **Pay this fine**. The design source was recompiled.
+
+**Verified.**
+- `run.php`: *Paying a chosen charge*, 13 checks, run in CI.
+- Browser probe: 8 checks. A parent pays a ₦2,000 re-entry fine ahead of ₦4,000 older dues; the fine is
+  paid on the ledger and the conduct record; ₦4,000 is still owed; no page errors.
+- The plans probe was re-run after the allocator change: 16/16.

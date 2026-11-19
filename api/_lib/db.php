@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 239;
+const NGG_SCHEMA_TARGET = 240;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6637,6 +6637,10 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_people_notes_subject ON people_notes(subjectType, subjectId, id);
         ",
+        /* 240 — a payment that names what it pays (fees_allocate): a JSON list of the charges' entryIds.
+           Those charges are covered first; the rest of the money goes to the oldest charges, as before.
+           Totals never change — only which charge is still owed. Empty for every existing row. */
+        240 => "ALTER TABLE member_ledger ADD COLUMN appliesTo TEXT NOT NULL DEFAULT '';",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

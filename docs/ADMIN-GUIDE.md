@@ -2816,6 +2816,20 @@ not the child's:
     waits a full reminder interval after the instalment (the preview names
     these *paid an instalment recently*), and every reminder now tells the
     family they can pay part of it. Reminders must be switched on.
+- **Paying a chosen charge (from 19 Nov 2026).** Money normally pays the
+  oldest charges first. A payment can instead **name what it pays**, and those
+  charges are paid first; anything left over goes to the oldest charges as
+  usual. What is owed in total never changes, only which charge is still owed.
+  This is how a family clears a re-entry fee to get a suspended child back in
+  while older dues are still on the account.
+  - **Families:** each unpaid fine has **Pay this fine**. *Fees → Pay →
+    Choose what to pay* lists every charge still owed, to tick. The payment
+    link is for exactly those charges. If one is paid another way first, the
+    link stops working and asks them to choose again.
+  - **Staff:** *Record a payment* has **What it pays (optional)**. Leave it
+    empty to pay the oldest first, or tick the charges the family says the
+    money is for.
+  - A fine paid this way is marked paid on the conduct record straight away.
 - **Instalment plans (from 19 Nov 2026).** A plan is a schedule the family
   agrees to: the whole balance in 2 to 6 instalments, weekly, every two weeks
   or monthly, starting within a month and lasting at most six months.

@@ -127,6 +127,8 @@ function family_fees_view(array $m): ?array {
         'payFee' => !empty($a['payOnline']) && function_exists('paystack_family_charge') ? paystack_family_charge($inv ? (int)$inv['total'] : (int)$a['payable'], $cfg) : 0,
         /* The smallest instalment a family may pay towards today's balance (membership_part_min); 0 = pay in full. */
         'partMin' => !empty($a['payOnline']) && !$inv && function_exists('membership_part_min') ? membership_part_min((int)$a['payable']) : 0,
+        // What is owed, charge by charge, so a family can pay a chosen one (membership_charges_invoice).
+        'open' => !$inv && function_exists('membership_open_charges') && (int)$a['payable'] > 0 ? array_slice(membership_open_charges($m), 0, 40) : [],
         // The instalment plan on this child, or the offer to make one (payment-plans.php).
         ...(function_exists('plan_family_view') ? plan_family_view($m, (int)$a['payable'], (bool)$inv) : ['plan' => null, 'planOffer' => null]),
         'offlinePending' => (bool)db_row("SELECT 1 FROM member_requests WHERE memberId = ? AND kind = 'payment' AND status = 'open' LIMIT 1", [$mid]),

@@ -1465,7 +1465,7 @@
       registration: (linkId) => request('/family/registration.php' + qs({ link: linkId })),
       // A child's Anchor week, for a parent's link; writes go through act('anchor.confirm' | 'anchor.remark').
       anchor:   (linkId) => request('/family/anchor.php' + qs({ link: linkId })),
-      pay:      (linkId, amount) => request('/family/pay.php', { body: amount ? { link: linkId, amount } : { link: linkId } }),
+      pay:      (linkId, amount, charges) => request('/family/pay.php', { body: Object.assign({ link: linkId }, amount ? { amount } : {}, charges && charges.length ? { charges } : {}) }),
       // Instalment plans: see the schedule, agree to it by name, pay what it asks for now.
       payplan: {
         quote:  (linkId, o) => request('/family/account.php', { body: Object.assign({ action: 'payplan.quote', linkId }, o) }),
@@ -2222,7 +2222,7 @@
         /* Find anybody's account, not only a debtor's — the arrears list holds
            people who owe, so it could never answer "has Ada paid?". */
         lookup:      (q) => request('/admin/fees.php' + qs({ view: 'lookup', q })),
-        payment:     (memberId, amount, method, reference, note) => request('/admin/fees.php', { body: { action: 'payment', memberId, amount, method, reference, note } }),
+        payment:     (memberId, amount, method, reference, note, appliesTo) => request('/admin/fees.php', { body: { action: 'payment', memberId, amount, method, reference, note, appliesTo: appliesTo || [] } }),
         void:        (entryId, reason) => request('/admin/fees.php', { body: { action: 'void', entryId, reason } }),
         mou:         (memberId) => request('/admin/fees.php', { body: { action: 'mou', memberId } }),
         remindOff:   (memberId, off) => request('/admin/fees.php', { body: { action: 'remindOff', memberId, off } }),

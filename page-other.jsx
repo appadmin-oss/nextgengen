@@ -1498,7 +1498,7 @@ function MembershipPayPage({ setPage }) {
       /* The amount owed changed since this link was made (paid at the desk, a
          waiver): the old invoice is withdrawn and the server names the new one. */
       if (e.code === "balance_changed" && /^\/pay\/[A-Za-z0-9_-]+$/.test(e.detail || "")) { setErr("The amount owed has changed since this link was made. Taking you to today’s amount…"); setTimeout(() => window.location.assign(e.detail), 1600); return; }
-      setErr({ nothing_to_pay: "Nothing is owed on this account any more, so there is nothing to pay. Thank you.", balance_changed: "The amount owed has changed since this link was made. Ask the centre for a new link.", part_exceeds_balance: "Less is owed now than this instalment" + (e.detail ? " (" + e.detail + ")" : "") + ", because a payment reached the account another way. Open the family account and choose a new amount.", already_paid: "This invoice is already paid.", offline_pending: "A payment you made by transfer or cash is being checked by the centre. Please don’t pay again.", payments_unavailable: "Online payment isn’t available right now — pay by transfer to the account below.", init_failed: "Paystack didn’t respond. Try again in a moment." }[e.code] || "Couldn’t start the payment. Try again.");
+      setErr({ charges_changed: "One of the charges you chose was paid or changed since this link was made, so it has been withdrawn. Open the family account and choose again.", nothing_to_pay: "Nothing is owed on this account any more, so there is nothing to pay. Thank you.", balance_changed: "The amount owed has changed since this link was made. Ask the centre for a new link.", part_exceeds_balance: "Less is owed now than this instalment" + (e.detail ? " (" + e.detail + ")" : "") + ", because a payment reached the account another way. Open the family account and choose a new amount.", already_paid: "This invoice is already paid.", offline_pending: "A payment you made by transfer or cash is being checked by the centre. Please don’t pay again.", payments_unavailable: "Online payment isn’t available right now — pay by transfer to the account below.", init_failed: "Paystack didn’t respond. Try again in a moment." }[e.code] || "Couldn’t start the payment. Try again.");
       if (e.code === "already_paid" || e.code === "offline_pending") load();
     }
   };
@@ -1518,6 +1518,8 @@ function MembershipPayPage({ setPage }) {
           <>
             <h1 className="mpay-title">{inv.purpose === "advance"
               ? (inv.status === "paid" ? "Thank you — " + (inv.firstName || "your child") + " is paid ahead." : "Pay ahead for " + (inv.firstName || "your child"))
+              : inv.purpose === "part" && (inv.items || []).some(it => it.kind === "charge")
+              ? (inv.status === "paid" ? "Thank you — those charges are paid." : "Pay what you chose on " + (inv.firstName ? inv.firstName + "’s" : "the") + " account")
               : inv.purpose === "part"
               ? (inv.status === "paid" ? "Thank you — your instalment is in." : "Pay an instalment on " + (inv.firstName ? inv.firstName + "’s" : "the") + " account")
               : inv.purpose === "balance"
@@ -1562,7 +1564,8 @@ function MembershipPayPage({ setPage }) {
                 {!inv.paystack && !inv.bank && <p className="mpay-fine">Pay at your centre; you’ll get a receipt once it is recorded and checked.</p>}
               </div>
             )}
-            {inv.purpose === "part" && inv.status !== "paid" && <p className="mpay-fine">An instalment pays part of what is owed. The rest stays on the account; pay it in full or in more instalments from the family account whenever you can.</p>}
+            {inv.purpose === "part" && inv.status !== "paid" && (inv.items || []).some(it => it.kind === "charge") && <p className="mpay-fine">This pays exactly the charges listed, before anything older on the account. Anything else owed stays on the account.</p>}
+            {inv.purpose === "part" && inv.status !== "paid" && !(inv.items || []).some(it => it.kind === "charge") && <p className="mpay-fine">An instalment pays part of what is owed. The rest stays on the account; pay it in full or in more instalments from the family account whenever you can.</p>}
             {inv.purpose === "advance" && <p className="mpay-fine">Nothing is charged early. The payment waits on the account and meets each month’s commitment fee, and any renewal, on the day it falls due.</p>}
             {inv.purpose === "advance" && inv.notice && <p className="mpay-fine mpay-notice" role="note">{inv.notice}</p>}
             {inv.purpose === "joining" && <p className="mpay-fine">The first month’s commitment fee covers only the meeting days left from the start date, {inv.startDate ? new Date(inv.startDate + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "the day your child starts"}. From next month it is charged in full.</p>}

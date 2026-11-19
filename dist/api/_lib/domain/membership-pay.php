@@ -264,7 +264,83 @@ function family_fees_pay(array $p): array {
     if (!$l) return ['ok' => false, 'error' => 'not_found'];
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$l['memberId']]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if (is_array($p['charges'] ?? null) && $p['charges']) return membership_charges_invoice($m, 'guardian:' . $gid, $p['charges']);
     return membership_balance_invoice($m, 'guardian:' . $gid, membership_part_arg($p));
+}
+
+/* ── Paying chosen charges ───────────────────────────────────────────────────
+ *
+ * A family may pay particular charges — the re-entry fee that lets a suspended
+ * child back in, a fine they want off the record, this month's dues — rather
+ * than the oldest first. The invoice lists each charge at what it still owes
+ * (periodKey 'charge:<entryId>'); when it settles, the payment names them
+ * (member_ledger.appliesTo) and fees_allocate covers them first. Totals do not
+ * move: the same money meets the same charges; only which one is still owed
+ * changes, which is what policy_fines_sync reads to mark a fine paid. */
+const MPAY_CHARGES_MAX = 20;
+
+/** What is still owed, charge by charge, in the order the account settles them. */
+function membership_open_charges(array $m): array {
+    if (!function_exists('fees_account_statement')) return [];
+    $cfg = fees_settings();
+    $out = [];
+    foreach (fees_account_statement($m, fees_balance($m, $cfg), $cfg)['open'] as $o) {
+        if ((int)$o['left'] <= 0) continue;
+        $out[] = ['entryId' => (string)$o['entryId'], 'kind' => (string)$o['kind'], 'label' => membership_charge_label($o), 'due' => (string)$o['due'],
+                  'amount' => (int)$o['amount'], 'left' => (int)$o['left'], 'periodKey' => (string)$o['periodKey']];
+    }
+    return $out;
+}
+
+function membership_charge_label(array $o): string {
+    $note = trim((string)($o['note'] ?? ''));
+    $kind = ['membership' => 'Membership fee', 'dues' => 'Commitment fee', 'fine' => 'Fine', 'adjustment' => 'Charge'][(string)($o['kind'] ?? '')] ?? 'Charge';
+    return $note !== '' && mb_strtolower($note) !== mb_strtolower($kind) ? $kind . ' · ' . mb_substr($note, 0, 90) : $kind;
+}
+
+function membership_charges_invoice(array $m, string $by, array $ids): array {
+    if (!member_is_ngg($m)) return ['ok' => false, 'error' => 'not_ngg'];
+    $cfg = fees_settings();
+    if (empty($cfg['enabled'])) return ['ok' => false, 'error' => 'fees_off'];
+    if (paystack_secret() === '') return ['ok' => false, 'error' => 'payments_unavailable'];
+    if (membership_contact($m) === '') return ['ok' => false, 'error' => 'no_email'];
+    $mid = (string)$m['memberId'];
+    if ($j = db_row("SELECT payToken FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose = 'joining' LIMIT 1", [$mid])) {
+        return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode((string)$j['payToken']), 'joining' => true];
+    }
+    $ids = array_values(array_unique(array_filter(array_map(static fn($x) => trim((string)$x), $ids))));
+    if (!$ids) return ['ok' => false, 'error' => 'charges_required', 'detail' => 'Choose what to pay.'];
+    if (count($ids) > MPAY_CHARGES_MAX) return ['ok' => false, 'error' => 'too_many_charges', 'detail' => 'Choose at most ' . MPAY_CHARGES_MAX . ' charges at a time.'];
+    $open = []; foreach (membership_open_charges($m) as $o) $open[$o['entryId']] = $o;
+    $items = []; $total = 0;
+    foreach ($ids as $id) {
+        if (!isset($open[$id])) return ['ok' => false, 'error' => 'charge_not_owed', 'detail' => 'One of those is already paid, or is not on this account. Open the account again to see what is owed.'];
+        $o = $open[$id];
+        $items[] = ['kind' => 'charge', 'label' => $o['label'], 'detail' => $o['left'] < $o['amount'] ? fees_money_text($o['left']) . ' still owed of ' . fees_money_text($o['amount']) : ($o['due'] !== '' ? 'Due ' . gmdate('j M Y', strtotime($o['due'] . 'T00:00:00Z')) : ''),
+                    'amount' => $o['left'], 'periodKey' => 'charge:' . $id];
+        $total += $o['left'];
+    }
+    $have = db_all("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose IN ('balance','advance','part') ORDER BY id DESC", [$mid]);
+    foreach ($have as $o) {
+        if (db_row("SELECT id FROM offline_payments WHERE invoiceId = ? AND status = 'pending' LIMIT 1", [(string)$o['invoiceId']])) return ['ok' => false, 'error' => 'offline_pending'];
+    }
+    $json = json_encode($items, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    foreach ($have as $o) {
+        if ((string)$o['purpose'] === 'part' && (string)$o['items'] === $json) return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode((string)$o['payToken']), 'invoiceId' => (string)$o['invoiceId'], 'total' => $total, 'existed' => true];
+    }
+    foreach ($have as $o) db_update('membership_invoices', ['status' => 'void', 'voidReason' => 'superseded: a new payment was asked for'], ['id' => $o['id']]);
+    $terms = membership_fee_terms();
+    $row = doc_invoice_insert(['memberId' => $mid, 'applicationId' => 0, 'payToken' => rand_hex(20), 'items' => $json, 'total' => $total,
+        'currency' => (string)$terms['currency'], 'startDate' => gmdate('Y-m-d'), 'status' => 'open', 'purpose' => 'part', 'createdBy' => substr($by, 0, 64), 'createdAt' => now_iso()]);
+    audit('membership.charges.invoice', $by, $mid, ['invoiceId' => $row['invoiceId'], 'total' => $total, 'charges' => $ids, 'superseded' => count($have)]);
+    return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode($row['payToken']), 'invoiceId' => $row['invoiceId'], 'total' => $total];
+}
+
+/** The charges an invoice was for ('charge:<entryId>' lines), in its order. */
+function membership_invoice_charges(array $inv): array {
+    $out = [];
+    foreach (membership_items($inv) as $it) if (str_starts_with((string)($it['periodKey'] ?? ''), 'charge:')) $out[] = substr((string)$it['periodKey'], 7);
+    return $out;
 }
 
 /* ── Paying the balance in instalments ──────────────────────────────────────
@@ -623,7 +699,7 @@ function membership_settle(string $invoiceId, string $via, string $reference, st
         if ($purpose === 'joining') foreach (membership_items($inv) as $it) {
             fees_post($memberId, (string)$it['kind'], (int)$it['amount'], ['periodKey' => (string)$it['periodKey'], 'note' => (string)$it['label'], 'by' => 'invoice:' . $invoiceId]);
         }
-        $credit = fees_post($memberId, 'payment', (int)$inv['total'], ['periodKey' => 'minv:' . $invoiceId,
+        $credit = fees_post($memberId, 'payment', (int)$inv['total'], ['periodKey' => 'minv:' . $invoiceId, 'appliesTo' => membership_invoice_charges($inv),
             'note' => ($balance ? 'Balance payment ' : ($purpose === 'part' ? 'Part payment ' : ($purpose === 'advance' ? 'Paid ahead ' : 'Joining invoice '))) . $invoiceId . ' — ' . (MPAY_METHODS[$via] ?? ($via === 'paystack' ? 'Paystack' : $via)),
             'method' => $via, 'reference' => $reference, 'by' => $by]);
         if (!$credit) throw new RuntimeException('ledger_failed');
@@ -737,6 +813,19 @@ function public_membership_pay_init(array $p): array {
             if ($due <= 0) return ['ok' => false, 'error' => 'nothing_to_pay'];
             $fresh = membership_balance_invoice($m, 'system');
             return ['ok' => false, 'error' => 'balance_changed', 'detail' => (string)($fresh['payUrl'] ?? '')];
+        }
+    }
+    /* Chosen charges are paid at what each still owed when asked. Paid down since — at the desk, by a
+       waiver — the link is withdrawn rather than taking money for a charge that is no longer owed. */
+    if ($m && ($named = membership_invoice_charges($inv))) {
+        $now = []; foreach (membership_open_charges($m) as $o) $now[$o['entryId']] = $o['left'];
+        foreach (membership_items($inv) as $it) {
+            $id = str_starts_with((string)($it['periodKey'] ?? ''), 'charge:') ? substr((string)$it['periodKey'], 7) : '';
+            if ($id !== '' && ($now[$id] ?? 0) < (int)$it['amount']) {
+                db_exec("UPDATE membership_invoices SET status = 'void', voidReason = ? WHERE id = ? AND status = 'open'", ['superseded: a chosen charge changed before payment', $inv['id']]);
+                audit('membership.charges.superseded', 'system', (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'charge' => $id]);
+                return ['ok' => false, 'error' => 'charges_changed', 'detail' => ''];
+            }
         }
     }
     /* An instalment is never more than what is owed: paid down since another way so it now exceeds

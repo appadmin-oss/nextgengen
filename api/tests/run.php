@@ -31891,6 +31891,94 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM members WHERE memberId = 'NGG-IA-SCOPED'");
 })();
 
+// ── Paying a chosen charge (owner, 19 Nov 2026) ──────────────────────────────
+(function () {
+    $now = now_iso(); $ADM = 'NGG-2025-0099';
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'membership_invoices' => 'memberId', 'member_ledger' => 'memberId', 'guardian_wards' => 'memberId'] as $t => $c) {
+            try { db_exec("DELETE FROM $t WHERE $c LIKE 'TGT-%'"); } catch (Throwable $e) {}
+        }
+        db_exec("DELETE FROM sanctions WHERE personId LIKE 'TGT-%'"); db_exec("DELETE FROM guardians WHERE guardianId LIKE 'TGTG-%'");
+    };
+    $wipe();
+    $prevFees = setting_get('fees'); $prevPs = $GLOBALS['CONFIG']['paystack'] ?? null;
+    setting_set('fees', ['enabled' => true] + fees_settings(), 'test');
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    $mk = function (string $id) use ($now) {
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Target ' . $id, 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'parentEmail' => strtolower($id) . '@example.com', 'joinDate' => gmdate('Y-m-d'), 'createdAt' => $now, 'updatedAt' => $now]);
+        $m = db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
+        $b = (int)fees_balance($m)['payable'];
+        if ($b > 0) fees_post($id, 'payment', $b, ['periodKey' => 'test:tgt:zero', 'note' => 'Start from nothing', 'by' => 'test']);
+        $old = fees_post($id, 'adjustment', 4000, ['periodKey' => 'test:tgt:old', 'note' => 'Old dues', 'by' => 'test']);
+        db_exec("UPDATE member_ledger SET createdAt = ? WHERE entryId = ?", [gmdate('Y-m-d\TH:i:s\Z', time() - 90 * 86400), $old['entryId']]);
+        $sid = db_insert('sanctions', ['personId' => $id, 'personType' => 'member', 'kind' => 'fine', 'tier' => 0, 'status' => 'pending', 'amount' => 2000, 'reason' => 'Re-entry fee', 'issuedAt' => $now, 'createdAt' => $now]);
+        $sid = (int)($sid ?: db_row("SELECT id FROM sanctions WHERE personId = ? ORDER BY id DESC LIMIT 1", [$id])['id']);
+        $fine = fees_post($id, 'fine', 2000, ['periodKey' => 'sanction-' . $sid, 'note' => 'Re-entry fee', 'by' => 'test']);
+        return [db_row('SELECT * FROM members WHERE memberId = ?', [$id]), $sid, $fine['entryId'] ?? '', $old['entryId']];
+    };
+    // Paid into the pool: the oldest charge takes it, and the fine is still owed.
+    [$ma, $sa, $fa, $oa] = $mk('TGT-A');
+    fees_post('TGT-A', 'payment', 2000, ['periodKey' => 'test:tgt:a', 'note' => 'Desk', 'method' => 'cash', 'by' => 'test']);
+    chk('chosen charges · a payment that names nothing pays the oldest charge first, so the fine stays owed (as before)',
+        fees_entry_left($ma, 'sanction-' . $sa) === 2000 && db_row('SELECT status FROM sanctions WHERE id = ?', [$sa])['status'] === 'pending');
+    // Named: the fine is paid, and the child's fine is settled on the conduct side too.
+    [$mb, $sb, $fb, $ob] = $mk('TGT-B');
+    $pb = backend_dispatch('admin.fees.payment', ['requesterId' => $ADM, 'memberId' => 'TGT-B', 'amount' => 2000, 'method' => 'cash', 'appliesTo' => [$fb]]);
+    chk('chosen charges · a payment naming the fine pays the fine, not the older dues',
+        !empty($pb['ok']) && fees_entry_left($mb, 'sanction-' . $sb) === 0 && (fees_charges_left($mb)[$ob]['left'] ?? -1) === 4000);
+    chk('chosen charges · …and the conduct record marks the fine paid by the ledger (what lets a child back in)', db_row('SELECT status, clearedBy FROM sanctions WHERE id = ?', [$sb]) === ['status' => 'paid', 'clearedBy' => 'ledger']);
+    chk('chosen charges · the totals are the same either way: only which charge is owed changes',
+        (int)fees_balance($ma)['payable'] === (int)fees_balance($mb)['payable'] && (int)fees_balance($mb)['payable'] === 4000
+        && fees_unpaid_of($ma, ['fine', 'adjustment']) === fees_unpaid_of($mb, ['fine', 'adjustment']));
+    chk('chosen charges · the clearance plan and the statement read the same allocation',
+        fees_clear_unpaid_of($mb, fees_settings(), fees_entries('TGT-B'))['byKind']['fine'] === 0
+        && !array_filter(fees_account_statement($mb, fees_balance($mb))['open'], fn($o) => $o['entryId'] === $fb));
+    chk('chosen charges · a named charge that is not this member’s is ignored, never applied elsewhere',
+        ($e = fees_post('TGT-A', 'payment', 100, ['appliesTo' => [$fb, 'FEE-NOPE'], 'note' => 'x', 'by' => 'test'])) && ($e['appliesTo'] ?? '') === '');
+    chk('chosen charges · more than the charge owes goes on to the oldest charges', (function () use ($mk) {
+        [$m, $s, $f, $o] = $mk('TGT-C');
+        fees_post('TGT-C', 'payment', 3000, ['appliesTo' => [$f], 'note' => 'Fine and some', 'by' => 'test']);
+        $l = fees_charges_left($m);
+        return $l[$f]['left'] === 0 && $l[$o]['left'] === 3000;
+    })());
+    // Online: the family chooses the charge.
+    [$md, $sd, $fd, $od] = $mk('TGT-D');
+    db_insert('guardians', ['guardianId' => 'TGTG-1', 'email' => 'tgt-d@example.com', 'fullName' => 'Parent D', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'TGT-LINK', 'guardianId' => 'TGTG-1', 'memberId' => 'TGT-D', 'status' => 'active', 'notify' => '{}', 'createdAt' => $now]);
+    $view = family_fees_view($md);
+    chk('chosen charges · the family account lists what is owed charge by charge, with the fine named', (bool)array_filter($view['open'] ?? [], fn($c) => $c['entryId'] === $fd && $c['left'] === 2000 && $c['periodKey'] === 'sanction-' . $sd));
+    chk('chosen charges · a charge that is not owed is refused', (backend_dispatch('family.fees.pay', ['guardianId' => 'TGTG-1', 'linkId' => 'TGT-LINK', 'charges' => ['FEE-NOPE']])['error'] ?? '') === 'charge_not_owed');
+    $inv = backend_dispatch('family.fees.pay', ['guardianId' => 'TGTG-1', 'linkId' => 'TGT-LINK', 'charges' => [$fd]]);
+    $row = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)($inv['invoiceId'] ?? '')]);
+    chk('chosen charges · choosing the fine makes an invoice for exactly it, one line naming it', !empty($inv['ok']) && $row && (int)$row['total'] === 2000 && membership_invoice_charges($row) === [$fd]);
+    $kobo = 200000;
+    $GLOBALS['__paystack_mock'] = function ($method, $path, $body) use (&$kobo, $row) {
+        if (strpos($path, '/transaction/initialize') === 0) return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/t1', 'reference' => $body['reference']]];
+        $ref = rawurldecode(substr($path, strlen('/transaction/verify/')));
+        return ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => $kobo, 'currency' => 'NGN', 'channel' => 'card', 'metadata' => ['invoiceId' => $row['invoiceId']]]];
+    };
+    $init = backend_dispatch('public.membership.pay.init', ['token' => $row['payToken']]);
+    $ok = backend_dispatch('public.membership.pay.verify', ['token' => $row['payToken'], 'reference' => (string)($init['reference'] ?? '')]);
+    $credit = db_row("SELECT * FROM member_ledger WHERE memberId = 'TGT-D' AND kind = 'payment' AND periodKey = ?", ['minv:' . $row['invoiceId']]);
+    chk('chosen charges · paid online, the payment names the fine, the fine is paid and the old dues are still owed',
+        ($ok['invoice']['status'] ?? '') === 'paid' && $credit && json_decode((string)$credit['appliesTo'], true) === [$fd]
+        && fees_entry_left($md, 'sanction-' . $sd) === 0 && db_row('SELECT status FROM sanctions WHERE id = ?', [$sd])['status'] === 'paid');
+    // A chosen charge paid another way first: the link is withdrawn, never taken twice.
+    [$me, $se, $fe, $oe] = $mk('TGT-E');
+    db_update('guardian_wards', ['memberId' => 'TGT-E'], ['linkId' => 'TGT-LINK']);
+    $inv2 = backend_dispatch('family.fees.pay', ['guardianId' => 'TGTG-1', 'linkId' => 'TGT-LINK', 'charges' => [$fe]]);
+    $row2 = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)($inv2['invoiceId'] ?? '')]);
+    fees_post('TGT-E', 'payment', 2000, ['appliesTo' => [$fe], 'note' => 'Paid at the desk', 'method' => 'cash', 'by' => 'test']);
+    $stale = backend_dispatch('public.membership.pay.init', ['token' => $row2['payToken']]);
+    chk('chosen charges · paid at the desk first, the online link is withdrawn and says why', ($stale['error'] ?? '') === 'charges_changed'
+        && db_row('SELECT status FROM membership_invoices WHERE invoiceId = ?', [$row2['invoiceId']])['status'] === 'void');
+    unset($GLOBALS['__paystack_mock']);
+    if ($prevPs === null) unset($GLOBALS['CONFIG']['paystack']); else $GLOBALS['CONFIG']['paystack'] = $prevPs;
+    setting_set('fees', is_array($prevFees) ? $prevFees : [], 'test');
+    $wipe();
+})();
+
 // ── Paying ahead, and a child asking their parent ─────────────────────────────
 (function () {
     $now = now_iso();

@@ -67,7 +67,7 @@ class Fp3Portal extends React.Component {
       w: 1280, sec: u.sec || null, childId: u.child, sub: u.sub ? { [u.sec === "attendance" ? "attendance" : u.sec === "requests" ? "requests" : "progress"]: u.sub } : {},
       rsSession: u.session, stF: u.st, stN: 14, ibCat: "all",
       ttOpen: false, todoAll: false, sw: false, bank: false, sheet: null, shDone: null, shErr: "", busy: false,
-      fFrom: "", fTo: "", fRef: "", fBody: "", fWhy: "lost", fPart: false, fAmt: "", slot: 0, upFile: null, upName: "", msgId: null,
+      fFrom: "", fTo: "", fRef: "", fBody: "", fWhy: "lost", fPart: false, fMode: "all", fPick: [], fAmt: "", slot: 0, upFile: null, upName: "", msgId: null,
       siStep: "email", siEmail: "", siCode: "", siErr: "", siBusy: false,
       adCode: "", adName: "", adRel: "parent", adErr: "", adDone: null, adBusy: false,
       mfa: false, toast: "", online: typeof navigator === "undefined" ? true : navigator.onLine !== false, savedAt: "",
@@ -182,7 +182,7 @@ class Fp3Portal extends React.Component {
   setSub(sec, sub) { this.setState(s => ({ sub: Object.assign({}, s.sub, { [sec]: sub }) }), () => this.pushUrl()); }
   closeSheet() { this.setState({ sheet: null, shDone: null, shErr: "", busy: false }); }
   closeSw() { this.setState({ sw: false }); }
-  openSheet(kind, extra) { this.setState(Object.assign({ sheet: kind, shDone: null, shErr: "", fBody: "", fFrom: "", fTo: "", fWhy: "lost", fPart: false, fAmt: "", plN: 3, plF: "monthly", plName: "", plAgree: false, plQ: null, busy: false }, extra || {})); }
+  openSheet(kind, extra) { this.setState(Object.assign({ sheet: kind, shDone: null, shErr: "", fBody: "", fFrom: "", fTo: "", fWhy: "lost", fPart: false, fMode: "all", fPick: [], fAmt: "", plN: 3, plF: "monthly", plName: "", plAgree: false, plQ: null, busy: false }, extra || {})); }
   /** Run a write: busy while it goes, the server's refusal in words, then re-read what changed. */
   write(fn, done, after) {
     if (this.state.busy || !this.can()) return;
@@ -485,7 +485,9 @@ class Fp3Portal extends React.Component {
         canPay: F.payable > 0 && !pend, online, bankOpen: S.bank ? "true" : "false", showBank: (S.bank || !online) && F.payable > 0 && !pend && !!bk,
         bank: bk ? [["Account name", bk.name, "inherit"], ["Bank", bk.bank, "inherit"], ["Account no.", bk.account, "'Geist Mono', monospace"], ["Amount", N(F.payable), "'Geist Mono', monospace"], ["Reference", ref, "'Geist Mono', monospace"]].map(b => ({ k: b[0], v: b[1], ff: b[2] })) : [],
         hasFines: w.conduct.fines.length > 0,
-        fines: w.conduct.fines.map(x => ({ amount: N(x.amount), when: x.when, reason: x.reason, canAppeal: true, appealed: false, appeal: () => openSheet("appeal", { fRef: (w.charges.find(c => /fine/i.test(c.label)) || w.charges[0] || {}).id || "" }) })),
+        fines: w.conduct.fines.map(x => ({ amount: N(x.amount), when: x.when, reason: x.reason, canAppeal: true, appealed: false,
+          // Its own charge, if it is still owed and can be paid online: "Pay this fine" pays it before anything older.
+          ...((ch => ({ canPay: !!ch && online && !pend, pay: () => ch && openSheet("pay", { fMode: "pick", fPick: [ch.entryId] }) }))((F.open || []).find(c => x.sanctionId && c.periodKey === "sanction-" + x.sanctionId))), appeal: () => openSheet("appeal", { fRef: (w.charges.find(c => /fine/i.test(c.label)) || w.charges[0] || {}).id || "" }) })),
         /* Nothing coming is said, not left as an empty card: paid ahead, or simply nothing in the next two months. */
         next: F.next.length ? F.next.map(x => ({ label: x.label, when: x.when, amount: N(x.amount) }))
           : F.enabled ? [{ label: F.ahead && F.ahead.paidThrough ? "Paid ahead to " + F.ahead.paidThroughL : "Nothing falls due in the next two months", when: F.ahead && F.ahead.paidThrough ? N(F.ahead.credit) + " held on the account" : "", amount: "" }] : [],
@@ -713,17 +715,30 @@ class Fp3Portal extends React.Component {
         const fee = w.fees.payFee || 0, net = w.fees.joining ? w.fees.joining.total : w.fees.payable;
         /* Instalments (membership_part_invoice): the balance, not a joining invoice, and only when it is
            at least twice the minimum. The amount is checked here for the message and again on the server. */
-        const min = w.fees.joining ? 0 : (w.fees.partMin || 0), partOn = min > 0, part = partOn && !!S.fPart;
+        /* Three ways to pay: all of it, an amount (an instalment), or the charges they choose — a fine to
+           lift a suspension, this month's dues — which are covered before anything older. */
+        const min = w.fees.joining ? 0 : (w.fees.partMin || 0), open = w.fees.joining ? [] : (w.fees.open || []);
+        const partOn = min > 0, pickOn = open.length >= 1 && !w.fees.joining;
+        const mode = S.fMode === "part" && partOn ? "part" : S.fMode === "pick" && pickOn ? "pick" : "all";
+        const part = mode === "part", pick = mode === "pick";
+        const picked = open.filter(c => (S.fPick || []).indexOf(c.entryId) !== -1), pickSum = picked.reduce((t, c) => t + c.left, 0);
         const amt = Math.floor(Number(String(S.fAmt || "").replace(/[^\d]/g, "")) || 0);
         Object.assign(out, { shTitle: w.fees.joining ? "Pay " + first + "’s joining invoice" : "Pay for " + first,
           shLead: "You’ll go to Paystack to pay by card, bank or USSD, then come straight back here." + (part ? " Paystack’s charge for this amount, if any, is shown on the next page before you pay. Paying by bank transfer to NGG has no charge." : fee ? " Paystack charges " + N(fee) + " for paying online; paying by bank transfer to NGG has no charge." : ""),
-          shGoL: S.busy ? "Opening Paystack…" : part && amt >= min && amt <= net ? "Continue to pay " + N(amt) : "Continue to Paystack", shGoBg: "#f5b026", shGoFg: "#2a1d00" });
-        out.payPartOn = partOn; out.payIsPart = part;
-        out.payModes = [[false, "All of it, " + N(net)], [true, "Part of it"]].map(rr => { const on = !!S.fPart === rr[0]; return { l: rr[1], sel: on ? "true" : "false", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c", bd: on ? "#0b0b0c" : "#d9d6cd", onClick: () => this.setState({ fPart: rr[0], shErr: "" }) }; });
+          shGoL: S.busy ? "Opening Paystack…" : part && amt >= min && amt <= net ? "Continue to pay " + N(amt) : pick && pickSum ? "Continue to pay " + N(pickSum) : "Continue to Paystack", shGoBg: "#f5b026", shGoFg: "#2a1d00" });
+        out.payPartOn = partOn || pickOn; out.payIsPart = part; out.payIsPick = pick;
+        out.payModes = [["all", "All of it, " + N(net)], partOn ? ["part", "Part of it"] : null, pickOn ? ["pick", "Choose what to pay"] : null].filter(Boolean).map(rr => { const on = mode === rr[0]; return { l: rr[1], sel: on ? "true" : "false", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c", bd: on ? "#0b0b0c" : "#d9d6cd", onClick: () => this.setState({ fMode: rr[0], fPart: rr[0] === "part", shErr: "" }) }; });
+        const KIND_ICON = { fine: "ph ph-warning", dues: "ph ph-calendar-check", membership: "ph ph-identification-badge" };
+        out.payPicks = open.map(c => { const on = (S.fPick || []).indexOf(c.entryId) !== -1; return { label: c.label, amount: N(c.left), sub: (c.due ? "Due " + fp3PlanDay(c.due) : "") + (c.left < c.amount ? (c.due ? " · " : "") + N(c.left) + " still owed of " + N(c.amount) : ""),
+          sel: on ? "true" : "false", icon: on ? "ph-fill ph-check-square" : (KIND_ICON[c.kind] || "ph ph-receipt"), ic: on ? "#17663a" : "#4a4a50", bd: on ? "#0b0b0c" : "#d9d6cd", bg: on ? "#f6f4f0" : "#fff",
+          onClick: () => this.setState(s2 => ({ fPick: on ? s2.fPick.filter(x => x !== c.entryId) : (s2.fPick || []).concat([c.entryId]), shErr: "" })) }; });
+        out.payPickHint = "What you choose is paid first, before anything older. Everything else stays on " + first + "’s account.";
         out.fAmt = S.fAmt || ""; out.onFAmt = e => this.setState({ fAmt: e.target.value.replace(/[^\d,]/g, "").slice(0, 12), shErr: "" });
         out.payPartPh = "e.g. " + Number(Math.max(min, Math.round(net / 2 / 1000) * 1000)).toLocaleString("en");
         out.payPartHint = "Any amount from " + N(min) + " to " + N(net) + ". The rest stays on " + first + "’s account; pay it whenever you can, all at once or in more instalments.";
-        out.payLines = part
+        out.payLines = pick
+          ? [{ k: "You chose", v: picked.length ? picked.length + (picked.length === 1 ? " charge" : " charges") : "Nothing yet" }, { k: "To pay now", v: pickSum ? N(pickSum) : "—" }, { k: "Left after this", v: pickSum ? N(Math.max(0, net - pickSum)) : "—" }]
+          : part
           ? [{ k: "Owed today", v: N(net) }, { k: "This instalment", v: amt ? N(amt) : "—" }, { k: "Left after this", v: amt && amt <= net ? N(net - amt) : "—" }]
           : (w.fees.joining ? w.fees.joining.items : w.fees.lines).map(rr => ({ k: rr.label, v: N(rr.amount) }))
             .concat(fee ? [{ k: "Paystack charge", v: N(fee) }] : []).concat([{ k: "Total", v: N(net + fee) }]);
@@ -735,7 +750,8 @@ class Fp3Portal extends React.Component {
             if (amt > net) return this.setState({ shErr: PART_ERR.part_too_large });
           }
           // A refusal (too small, too large, a transfer being checked) comes back with its own sentence: fp3Err shows it.
-          this.write(() => NGGApi.family.pay(w.linkId, part && amt < net ? amt : undefined), rr => { if (rr && rr.payUrl) window.location.assign(rr.payUrl); else this.setState({ shErr: "The payment page couldn’t be opened. Try again." }); });
+          if (pick && !picked.length) return this.setState({ shErr: "Tick what you want to pay." });
+          this.write(() => NGGApi.family.pay(w.linkId, part && amt < net ? amt : undefined, pick ? picked.map(c => c.entryId) : undefined), rr => { if (rr && rr.payUrl) window.location.assign(rr.payUrl); else this.setState({ shErr: "The payment page couldn’t be opened. Try again." }); });
         };
       }
       if (sh === "plan") {

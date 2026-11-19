@@ -155,8 +155,10 @@ function member_compliance(array $p): array {
     $enabled = function_exists('policy_enabled_for') ? policy_enabled_for('member') : false;
     $state = policy_state($memberId, 'member');
     $fines = [];
-    foreach (db_all("SELECT amount, reason, status, issuedAt FROM sanctions WHERE personId = ? AND kind = 'fine' AND status IN ('active','pending') ORDER BY issuedAt DESC", [$memberId]) as $f) {
+    foreach (db_all("SELECT id, amount, reason, status, issuedAt FROM sanctions WHERE personId = ? AND kind = 'fine' AND status IN ('active','pending') ORDER BY issuedAt DESC", [$memberId]) as $f) {
         $fines[] = [
+            // Its charge on the ledger is periodKey 'sanction-<id>': how the family app pays this one fine.
+            'id'       => (int)$f['id'],
             'amount'   => (int)$f['amount'],
             'reason'   => (string)$f['reason'],
             'status'   => (string)$f['status'],

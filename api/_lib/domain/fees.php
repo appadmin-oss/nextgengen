@@ -990,6 +990,17 @@ function fees_post(string $memberId, string $kind, int $amount, array $opts = []
         'reference' => mb_strcut((string)($opts['reference'] ?? ''), 0, FEES_REF_MAX, 'UTF-8'),
         'createdAt' => now_iso(), 'createdBy' => (string)($opts['by'] ?? ''),
     ];
+    /* A credit may name the charges it pays (fees_allocate). Only this member's live charges are kept, so a
+       name that does not exist, or someone else's, simply falls to the oldest-first pool. */
+    if ($isCredit && !empty($opts['appliesTo']) && is_array($opts['appliesTo'])) {
+        $want = array_values(array_unique(array_filter(array_map(static fn($x) => trim((string)$x), $opts['appliesTo']))));
+        if ($want) {
+            $ph = implode(',', array_fill(0, count($want), '?'));
+            $ok = array_column(db_all("SELECT entryId FROM member_ledger WHERE memberId = ? AND direction = 'charge' AND COALESCE(voidedAt, '') = '' AND entryId IN ($ph)", array_merge([$memberId], $want)), 'entryId');
+            $keep = array_values(array_filter($want, static fn($x) => in_array($x, $ok, true)));   // in the order asked
+            if ($keep) $row['appliesTo'] = json_encode(array_slice($keep, 0, 50));
+        }
+    }
     try {
         db_insert('member_ledger', $row);
     } catch (Throwable $e) {
@@ -1803,12 +1814,14 @@ function admin_fees_payment(array $p): array {
     $method = (string)($p['method'] ?? 'cash');
     $no = fees_payment_guard($id, $by, [['method' => $method, 'reference' => (string)($p['reference'] ?? '')]], (string)($p['ip'] ?? ''));
     if ($no) return $no;
+    /* What the family said the money is for (fees_allocate): those charges are covered first. */
+    $applies = is_array($p['appliesTo'] ?? null) ? array_slice(array_map('strval', $p['appliesTo']), 0, 50) : [];
     $e = fees_post($id, 'payment', $amount, [
         'note' => (string)($p['note'] ?? ''), 'method' => (string)($p['method'] ?? 'cash'),
-        'reference' => (string)($p['reference'] ?? ''), 'by' => $by,
+        'reference' => (string)($p['reference'] ?? ''), 'by' => $by, 'appliesTo' => $applies,
     ]);
     if (!$e) return ['ok' => false, 'error' => 'post_failed'];
-    audit('fees.payment', $by, $id, ['amount' => $amount, 'method' => (string)($p['method'] ?? 'cash')], (string)($p['ip'] ?? ''));
+    audit('fees.payment', $by, $id, ['amount' => $amount, 'method' => (string)($p['method'] ?? 'cash')] + (!empty($e['appliesTo']) ? ['appliesTo' => json_decode((string)$e['appliesTo'], true)] : []), (string)($p['ip'] ?? ''));
     return ['ok' => true, 'entryId' => $e['entryId'], 'balance' => fees_balance($m)];
 }
 
@@ -1944,23 +1957,67 @@ function fees_charge_day(array $e, array $memberDues): string {
  * applied to the oldest real charges first (the order every screen uses).
  * $through limits it to charges on or before a day; null is all of them.
  */
+/**
+ * THE allocator: how credits meet charges. Every reader that asks "which charge
+ * is still owed" goes through here, so they cannot disagree.
+ *
+ * A credit may NAME the charges it pays (member_ledger.appliesTo, a JSON list of
+ * entryIds — a family paying a fine to lift a suspension, a desk taking money
+ * for this month's dues). It covers those first, up to what each still owes;
+ * whatever is left of it, and every credit that names nothing, goes to the
+ * oldest charges first, as it always has. The same money meets the same
+ * charges, so payable, outstanding and every total are exactly what they were;
+ * only WHICH charge is still owed can change.
+ *
+ * $charges: in the order they fall due, each ['ref' => entryId, 'amount' => n].
+ * $credits: in ledger order, each ['amount' => n, 'applies' => [entryId, …]].
+ * Returns ref => amount covered.
+ */
+function fees_allocate(array $charges, array $credits): array {
+    $left = []; $taken = [];
+    foreach ($charges as $c) { $r = (string)$c['ref']; $left[$r] = ($left[$r] ?? 0) + (int)$c['amount']; $taken[$r] = 0; }
+    $pool = 0;
+    foreach ($credits as $cr) {
+        $amt = (int)$cr['amount'];
+        foreach ((array)($cr['applies'] ?? []) as $r) {
+            if ($amt <= 0) break;
+            $r = (string)$r;
+            if (($left[$r] ?? 0) <= 0) continue;
+            $t = min($amt, $left[$r]); $left[$r] -= $t; $taken[$r] += $t; $amt -= $t;
+        }
+        $pool += $amt;
+    }
+    foreach ($charges as $c) {
+        if ($pool <= 0) break;
+        $r = (string)$c['ref']; $t = min($pool, $left[$r]); $left[$r] -= $t; $taken[$r] += $t; $pool -= $t;
+    }
+    return $taken;
+}
+
+/** A live credit row as fees_allocate reads it (a write-off is the training place, never a payment). */
+function fees_credit_of(array $e): ?array {
+    if ((string)$e['direction'] !== 'credit' || (string)$e['kind'] === 'writeoff') return null;
+    $ap = json_decode((string)($e['appliesTo'] ?? ''), true);
+    return ['amount' => (int)$e['amount'], 'applies' => is_array($ap) ? array_values(array_map('strval', $ap)) : []];
+}
+
 function fees_unpaid_of(array $member, array $kinds, ?string $through = null, ?array $cfg = null, ?array $entries = null): int {
     $cfg = $cfg ?? fees_settings();
     $ten = fees_tenure($member, $cfg);
     $memberDues = [];
     if ($ten['start'] !== '') foreach (fees_membership_periods($ten['start'], gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) $memberDues[(string)$per['key']] = (string)$per['due'];
-    $charges = []; $credit = 0;
+    $charges = []; $credits = [];
     foreach ($entries ?? fees_entries((string)$member['memberId']) as $e) {
         if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
         $kind = (string)$e['kind'];
-        if ((string)$e['direction'] === 'charge') { if ($kind !== 'training') $charges[] = ['kind' => $kind, 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues), 'id' => (int)($e['id'] ?? 0)]; }
-        elseif ($kind !== 'writeoff') $credit += (int)$e['amount'];
+        if ((string)$e['direction'] === 'charge') { if ($kind !== 'training') $charges[] = ['ref' => (string)$e['entryId'], 'kind' => $kind, 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues), 'id' => (int)($e['id'] ?? 0)]; }
+        elseif ($cr = fees_credit_of($e)) $credits[] = $cr;
     }
     usort($charges, static fn($a, $b) => [$a['day'], $a['id']] <=> [$b['day'], $b['id']]);
+    $taken = fees_allocate($charges, $credits);
     $unpaid = 0;
     foreach ($charges as $c) {
-        $take = min($credit, $c['amount']); $credit -= $take;
-        $left = $c['amount'] - $take;
+        $left = $c['amount'] - ($taken[$c['ref']] ?? 0);
         if ($left > 0 && in_array($c['kind'], $kinds, true) && ($through === null || ($c['day'] !== '' && $c['day'] <= $through))) $unpaid += $left;
     }
     return $unpaid;
@@ -1981,17 +2038,18 @@ function fees_charges_left(array $member, ?array $cfg = null, ?array $entries = 
     $ten = $ten ?? fees_tenure($member, $cfg);
     $memberDues = [];
     if ($ten['start'] !== '') foreach (fees_membership_periods($ten['start'], gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) $memberDues[(string)$per['key']] = (string)$per['due'];
-    $charges = []; $credit = 0;
+    $charges = []; $credits = [];
     foreach ($entries ?? fees_entries((string)$member['memberId']) as $e) {
         if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
         $kind = (string)$e['kind'];
-        if ((string)$e['direction'] === 'charge') { if ($kind !== 'training') $charges[] = ['entryId' => (string)$e['entryId'], 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues), 'id' => (int)($e['id'] ?? 0)]; }
-        elseif ($kind !== 'writeoff') $credit += (int)$e['amount'];
+        if ((string)$e['direction'] === 'charge') { if ($kind !== 'training') $charges[] = ['ref' => (string)$e['entryId'], 'entryId' => (string)$e['entryId'], 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues), 'id' => (int)($e['id'] ?? 0)]; }
+        elseif ($cr = fees_credit_of($e)) $credits[] = $cr;
     }
     usort($charges, static fn($a, $b) => [$a['day'], $a['id']] <=> [$b['day'], $b['id']]);
+    $taken = fees_allocate($charges, $credits);
     $out = [];
     foreach ($charges as $c) {
-        $take = min($credit, $c['amount']); $credit -= $take;
+        $take = $taken[$c['ref']] ?? 0;
         $out[$c['entryId']] = ['left' => $c['amount'] - $take, 'amount' => $c['amount'], 'due' => (string)$c['day']];
     }
     return $out;
@@ -2191,21 +2249,21 @@ function fees_entry_left(array $member, string $periodKey, ?array $cfg = null): 
     $ten = fees_tenure($member, $cfg);
     $memberDues = [];
     if ($ten['start'] !== '') foreach (fees_membership_periods($ten['start'], gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) $memberDues[(string)$per['key']] = (string)$per['due'];
-    $charges = []; $credit = 0; $found = false;
+    $charges = []; $credits = []; $found = false;
     foreach (fees_entries((string)$member['memberId']) as $e) {
         if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
         $kind = (string)$e['kind'];
         if ((string)$e['direction'] === 'charge') {
             if ($kind === 'training') continue;
-            $charges[] = ['key' => (string)$e['periodKey'], 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues), 'id' => (int)($e['id'] ?? 0)];
+            $charges[] = ['ref' => (string)$e['entryId'], 'key' => (string)$e['periodKey'], 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues), 'id' => (int)($e['id'] ?? 0)];
             if ((string)$e['periodKey'] === $periodKey) $found = true;
-        } elseif ($kind !== 'writeoff') $credit += (int)$e['amount'];
+        } elseif ($cr = fees_credit_of($e)) $credits[] = $cr;
     }
     if (!$found) return null;
     usort($charges, static fn($a, $b) => [$a['day'], $a['id']] <=> [$b['day'], $b['id']]);
+    $taken = fees_allocate($charges, $credits);
     foreach ($charges as $c) {
-        $take = min($credit, $c['amount']); $credit -= $take;
-        if ($c['key'] === $periodKey) return $c['amount'] - $take;
+        if ($c['key'] === $periodKey) return $c['amount'] - ($taken[$c['ref']] ?? 0);
     }
     return null;
 }
@@ -2288,26 +2346,28 @@ function fees_clear_unpaid_of(array $member, array $cfg, array $entries): array 
     $ten = fees_tenure($member, $cfg);
     $memberDues = [];
     if ($ten['start'] !== '') foreach (fees_membership_periods($ten['start'], gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) $memberDues[(string)$per['key']] = (string)$per['due'];
-    $own = []; $imp = []; $credit = 0;
+    $own = []; $imp = []; $credits = [];
     foreach ($entries as $e) {
         if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
         $kind = (string)$e['kind'];
         if ((string)$e['direction'] === 'charge') {
             if ($kind === 'training') continue;
-            $c = ['kind' => $kind, 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues), 'id' => (int)($e['id'] ?? 0)];
+            $c = ['ref' => (string)$e['entryId'], 'kind' => $kind, 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues), 'id' => (int)($e['id'] ?? 0)];
             if (fees_entry_imported($e)) $imp[] = $c; else $own[] = $c;
-        } elseif ($kind !== 'writeoff') $credit += (int)$e['amount'];
+        } elseif ($cr = fees_credit_of($e)) $credits[] = $cr;
     }
     $order = static fn($a, $b) => [$a['day'], $a['id']] <=> [$b['day'], $b['id']];
     usort($own, $order); usort($imp, $order);
+    // NGG's own charges first, then imported ones: the order this clearance has always used.
+    $taken = fees_allocate(array_merge($own, $imp), $credits);
     $byKind = array_fill_keys(FEES_CLEAR_KINDS, 0); $other = 0;
     foreach ($own as $c) {
-        $take = min($credit, $c['amount']); $credit -= $take; $left = $c['amount'] - $take;
+        $left = $c['amount'] - ($taken[$c['ref']] ?? 0);
         if ($left <= 0) continue;
         if (isset($byKind[$c['kind']])) $byKind[$c['kind']] += $left; else $other += $left;   // an adjustment stays owed
     }
     $imported = 0;
-    foreach ($imp as $c) { $take = min($credit, $c['amount']); $credit -= $take; $imported += $c['amount'] - $take; }
+    foreach ($imp as $c) $imported += $c['amount'] - ($taken[$c['ref']] ?? 0);
     return ['amount' => array_sum($byKind), 'byKind' => $byKind, 'imported' => $imported, 'otherOwed' => $other];
 }
 /** Who would be cleared, and of how much. One ledger read for everybody. */

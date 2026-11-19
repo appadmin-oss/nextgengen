@@ -147,13 +147,17 @@ function crMoEntry(ctx, kind, acct) {
     title: titles[kind] + " · " + acct.fullName, submit: titles[kind], busyLabel: "Saving…",
     intro: kind === "waiver" ? "A waiver keeps the charge and records that you are not asking for it. Voiding says it should never have existed — that is a different thing."
       : kind === "adjustment" ? "An adjustment adds a one-off charge with a written reason. To take money off, record a payment or a waiver." : null,
-    values: { amount: "", method: "cash", reference: "", reason: kind === "fine" ? "late" : "", note: "" },
+    values: { amount: "", method: "cash", reference: "", reason: kind === "fine" ? "late" : "", note: "", applies: [] },
     fields: [
       { id: "amount", l: "Amount (₦)", req: true, num: true, money: true, im: "numeric", max: 12,
         help: fmtMoney(owed) + " payable now" + (kind === "waiver" && owed > 0 ? " — more than this is capped to it." : "."),
         check: v => { const n = parseInt(v, 10); return !(n > 0) ? "Enter an amount above ₦0." : ctx.data.B.amountMax && n > ctx.data.B.amountMax ? "At most " + fmtMoney(ctx.data.B.amountMax) + "." : ""; } },
       kind === "payment" ? { id: "method", l: "How it came", type: "chips", req: true, opts: CR_MO_METHODS } : null,
       kind === "payment" ? { id: "reference", l: "Reference", ph: "TRF-… or receipt no.", max: 120 } : null,
+      /* What the family says the money is for (fees_allocate): those charges are paid first, the rest goes to the oldest. */
+      kind === "payment" && ((acct.account || {}).open || []).length ? { id: "applies", l: "What it pays (optional)", type: "multi",
+        opts: acct.account.open.map(o => [o.entryId, crMoWhat(o) + (o.note && (o.kind === "fine" || o.kind === "adjustment") ? " · " + o.note : "") + " · " + fmtMoney(o.left)]),
+        help: "Leave empty to pay the oldest charges first. Choose a charge when the family says what the money is for, such as a re-entry fee." } : null,
       kind === "fine" ? { id: "reason", l: "Why", type: "select", req: true, opts: CR_MO_FINE_REASONS } : null,
       /* Two shapes of one field: "Other" is the escape hatch, so it needs the written reason (crValidate checks only req on an empty value). */
       { id: "note", l: kind === "waiver" ? "Why it is being waived" : "Note", type: "textarea", rows: 2, max: 240, when: v => !(kind === "fine" && v.reason === "other"),
@@ -164,7 +168,7 @@ function crMoEntry(ctx, kind, acct) {
       const amount = parseInt(v.amount, 10) || 0;
       let r, msg;
       try {
-        if (kind === "payment") { r = await NGGApi.admin.fees.payment(acct.memberId, amount, v.method, v.reference.trim(), v.note.trim()); msg = fmtMoney(amount) + " recorded · " + acct.fullName; }
+        if (kind === "payment") { r = await NGGApi.admin.fees.payment(acct.memberId, amount, v.method, v.reference.trim(), v.note.trim(), v.applies || []); msg = fmtMoney(amount) + " recorded · " + acct.fullName + ((v.applies || []).length ? ", against what you chose" : ""); }
         else if (kind === "waiver") { r = await NGGApi.admin.fees.waive(acct.memberId, amount, v.note.trim()); msg = fmtMoney(r.waived) + " waived" + (r.clamped ? " — that was all that was outstanding." : "."); }
         else { r = await NGGApi.admin.fees.charge(acct.memberId, kind, amount, v.reason, v.note.trim()); msg = fmtMoney(amount) + " charged."; }
       } catch (e) {
@@ -430,7 +434,7 @@ function crMoAccountBlocks(d, ctx) {
     action: "Back to the list", onAction: () => ctx.setSub(""), render: () => <CrMoAccountSummary a={a} ctx={ctx}/> });
   const open = a.account.open || [];
   out.push({ type: "table", span: 6, title: "What is owed", nosel: true,
-    sub: open.length ? "Oldest first — payments settle the oldest charge first, so this is what the next payment pays." : "",
+    sub: open.length ? "Oldest first. A payment settles the oldest charge first unless it names what it pays; the family can choose in the app, and you can when recording it." : "",
     cols: ["Charge", { l: "Fell due" }, { l: "Amount", num: true }, { l: "Paid", num: true }, { l: "Left to pay", num: true }],
     rows: open.map(o => ({ key: "o" + o.entryId, open: byId[o.entryId] ? () => crMoEntryOpen(ctx, byId[o.entryId], a) : null, cells: [
       { k: "text", t: crMoWhat(o), s: o.kind === "fine" || o.kind === "adjustment" ? o.note : "" },
