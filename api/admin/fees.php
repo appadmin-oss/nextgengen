@@ -18,6 +18,7 @@ if ($method === 'GET') {
     elseif ($view === 'fineRules') $res = gs_call('admin.fees.fineRules', ['requesterId' => $mid]);
     elseif ($view === 'imported') $res = gs_call('admin.fees.imported', ['requesterId' => $mid]);
     elseif ($view === 'notices')  $res = gs_call('admin.fees.notices', ['requesterId' => $mid]);
+    elseif ($view === 'plans')    $res = gs_call('admin.fees.plans', ['requesterId' => $mid, 'status' => $_GET['status'] ?? 'open']);
     elseif ($view === 'lookup')   $res = gs_call('admin.fees.lookup', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '']);
     elseif ($view === 'journal')  $res = gs_call('admin.fees.journal', ['requesterId' => $mid, 'from' => $_GET['from'] ?? '', 'to' => $_GET['to'] ?? '',
                                     'kind' => $_GET['kind'] ?? '', 'direction' => $_GET['direction'] ?? '', 'state' => $_GET['state'] ?? '',
@@ -46,6 +47,11 @@ if ($method === 'GET') {
         'upratePreview' => 'admin.fees.uprate.preview',
         'uprateApply'   => 'admin.fees.uprate.apply',
         'unappliedResolve' => 'admin.fees.unapplied.resolve',
+        // Instalment plans (domain/fee-plans.php).
+        'planCreate'    => 'admin.fees.plan.create',
+        'planPreview'   => 'admin.fees.plan.preview',
+        'planDecide'    => 'admin.fees.plan.decide',
+        'planCancel'    => 'admin.fees.plan.cancel',
     ];
     if (!isset($map[$action])) json_error('bad_action', 400);
     $res = gs_call($map[$action], array_merge($b, ['requesterId' => $mid, 'ip' => client_ip()]));

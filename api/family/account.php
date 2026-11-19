@@ -22,6 +22,10 @@ switch ($action) {
     case 'anchor.confirm': $res = gs_call('family.anchor.confirm', $base + ['linkId' => $b['linkId'] ?? '', 'date' => (string)($b['date'] ?? ''), 'on' => !empty($b['on'])]); break;
     case 'anchor.remark': $res = gs_call('family.anchor.remark', $base + ['linkId' => $b['linkId'] ?? '', 'text' => (string)($b['text'] ?? '')]); break;
     case 'fees.advance': $res = gs_call('family.fees.advance', $base + ['linkId' => $b['linkId'] ?? '', 'months' => (int)($b['months'] ?? 0), 'terms' => (int)($b['terms'] ?? 0)]); break;
+    // Instalment plans (domain/fee-plans.php): the server works out the dates; the parent agrees by name.
+    case 'fees.plan.preview': $res = gs_call('family.fees.plan.preview', $base + ['linkId' => $b['linkId'] ?? '', 'count' => (int)($b['count'] ?? 0), 'cadence' => (string)($b['cadence'] ?? '')]); break;
+    case 'fees.plan.create':  $res = gs_call('family.fees.plan.create', $base + ['linkId' => $b['linkId'] ?? '', 'count' => (int)($b['count'] ?? 0), 'cadence' => (string)($b['cadence'] ?? ''),
+                                                          'signedName' => (string)($b['signedName'] ?? ''), 'agreed' => ($b['agreed'] ?? false) === true]); break;
     case 'notices.read': $res = gs_call('family.notices.read', $base + ['noticeId' => (string)($b['noticeId'] ?? '')]); break;
     case 'withdraw':    $res = gs_call('family.request.withdraw', $base + ['requestId' => $b['requestId'] ?? '']); break;
     case 'report.sign': $res = gs_call('family.report.sign', $base + ['id' => (string)($b['id'] ?? '')]); break;

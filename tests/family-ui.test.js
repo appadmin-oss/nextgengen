@@ -338,6 +338,29 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     chk('…and the /pay page names it as paying ahead', true);
     chk('…and repeats the dues-change notice', /pay the difference/.test(await fp.locator('.mpay-notice').innerText()));
 
+    /* Instalment plans (domain/fee-plans.php): the parent picks, sees the
+       server's dates, agrees by name, and the plan waits for approval. */
+    await fp.goto(BASE + '/family?view=fees&child=' + tobi, { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
+    await waitText(fp, /Payment plan/, 40000);
+    await fp.locator('.fp3x-go', { hasText: 'Set up a payment plan' }).click();
+    await fp.locator('.fp3x-opt', { hasText: /^2/ }).first().click();
+    await fp.locator('.fp3x-mode', { hasText: 'Every two weeks' }).click();
+    await waitText(fp, /Instalment 2/, 20000);
+    const planTxt = await fp.locator('section', { hasText: 'Payment plan' }).last().innerText();
+    chk('plans: the parent sees two dated instalments from the server, two weeks apart, and the terms', /Instalment 1/.test(planTxt) && /Instalment 2/.test(planTxt) && /approves it/.test(planTxt));
+    await fp.locator('.fp3x-go', { hasText: 'Ask NGG for this plan' }).click();
+    await waitText(fp, /Type your full name/, 15000);
+    chk('plans: no name, no plan — and the page says why', true);
+    await fp.fill('.fp3x-field input', 'Ada Parent');
+    await fp.locator('.fp3x-tick input').check();
+    await settle(fp);
+    await fp.screenshot({ path: path.join(SHOTS, 'family-plan-phone.png'), fullPage: true });
+    await fp.locator('.fp3x-go', { hasText: 'Ask NGG for this plan' }).click();
+    await waitText(fp, /Waiting for NGG to approve/, 30000);
+    const plan = JSON.parse(php(`echo json_encode(db_row("SELECT status, count, cadence, agreedVia, signedName FROM fee_plans WHERE memberId = 'NGG-FU-KID' ORDER BY id DESC LIMIT 1"));`));
+    chk('plans: the request is stored PENDING, as agreed in the app by the name typed', plan && plan.status === 'pending' && Number(plan.count) === 2 && plan.cadence === 'fortnightly' && plan.agreedVia === 'app' && plan.signedName === 'Ada Parent');
+    php(`db_exec("DELETE FROM fee_plans WHERE memberId = 'NGG-FU-KID'");`);
+
     await fp.goto(BASE + '/family?view=fees&child=' + tobi, { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
     await waitText(fp, /Paid by transfer or at the desk/, 40000);
     await fp.locator('.fp3x-ghost', { hasText: 'I’ve paid' }).click();

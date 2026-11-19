@@ -118,11 +118,12 @@ async function crMoLoadAccount(memberId) { return (await NGGApi.admin.fees.membe
 async function crMoRefresh(ctx) {
   const d = ctx.data || {};
   const id = d.acct && d.acct.memberId;
-  const [acct, arr] = await Promise.all([
+  const [acct, arr, plans] = await Promise.all([
     id ? crMoLoadAccount(id).catch(() => d.acct) : null,
     NGGApi.admin.fees.arrears(d.B && d.B.arrearsPage).catch(() => d.arr),
+    NGGApi.admin.fees.plans("open").catch(() => d.plans),
   ]);
-  ctx.setData(x => Object.assign({}, x, { acct: acct || x.acct, arr: arr || x.arr, found: null, rev: (x.rev || 0) + 1 }));
+  ctx.setData(x => Object.assign({}, x, { acct: acct || x.acct, arr: arr || x.arr, plans: plans || x.plans, found: null, rev: (x.rev || 0) + 1 }));
 }
 /** Open a dues document (register or one member's statement) in a new tab, where it prints or saves as a PDF. */
 function crMoPrint(kind, q) {
@@ -420,6 +421,84 @@ function CrMoAccountSummary({ a, ctx }) {
   );
 }
 
+/* ── Instalment plans (domain/fee-plans.php) ──────────────────────────────
+   A family asks in the app, or staff set one up for a parent who agreed by
+   phone, in person or in writing. Every plan waits here until somebody with
+   `fees` approves it; a decline or an ending needs a reason, which the family
+   is told. Any payment counts towards a running plan, so nothing about
+   recording money changes. */
+const CR_MO_PLAN_STATUS = { pending: ["Waiting for approval", "warn"], active: ["Running", "ok"], completed: ["Paid in full", "ok"], declined: ["Not approved", "neutral"], cancelled: ["Ended", "neutral"] };
+const CR_MO_PLAN_VIA = [["phone", "By phone"], ["in_person", "In person"], ["writing", "In writing"]];
+const CR_MO_PLAN_CAD = [["weekly", "Every week"], ["fortnightly", "Every two weeks"], ["monthly", "Every month"]];
+const CR_MO_PLAN_ERR = { plan_exists: "This account already has a plan waiting or running.", nothing_owed: "Nothing is owed, so there is nothing to put on a plan.",
+  too_long: "That runs past the longest plan allowed (Amounts → Instalment plans).", too_small: "The amount is too small to split.", start_in_past: "The first instalment cannot be in the past.",
+  agreed_via_required: "Say how the parent agreed.", not_pending: "Somebody has already decided this plan.", reason_required: "Give the reason — the family is told it." };
+function crMoPlanSchedule(p) { return (p.schedule || []).map(it => crDate(it.date) + " · " + fmtMoney(it.amount) + (it.state === "paid" ? " ✓" : it.state === "overdue" ? " (overdue)" : "")).join("\n"); }
+function crMoPlanOpen(ctx, p, name) {
+  const pending = p.status === "pending";
+  ctx.form({
+    title: "Payment plan · " + (name || p.memberId), submit: pending ? "Save the decision" : "End the plan", busyLabel: "Saving…",
+    intro: fmtMoney(p.total) + " in " + p.count + " instalments, " + (p.cadenceLabel || "").toLowerCase() + ". Agreed " + (p.agreedViaLabel || "").toLowerCase()
+      + (p.signedName ? " by " + p.signedName : "") + ". Paid so far " + fmtMoney(p.paid) + ".\n\n" + crMoPlanSchedule(p),
+    values: { decision: pending ? "approve" : "cancel", reason: "" },
+    fields: [
+      pending ? { id: "decision", l: "Decision", type: "chips", req: true, opts: [["approve", "Approve"], ["decline", "Decline"]] } : null,
+      { id: "reason", l: pending ? "Why it is declined (the family is told)" : "Why the plan is ending (the family is told)", type: "textarea", rows: 2, max: 400, req: true,
+        when: v => !pending || v.decision === "decline" },
+    ].filter(Boolean),
+    onSubmit: async v => {
+      try {
+        if (pending) await NGGApi.admin.fees.planDecide(p.planId, v.decision, (v.reason || "").trim());
+        else await NGGApi.admin.fees.planCancel(p.planId, (v.reason || "").trim());
+      } catch (e) {
+        const c = e && ((e.data && e.data.error) || e.code);
+        throw Object.assign(new Error(c || "failed"), { data: { message: CR_MO_PLAN_ERR[c] || crMoErr(e, "Couldn’t save that.") } });
+      }
+      await crMoRefresh(crMoCtx.current || ctx);
+      return { msg: pending ? (v.decision === "approve" ? "Plan approved — the family has been told." : "Plan declined — the family has been told why.") : "Plan ended — the family has been told." };
+    },
+    done: (v, r) => r.msg,
+  });
+}
+function crMoPlanNew(ctx, acct) {
+  const B = (ctx.data && ctx.data.B) || {}, max = (ctx.data && ctx.data.cfg && ctx.data.cfg.planMaxDays) || 120;
+  ctx.form({
+    title: "Set up a payment plan · " + acct.fullName, submit: "Set up the plan", busyLabel: "Saving…",
+    intro: "For a parent who agreed off the app. The plan covers the " + fmtMoney(acct.balance.payable) + " owed today, split equally (any odd naira on the last instalment), and runs at most "
+      + max + " days. It waits for approval like a plan a family asks for. Any payment counts towards it.",
+    values: { count: "3", cadence: "monthly", startDate: new Date().toISOString().slice(0, 10), agreedVia: "", parentName: "", note: "" },
+    fields: [
+      { id: "count", l: "Instalments", type: "chips", req: true, opts: [["2", "2"], ["3", "3"], ["4", "4"], ["5", "5"], ["6", "6"]] },
+      { id: "cadence", l: "How often", type: "chips", req: true, opts: CR_MO_PLAN_CAD },
+      { id: "startDate", l: "First instalment", type: "date", req: true },
+      { id: "agreedVia", l: "How the parent agreed", type: "chips", req: true, opts: CR_MO_PLAN_VIA },
+      { id: "parentName", l: "Parent who agreed", max: 160, ph: "Full name" },
+      { id: "note", l: "Note", type: "textarea", rows: 2, max: 400, ph: "Called on 19 Nov; agreed to pay on Saturdays" },
+    ],
+    onSubmit: async v => {
+      let r;
+      try { r = await NGGApi.admin.fees.planCreate({ memberId: acct.memberId, count: parseInt(v.count, 10), cadence: v.cadence, startDate: v.startDate, agreedVia: v.agreedVia, parentName: v.parentName.trim(), note: v.note.trim() }); }
+      catch (e) {
+        const c = e && ((e.data && e.data.error) || e.code);
+        if (c === "agreed_via_required") return { fieldErrors: { agreedVia: CR_MO_PLAN_ERR[c] } };
+        throw Object.assign(new Error(c || "failed"), { data: { message: CR_MO_PLAN_ERR[c] || crMoErr(e, "Couldn’t set up the plan.") } });
+      }
+      await crMoRefresh(crMoCtx.current || ctx);
+      return { msg: "Plan set up and waiting for approval: " + r.plan.schedule.map(it => crDate(it.date) + " " + fmtMoney(it.amount)).join(", ") + "." };
+    },
+    done: (v, r) => r.msg,
+  });
+}
+function crMoPlanRows(ctx, plans, name) {
+  return plans.map(p => ({ key: "pl" + p.planId, open: () => crMoPlanOpen(ctx, p, name || p.name), cells: [
+    name ? { k: "text", t: crDate(p.createdAt), v: p.createdAt } : { k: "person", t: p.name || p.memberId, s: p.memberId + (p.centre ? " · " + p.centre : "") },
+    { k: "num", t: fmtMoney(p.total), s: p.count + " × " + (p.cadenceLabel || "").toLowerCase(), v: p.total },
+    { k: "num", t: fmtMoney(p.paid), v: p.paid },
+    { k: "text", t: p.agreedViaLabel || "—", s: p.signedName || "" },
+    { k: "status", t: (CR_MO_PLAN_STATUS[p.status] || [p.status])[0] + (p.overdue ? " · " + fmtMoney(p.overdue) + " overdue" : ""), tone: p.overdue ? "bad" : (CR_MO_PLAN_STATUS[p.status] || [0, "neutral"])[1] },
+  ] }));
+}
+
 function crMoAccountBlocks(d, ctx) {
   const a = d.acct, out = [];
   // An older server sends no statement: say so, rather than drawing an empty account.
@@ -450,6 +529,12 @@ function crMoAccountBlocks(d, ctx) {
       { k: "num", t: r.void ? "—" : r.balance < 0 ? crMoLess(-r.balance) + " cr" : fmtMoney(r.balance), v: r.balance },
     ] })),
     search: "Search the statement", emptyText: "Nothing on this account yet. Charges appear when dues are brought up to date." });
+  const pl = a.plans || [], livePlan = pl.some(p => p.status === "pending" || p.status === "active");
+  out.push({ type: "table", span: 6, title: "Payment plan", nosel: true,
+    sub: livePlan ? "Open the plan to approve, decline or end it. Any payment counts towards it." : "Split what is owed into 2 to 6 instalments, for a parent who agreed off the app.",
+    action: !livePlan && a.balance && a.balance.payable > 1 ? "Set up a plan" : null, onAction: () => crMoPlanNew(ctx, a),
+    cols: [{ l: "Set up" }, { l: "Plan", num: true }, { l: "Paid", num: true }, "Agreed", "State"],
+    rows: crMoPlanRows(ctx, pl, a.fullName), emptyText: "No payment plan on this account." });
   /* custom: TrainingFeeWatch (components.jsx) is the one training-fee schedule
      renderer, shared with the member's own dashboard. The place is covered by
      NGG and never billed, so it sits apart from the money above. */
@@ -497,6 +582,11 @@ function crMoOwesBlocks(d, ctx) {
     { l: "Never paid", v: crNum(never), tone: "flat", s: "No payment on record" },
     { l: "Reminders off", v: crNum(rows.filter(r => r.remindOff).length), tone: "flat", s: crPlural(rows.filter(r => r.atCap).length, "at the ceiling", "at the ceiling") },
   ] });
+  const plans = (d.plans && d.plans.plans) || [];
+  if (plans.length) out.push({ type: "table", span: 6, title: "Payment plans", nosel: true,
+    sub: crPlural(plans.filter(p => p.status === "pending").length, "waiting for approval", "waiting for approval") + " · open one to decide it",
+    cols: ["Member", { l: "Plan", num: true }, { l: "Paid", num: true }, "Agreed", "State"],
+    rows: crMoPlanRows(ctx, plans, null), emptyText: "" });
   /* custom: a lookup for ANY account, including people who owe nothing — the
      arrears list cannot answer "has Ada paid?". admin_fees_lookup is a search,
      not a list, so it is a search box here rather than a second table filter. */
@@ -1039,6 +1129,10 @@ function crMoAmountsForm(cfg, B, defaults) {
         { id: "remindEveryDays", l: "No more often than every (days)", c: "input", type: "number", im: "numeric", value: String(cfg.remindEveryDays), check: int(B.remindMinDays, B.remindMaxDays),
           help: "The minimum is " + B.remindMinDays + " — a family reminded daily stops reading anything you send, and your sender gets blocked." },
       ] },
+      { h: "Instalment plans", help: "Families ask for a plan in the family app (Fees → Set up a payment plan), or staff set one up from an account. Every plan is approved here before it runs.", rows: [
+        { id: "planMaxDays", l: "Longest plan, first instalment to last (days)", c: "input", type: "number", im: "numeric", value: String(cfg.planMaxDays || 120), check: int(B.planMaxDaysMin || 14, B.planMaxDaysMax || 365),
+          help: "A plan longer than this is refused, whoever sets it up. Between " + (B.planMaxDaysMin || 14) + " and " + (B.planMaxDaysMax || 365) + " days." },
+      ] },
       { h: "Keeping up with inflation", help: "Only the " + (B.uprateFields || []).map(f => (CR_MO_SETTING[f] || f).toLowerCase()).join(", ") + " move, rounded to the nearest " + fmtMoney(B.uprateRound) + ". Charges already on an account stay exactly as they were. Fines are not included — they are set in Conduct & fines.", rows: [
         { id: "upratePct", l: "Raise amounts by (%)", c: "input", type: "number", im: "numeric", value: String(cfg.upratePct), check: int(0, B.uprateMaxPct), help: "0 switches it off. At most " + B.uprateMaxPct + "% at a time." },
         { id: "uprateEveryMonths", l: "No more often than every (months)", c: "input", type: "number", im: "numeric", value: String(cfg.uprateEveryMonths), check: int(B.uprateEveryMin, B.uprateEveryMax),
@@ -1084,13 +1178,14 @@ Object.assign(CR_TAB_DEFS, {
       const [s, up] = await Promise.all([NGGApi.admin.fees.settings(), NGGApi.admin.fees.upratePreview().catch(() => null)]);
       const B = s.bounds || {};
       const arr = await NGGApi.admin.fees.arrears(B.arrearsPage);
+      const plans = await NGGApi.admin.fees.plans("open").catch(() => null);
       const id = crMoAcctId(ctx.sub);
       const acct = id ? await crMoLoadAccount(id).catch(() => null) : null;
       const prev = ctx.data && ctx.data.prev;
       const nv = ctx.sub === "reminders" ? await NGGApi.admin.fees.notices().catch(() => null) : (ctx.data && ctx.data.nv) || null;
       const jf = (ctx.data && ctx.data.jf) || {};
       const jr = ctx.sub === "transactions" ? await NGGApi.admin.fees.journal(jf).catch(e => ({ err: e })) : (ctx.data && ctx.data.jr) || null;
-      const d = { cfg: s.fees, B, defaults: s.defaults || {}, arr, acct, rev: 0,
+      const d = { cfg: s.fees, B, defaults: s.defaults || {}, arr, acct, rev: 0, plans,
         up: up ? Object.assign({}, up.uprate, { maxPct: up.maxPct }) : null,
         prev: prev || null, nv, nvErr: ctx.sub === "reminders" && !nv ? "Couldn’t load the notices." : "", trainServer: crMoTrainServer(), jf, jr };
       d.amountsForm = crMoAmountsForm(d.cfg, B, d.defaults);

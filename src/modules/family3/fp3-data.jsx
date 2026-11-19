@@ -164,6 +164,7 @@ function fp3Ward(link, d, today) {
       programme: Object.assign({}, fees3.programme, { serviceStarts: fp3Long(fees3.programme.serviceStarts), completes: fp3Long(fees3.programme.completes) }),
       terms: fees3.terms, bank: fees3.bank,
       ahead: fees3.ahead ? Object.assign({}, fees3.ahead, { paidThroughL: fees3.ahead.paidThrough ? fp3Month(fees3.ahead.paidThrough) : "" }) : null,
+      plans: fees3.plans || null,
       asked: fees3.asked || null, claim: fees3.claim ? Object.assign({}, fees3.claim, { when: fp3Date(fees3.claim.at) }) : null,
     } : { enabled: false, payable: 0, outstanding: 0, lines: [], next: [], entries: [], joining: null, programme: { phase: "starting" }, terms: {}, bank: null, ahead: null, asked: null, claim: null },
     learning: { completed: L.completed || 0, total: L.total || 0, pct: L.pct || 0, overdue: L.overdue || 0,

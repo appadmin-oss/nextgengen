@@ -40871,5 +40871,72 @@ if (receipt_available()) {
     imagedestroy($gim);
 }
 
+/* ── Instalment plans (domain/fee-plans.php) ─────────────────────────────── */
+(function () {
+    $now = now_iso();
+    $admin = (string)(db_row("SELECT memberId FROM members WHERE role = 'super_admin' ORDER BY id LIMIT 1")['memberId'] ?? 'NGG-2025-0001');
+    db_insert('members', ['memberId' => 'NGG-PLN-1', 'fullName' => 'Plan Child', 'type' => 'NGG', 'status' => 'active', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'GW-PLN-1', 'guardianId' => 'G-PLN-1', 'memberId' => 'NGG-PLN-1', 'status' => 'active', 'createdAt' => $now]);
+    fees_post('NGG-PLN-1', 'fine', 10000, ['note' => 'test charge', 'by' => 'test', 'periodKey' => 'pln-test-1']);
+    $m = db_row("SELECT * FROM members WHERE memberId = 'NGG-PLN-1'");
+    $owed = fee_plan_owed($m);
+    chk('plans: the fixture owes something to plan', $owed > 0);
+
+    $s = fee_plan_schedule(10001, 3, 'monthly', '2026-01-31');
+    chk('plans: equal parts, the remainder on the LAST instalment', array_column($s['schedule'], 'amount') === [3333, 3333, 3335]);
+    chk('plans: monthly keeps the day, clamped to the month end (31 Jan → 28 Feb → 31 Mar)', array_column($s['schedule'], 'date') === ['2026-01-31', '2026-02-28', '2026-03-31']);
+    chk('plans: weekly and every two weeks step by 7 and 14 days',
+        array_column(fee_plan_schedule(600, 2, 'weekly', '2026-05-01')['schedule'], 'date') === ['2026-05-01', '2026-05-08']
+        && array_column(fee_plan_schedule(600, 3, 'fortnightly', '2026-05-01')['schedule'], 'date')[2] === '2026-05-29');
+    chk('plans: 2 to 6 instalments, nothing else', fee_plan_schedule(600, 1, 'weekly', '2026-05-01')['error'] === 'bad_count' && fee_plan_schedule(700, 7, 'weekly', '2026-05-01')['error'] === 'bad_count');
+    $keep = setting_get('fees', null);
+    fees_settings_save(['planMaxDays' => 30], 'test');
+    chk('plans: the admin\'s longest time frame is enforced by the server', (fee_plan_schedule(600, 3, 'monthly', '2026-05-01')['error'] ?? '') === 'too_long'
+        && fee_plan_schedule(600, 3, 'fortnightly', '2026-05-01')['ok'] === true);
+    chk('plans: the limit has a floor and a ceiling', (function () { fees_settings_save(['planMaxDays' => 3], 'test'); $a = fee_plan_max_days(); fees_settings_save(['planMaxDays' => 9999], 'test'); return $a === 14 && fee_plan_max_days() === 365; })());
+    fees_settings_save(['planMaxDays' => 120], 'test');
+
+    $fam = ['guardianId' => 'G-PLN-1', 'linkId' => 'GW-PLN-1', 'count' => 2, 'cadence' => 'monthly'];
+    chk('plans: a parent must type their name', (backend_dispatch('family.fees.plan.create', $fam + ['agreed' => true, 'signedName' => ''])['error'] ?? '') === 'name_required');
+    chk('plans: …and tick to agree', (backend_dispatch('family.fees.plan.create', $fam + ['agreed' => false, 'signedName' => 'Ada Parent'])['error'] ?? '') === 'terms_not_agreed');
+    chk('plans: a stranger cannot ask for a plan on somebody else\'s child', (backend_dispatch('family.fees.plan.create', ['guardianId' => 'G-OTHER', 'linkId' => 'GW-PLN-1', 'count' => 2, 'cadence' => 'monthly', 'agreed' => true, 'signedName' => 'X Y Z'])['error'] ?? '') === 'not_found');
+    $pv = backend_dispatch('family.fees.plan.preview', $fam);
+    chk('plans: the preview gives exact dates and amounts that add up to what is owed', !empty($pv['ok']) && array_sum(array_column($pv['schedule'], 'amount')) === $owed && count($pv['terms']['lines']) >= 4);
+    $r = backend_dispatch('family.fees.plan.create', $fam + ['agreed' => true, 'signedName' => 'Ada Parent']);
+    chk('plans: a parent\'s plan is PENDING until approved', !empty($r['ok']) && $r['plan']['status'] === 'pending' && $r['plan']['agreedVia'] === 'app');
+    $pid = $r['plan']['planId'];
+    chk('plans: one plan at a time', (backend_dispatch('family.fees.plan.create', $fam + ['agreed' => true, 'signedName' => 'Ada Parent'])['error'] ?? '') === 'plan_exists');
+    chk('plans: the Fees page shows the pending plan and offers no second one', (function () use ($m) { $b = family_fee_plan_block($m, 5000); return $b['plan']['status'] === 'pending' && $b['offer'] === null; })());
+    chk('plans: a decline needs a reason', (backend_dispatch('admin.fees.plan.decide', ['requesterId' => $admin, 'planId' => $pid, 'decision' => 'decline'])['error'] ?? '') === 'reason_required');
+    chk('plans: a member cannot approve a plan', (backend_dispatch('admin.fees.plan.decide', ['requesterId' => 'NGG-PLN-1', 'planId' => $pid, 'decision' => 'approve'])['ok'] ?? false) === false);
+    $d = backend_dispatch('admin.fees.plan.decide', ['requesterId' => $admin, 'planId' => $pid, 'decision' => 'approve']);
+    chk('plans: staff with fees approve it, and it runs', !empty($d['ok']) && $d['plan']['status'] === 'active');
+    chk('plans: it is decided once', (backend_dispatch('admin.fees.plan.decide', ['requesterId' => $admin, 'planId' => $pid, 'decision' => 'approve'])['error'] ?? '') === 'not_pending');
+    chk('plans: the family is told', (bool)db_row("SELECT 1 FROM guardian_notices WHERE guardianId = 'G-PLN-1' AND refId = ?", [$pid]) || !function_exists('family_notice_add'));
+
+    $plan = db_row('SELECT * FROM fee_plans WHERE planId = ?', [$pid]);
+    $first = json_decode((string)$plan['scheduleJson'], true)[0]['amount'];
+    fees_post('NGG-PLN-1', 'payment', $first, ['method' => 'cash', 'by' => 'test']);
+    $v = fee_plan_view($plan);
+    chk('plans: ANY payment counts — cash at the desk pays the first instalment', $v['schedule'][0]['state'] === 'paid' && $v['paid'] === $first);
+    fees_post('NGG-PLN-1', 'fine', 777, ['note' => 'new charge during the plan', 'by' => 'test', 'periodKey' => 'pln-test-2']);
+    chk('plans: a new charge during the plan is not part of it', fee_plan_view(db_row('SELECT * FROM fee_plans WHERE planId = ?', [$pid]))['total'] === $owed);
+    fees_post('NGG-PLN-1', 'payment', $owed, ['method' => 'transfer', 'by' => 'test']);
+    chk('plans: paid in full, it completes on its own', fee_plan_view(db_row('SELECT * FROM fee_plans WHERE planId = ?', [$pid]))['status'] === 'completed'
+        && db_row('SELECT status FROM fee_plans WHERE planId = ?', [$pid])['status'] === 'completed');
+
+    chk('plans: staff must say how the parent agreed', (backend_dispatch('admin.fees.plan.create', ['requesterId' => $admin, 'memberId' => 'NGG-PLN-1', 'count' => 2, 'cadence' => 'weekly'])['error'] ?? '') !== ''
+        && (backend_dispatch('admin.fees.plan.create', ['requesterId' => $admin, 'memberId' => 'NGG-PLN-1', 'count' => 2, 'cadence' => 'weekly', 'agreedVia' => 'app'])['error'] ?? '') === 'agreed_via_required');
+    fees_post('NGG-PLN-1', 'fine', 50000, ['note' => 'another', 'by' => 'test', 'periodKey' => 'pln-test-3']);
+    $sr = backend_dispatch('admin.fees.plan.create', ['requesterId' => $admin, 'memberId' => 'NGG-PLN-1', 'count' => 2, 'cadence' => 'weekly', 'agreedVia' => 'phone', 'parentName' => 'Ada Parent']);
+    chk('plans: a staff plan records the channel, and still waits for approval', !empty($sr['ok']) && $sr['plan']['agreedVia'] === 'phone' && $sr['plan']['status'] === 'pending');
+    chk('plans: cancelling needs a reason', (backend_dispatch('admin.fees.plan.cancel', ['requesterId' => $admin, 'planId' => $sr['plan']['planId']])['error'] ?? '') === 'reason_required'
+        && !empty(backend_dispatch('admin.fees.plan.cancel', ['requesterId' => $admin, 'planId' => $sr['plan']['planId'], 'reason' => 'Parent changed their mind.'])['ok']));
+    chk('plans: the admin list carries plans', !empty(backend_dispatch('admin.fees.plans', ['requesterId' => $admin, 'status' => 'all'])['ok']));
+
+    setting_set('fees', $keep, 'test');
+    foreach (['fee_plans', 'member_ledger', 'guardian_wards', 'members'] as $t) db_exec("DELETE FROM $t WHERE memberId = 'NGG-PLN-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

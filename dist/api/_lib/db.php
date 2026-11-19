@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 239;
+const NGG_SCHEMA_TARGET = 240;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6667,6 +6667,24 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_mou_status ON mou_agreements(status);
             CREATE INDEX IF NOT EXISTS idx_mou_token ON mou_agreements(tokenHash);
             CREATE INDEX IF NOT EXISTS idx_mou_doc ON mou_agreements(docTokenHash);
+        ",
+        /* Instalment plans (domain/fee-plans.php). One row per plan; the
+           schedule is fixed JSON, and what has been paid is READ from the
+           ledger, never stored here. */
+        240 => "
+            CREATE TABLE IF NOT EXISTS fee_plans (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              planId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL, guardianId TEXT NOT NULL DEFAULT '',
+              source TEXT NOT NULL DEFAULT 'family', agreedVia TEXT NOT NULL DEFAULT 'app',
+              signedName TEXT NOT NULL DEFAULT '', termsVersion TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+              count INTEGER NOT NULL DEFAULT 0, cadence TEXT NOT NULL DEFAULT 'monthly', startDate TEXT NOT NULL DEFAULT '',
+              total INTEGER NOT NULL DEFAULT 0, scheduleJson TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'pending',
+              createdBy TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '',
+              decidedBy TEXT NOT NULL DEFAULT '', decidedAt TEXT NOT NULL DEFAULT '', declineReason TEXT NOT NULL DEFAULT '',
+              cancelReason TEXT NOT NULL DEFAULT '', completedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_fee_plans_member ON fee_plans(memberId, status);
+            CREATE INDEX IF NOT EXISTS idx_fee_plans_status ON fee_plans(status);
         ",
     ];
 

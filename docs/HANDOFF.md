@@ -7643,3 +7643,32 @@ Owner: "Remove everything that is irrelevant", then "Please create a test for th
   orphan font comes back.
 - Kept on purpose, because only a test still uses them: AdminAssessment, AdminTournaments,
   idsCardsInRange, idsStock. Removing them means deleting their tests too, so that is the owner's call.
+
+## 2026-11-19 — Instalment plans (schema 240, `domain/fee-plans.php`)
+
+Owner's brief: a parent sets up a plan in the family app (Fees → Set up a
+payment plan: 2–6 instalments, weekly / every two weeks / monthly, exact dates
+and amounts shown, terms read, name typed, box ticked); staff can set one up
+for a parent who agreed by phone, in person or in writing and must say which;
+**the plan must be approved**; the admin sets the longest time frame.
+
+- **Pending until approved.** Both doors write a `pending` plan through one
+  writer (`fee_plan_create`); `admin.fees.plan.decide` (cap `fees`,
+  compare-and-set) approves or declines with a reason, and the family is told
+  in their notices. A staff-created plan waits for approval too.
+- **The server works out the schedule** (`fee_plan_schedule`): equal parts,
+  the odd naira on the LAST instalment, monthly keeps the day of the month
+  clamped to the month's end. `planMaxDays` (fees settings, 14–365, default
+  120, Control Room → Money → Amounts → Instalment plans) is enforced on the
+  server, first instalment to last, whoever sets the plan up.
+- **What counts**: every live `payment` credit after the plan was set up,
+  oldest instalment first. There is no plan-specific payment — the desk records
+  money exactly as before. The plan's total is what was owed the day it was set
+  up; new dues during it are charged as normal and are not part of it. A plan
+  completes on its own when the payments reach the total (on read, no cron).
+- `fee_plans` is `BLOCK` in the merge policy (money).
+- Surfaces: family app Fees → "Payment plan" card (`Fp3Plan`); Control Room →
+  Money → Who owes ("Payment plans" table) and each account ("Payment plan",
+  with "Set up a plan"). Tests: the "plans:" group in `api/tests/run.php`.
+- Not done: reminders still run during a plan as before, and a missed
+  instalment does not end a plan by itself — staff end it with a reason.
