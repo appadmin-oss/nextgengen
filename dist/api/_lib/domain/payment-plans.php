@@ -408,10 +408,11 @@ function admin_plans_for(array $p): array {
 /** admin.payplans.create — a plan agreed with a parent by phone, in person or in writing. */
 function admin_plans_create(array $p): array {
     $g = plan_admin_gate($p); if (!$g['ok']) return $g;
-    $mid = trim((string)($p['memberId'] ?? ''));
-    $sg = fees_scope_gate($g['requester'], $mid); if (!$sg['ok']) return $sg;
-    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    // The member by record ID or by the number printed on their card.
+    $key = trim((string)($p['memberId'] ?? ''));
+    $m = $key === '' ? null : db_row('SELECT * FROM members WHERE memberId = ? OR displayId = ? ORDER BY (memberId = ?) DESC LIMIT 1', [$key, $key, $key]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $sg = fees_scope_gate($g['requester'], (string)$m['memberId']); if (!$sg['ok']) return $sg;
     $how = (string)($p['how'] ?? '');
     if (!in_array($how, ['by phone', 'in person', 'in writing'], true)) return ['ok' => false, 'error' => 'how_required', 'detail' => 'Say how the parent agreed: by phone, in person or in writing.'];
     return plan_create($m, (int)($p['instalments'] ?? 0), (string)($p['frequency'] ?? ''), (string)($p['firstDue'] ?? ''),

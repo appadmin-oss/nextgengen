@@ -48,7 +48,16 @@ jobs:
         run: |
           node tests/build.test.js
           node tests/no-important.test.js
-          node tests/route-registry.test.js
 
+      # Runs whether or not a step above failed, so one failure never hides another.
       - name: PHP suite (SQLite)
+        if: ${{ !cancelled() }}
         run: php api/tests/run.php
+
+      - name: Browser for the UI suites
+        if: ${{ !cancelled() }}
+        run: npx playwright-core install --with-deps chromium
+
+      - name: Route registry
+        if: ${{ !cancelled() }}
+        run: node tests/route-registry.test.js
