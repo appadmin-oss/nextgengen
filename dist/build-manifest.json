@@ -1,16 +1,16 @@
 {
-  "buildId": "9b79b25bd8",
-  "builtAt": "2026-11-17T19:00:01.777Z",
+  "buildId": "be60825437",
+  "builtAt": "2026-11-19T14:33:47.833Z",
   "bundle": {
-    "file": "app.f73cf7e3f8.min.js",
-    "bytes": 2376497,
-    "gzipBytes": 642305,
+    "file": "app.b13f4a1e86.min.js",
+    "bytes": 2377243,
+    "gzipBytes": 642538,
     "files": 49
   },
   "more": {
-    "file": "app-more.0029c47347.min.js",
-    "bytes": 3847002,
-    "gzipBytes": 1093415,
+    "file": "app-more.1f66065f8d.min.js",
+    "bytes": 3849325,
+    "gzipBytes": 1094089,
     "files": 63,
     "list": [
       "src/modules/idcards/ids-core.jsx",
@@ -79,13 +79,13 @@
     ]
   },
   "assets": {
-    "app.min.js": "app.f73cf7e3f8.min.js",
-    "app-more.min.js": "app-more.0029c47347.min.js",
+    "app.min.js": "app.b13f4a1e86.min.js",
+    "app-more.min.js": "app-more.1f66065f8d.min.js",
     "styles.css": "styles.a089df9dbd.css",
-    "styles-app.css": "styles-app.b20b968e57.css",
+    "styles-app.css": "styles-app.01245e5cfd.css",
     "data.js": "data.ec97c65376.js",
     "photos.js": "photos.36b0b4ea72.js",
-    "api-client.js": "api-client.b70c1f7099.js",
+    "api-client.js": "api-client.d13590e880.js",
     "outbox.js": "outbox.042a8c9122.js"
   },
   "node": "v22.23.4"

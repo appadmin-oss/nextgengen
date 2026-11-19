@@ -539,6 +539,13 @@ button{cursor:pointer}
         <sc-if value="{{ shForm }}">
           <p style="margin:0; font-size:14px; color:#4a4a50; text-wrap:pretty;">{{ shLead }}</p>
           <sc-if value="{{ shIsPay }}">
+            <sc-if value="{{ payPartOn }}">
+              <div role="radiogroup" aria-label="How much to pay" style="display:flex; gap:6px; flex-wrap:wrap;"><sc-for list="{{ payModes }}" as="r" hint-placeholder-count="2"><button role="radio" aria-checked="{{ r.sel }}" onClick="{{ r.onClick }}" style="height:40px; padding:0 14px; border-radius:999px; border:1px solid {{ r.bd }}; background:{{ r.bg }}; color:{{ r.fg }}; font-size:14px; font-weight:500;">{{ r.l }}</button></sc-for></div>
+              <sc-if value="{{ payIsPart }}">
+                <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Amount to pay now (₦)<input inputMode="numeric" value="{{ fAmt }}" onChange="{{ onFAmt }}" placeholder="{{ payPartPh }}" autoComplete="off" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:18px; font-variant-numeric:tabular-nums; outline:none; background:#fff;"></label>
+                <span style="font-size:13px; color:#4a4a50; text-wrap:pretty;">{{ payPartHint }}</span>
+              </sc-if>
+            </sc-if>
             <div style="border-radius:16px; background:#f6f4f0; padding:14px; display:flex; flex-direction:column; gap:8px;"><sc-for list="{{ payLines }}" as="l" hint-placeholder-count="2"><div style="display:flex; gap:10px; font-size:14.5px;"><span style="flex:1; color:#4a4a50;">{{ l.k }}</span><b style="font-weight:600; font-variant-numeric:tabular-nums;">{{ l.v }}</b></div></sc-for></div>
             <span style="font-size:13px; color:#6b6b72; display:flex; gap:6px; align-items:center;"><i class="ph ph-lock-simple" aria-hidden="true"></i>Paystack handles the payment. NGG never sees your card.</span>
           </sc-if>

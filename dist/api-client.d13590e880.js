@@ -1465,7 +1465,7 @@
       registration: (linkId) => request('/family/registration.php' + qs({ link: linkId })),
       // A child's Anchor week, for a parent's link; writes go through act('anchor.confirm' | 'anchor.remark').
       anchor:   (linkId) => request('/family/anchor.php' + qs({ link: linkId })),
-      pay:      (linkId) => request('/family/pay.php', { body: { link: linkId } }),
+      pay:      (linkId, amount) => request('/family/pay.php', { body: amount ? { link: linkId, amount } : { link: linkId } }),
       act:      (action, data) => request('/family/account.php', { body: Object.assign({ action }, data || {}) }),
       inbox:    (cat, cursor) => request('/family/inbox.php' + qs({ cat: cat || '', cursor: cursor || '' })),
       events:   () => request('/family/events.php'),

@@ -67,7 +67,7 @@ class Fp3Portal extends React.Component {
       w: 1280, sec: u.sec || null, childId: u.child, sub: u.sub ? { [u.sec === "attendance" ? "attendance" : u.sec === "requests" ? "requests" : "progress"]: u.sub } : {},
       rsSession: u.session, stF: u.st, stN: 14, ibCat: "all",
       ttOpen: false, todoAll: false, sw: false, bank: false, sheet: null, shDone: null, shErr: "", busy: false,
-      fFrom: "", fTo: "", fRef: "", fBody: "", fWhy: "lost", slot: 0, upFile: null, upName: "", msgId: null,
+      fFrom: "", fTo: "", fRef: "", fBody: "", fWhy: "lost", fPart: false, fAmt: "", slot: 0, upFile: null, upName: "", msgId: null,
       siStep: "email", siEmail: "", siCode: "", siErr: "", siBusy: false,
       adCode: "", adName: "", adRel: "parent", adErr: "", adDone: null, adBusy: false,
       mfa: false, toast: "", online: typeof navigator === "undefined" ? true : navigator.onLine !== false, savedAt: "",
@@ -182,7 +182,7 @@ class Fp3Portal extends React.Component {
   setSub(sec, sub) { this.setState(s => ({ sub: Object.assign({}, s.sub, { [sec]: sub }) }), () => this.pushUrl()); }
   closeSheet() { this.setState({ sheet: null, shDone: null, shErr: "", busy: false }); }
   closeSw() { this.setState({ sw: false }); }
-  openSheet(kind, extra) { this.setState(Object.assign({ sheet: kind, shDone: null, shErr: "", fBody: "", fFrom: "", fTo: "", fWhy: "lost", busy: false }, extra || {})); }
+  openSheet(kind, extra) { this.setState(Object.assign({ sheet: kind, shDone: null, shErr: "", fBody: "", fFrom: "", fTo: "", fWhy: "lost", fPart: false, fAmt: "", busy: false }, extra || {})); }
   /** Run a write: busy while it goes, the server's refusal in words, then re-read what changed. */
   write(fn, done, after) {
     if (this.state.busy || !this.can()) return;
@@ -701,12 +701,32 @@ class Fp3Portal extends React.Component {
       }
       if (sh === "pay") {
         const fee = w.fees.payFee || 0, net = w.fees.joining ? w.fees.joining.total : w.fees.payable;
+        /* Instalments (membership_part_invoice): the balance, not a joining invoice, and only when it is
+           at least twice the minimum. The amount is checked here for the message and again on the server. */
+        const min = w.fees.joining ? 0 : (w.fees.partMin || 0), partOn = min > 0, part = partOn && !!S.fPart;
+        const amt = Math.floor(Number(String(S.fAmt || "").replace(/[^\d]/g, "")) || 0);
         Object.assign(out, { shTitle: w.fees.joining ? "Pay " + first + "’s joining invoice" : "Pay for " + first,
-          shLead: "You’ll go to Paystack to pay by card, bank or USSD, then come straight back here." + (fee ? " Paystack charges " + N(fee) + " for paying online; paying by bank transfer to NGG has no charge." : ""),
-          shGoL: S.busy ? "Opening Paystack…" : "Continue to Paystack", shGoBg: "#f5b026", shGoFg: "#2a1d00" });
-        out.payLines = (w.fees.joining ? w.fees.joining.items : w.fees.lines).map(rr => ({ k: rr.label, v: N(rr.amount) }))
-          .concat(fee ? [{ k: "Paystack charge", v: N(fee) }] : []).concat([{ k: "Total", v: N(net + fee) }]);
-        out.shGo = () => this.write(() => NGGApi.family.pay(w.linkId), rr => { if (rr && rr.payUrl) window.location.assign(rr.payUrl); else this.setState({ shErr: "The payment page couldn’t be opened. Try again." }); });
+          shLead: "You’ll go to Paystack to pay by card, bank or USSD, then come straight back here." + (part ? " Paystack’s charge for this amount, if any, is shown on the next page before you pay. Paying by bank transfer to NGG has no charge." : fee ? " Paystack charges " + N(fee) + " for paying online; paying by bank transfer to NGG has no charge." : ""),
+          shGoL: S.busy ? "Opening Paystack…" : part && amt >= min && amt <= net ? "Continue to pay " + N(amt) : "Continue to Paystack", shGoBg: "#f5b026", shGoFg: "#2a1d00" });
+        out.payPartOn = partOn; out.payIsPart = part;
+        out.payModes = [[false, "All of it, " + N(net)], [true, "Part of it"]].map(rr => { const on = !!S.fPart === rr[0]; return { l: rr[1], sel: on ? "true" : "false", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c", bd: on ? "#0b0b0c" : "#d9d6cd", onClick: () => this.setState({ fPart: rr[0], shErr: "" }) }; });
+        out.fAmt = S.fAmt || ""; out.onFAmt = e => this.setState({ fAmt: e.target.value.replace(/[^\d,]/g, "").slice(0, 12), shErr: "" });
+        out.payPartPh = "e.g. " + Number(Math.max(min, Math.round(net / 2 / 1000) * 1000)).toLocaleString("en");
+        out.payPartHint = "Any amount from " + N(min) + " to " + N(net) + ". The rest stays on " + first + "’s account; pay it whenever you can, all at once or in more instalments.";
+        out.payLines = part
+          ? [{ k: "Owed today", v: N(net) }, { k: "This instalment", v: amt ? N(amt) : "—" }, { k: "Left after this", v: amt && amt <= net ? N(net - amt) : "—" }]
+          : (w.fees.joining ? w.fees.joining.items : w.fees.lines).map(rr => ({ k: rr.label, v: N(rr.amount) }))
+            .concat(fee ? [{ k: "Paystack charge", v: N(fee) }] : []).concat([{ k: "Total", v: N(net + fee) }]);
+        const PART_ERR = { part_too_small: "Pay at least " + N(min) + " at a time.", part_too_large: "That’s more than is owed. The most you can pay is " + N(net) + "." };
+        out.shGo = () => {
+          if (part) {
+            if (!amt) return this.setState({ shErr: "Type how much you want to pay now." });
+            if (amt < min) return this.setState({ shErr: PART_ERR.part_too_small });
+            if (amt > net) return this.setState({ shErr: PART_ERR.part_too_large });
+          }
+          // A refusal (too small, too large, a transfer being checked) comes back with its own sentence: fp3Err shows it.
+          this.write(() => NGGApi.family.pay(w.linkId, part && amt < net ? amt : undefined), rr => { if (rr && rr.payUrl) window.location.assign(rr.payUrl); else this.setState({ shErr: "The payment page couldn’t be opened. Try again." }); });
+        };
       }
       if (sh === "leave") {
         const ex = w.excuses;

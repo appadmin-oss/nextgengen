@@ -214,7 +214,7 @@ function membership_invoice_create(array $m, string $by, int $applicationId = 0,
  * (membership_paystack_verify). An offline claim waiting on a check blocks a
  * new invoice, because that money may already be on its way.
  */
-function membership_balance_invoice(array $m, string $by): array {
+function membership_balance_invoice(array $m, string $by, ?int $part = null): array {
     if (!member_is_ngg($m)) return ['ok' => false, 'error' => 'not_ngg'];
     if (!function_exists('fees_balance')) return ['ok' => false, 'error' => 'fees_off'];
     $cfg = fees_settings();
@@ -228,8 +228,9 @@ function membership_balance_invoice(array $m, string $by): array {
     }
     $due = (int)(fees_balance($m, $cfg)['payable'] ?? 0);
     if ($due <= 0) return ['ok' => false, 'error' => 'nothing_to_pay'];
-    // An open advance invoice covers today's balance too, so it is replaced like a stale balance one.
-    $open = db_all("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose IN ('balance','advance') ORDER BY id DESC", [$mid]);
+    if ($part !== null) return membership_part_invoice($m, $by, $due, $part);
+    // An open advance or part invoice is replaced like a stale balance one: one payment asked for at a time.
+    $open = db_all("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose IN ('balance','advance','part') ORDER BY id DESC", [$mid]);
     foreach ($open as $o) {
         if (db_row("SELECT id FROM offline_payments WHERE invoiceId = ? AND status = 'pending' LIMIT 1", [(string)$o['invoiceId']])) return ['ok' => false, 'error' => 'offline_pending'];
     }
@@ -253,7 +254,7 @@ function membership_balance_invoice(array $m, string $by): array {
 function member_fees_pay(array $p): array {
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
-    return membership_balance_invoice($m, (string)$m['memberId']);
+    return membership_balance_invoice($m, (string)$m['memberId'], membership_part_arg($p));
 }
 
 /** family.fees.pay — a guardian paying for one of their own, active links. */
@@ -263,7 +264,69 @@ function family_fees_pay(array $p): array {
     if (!$l) return ['ok' => false, 'error' => 'not_found'];
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$l['memberId']]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
-    return membership_balance_invoice($m, 'guardian:' . $gid);
+    return membership_balance_invoice($m, 'guardian:' . $gid, membership_part_arg($p));
+}
+
+/* ── Paying the balance in instalments ──────────────────────────────────────
+ *
+ * A family that cannot clear the whole balance at once pays what it can: an
+ * amount it chooses, from MPAY_PART_MIN up to everything owed today. It is a
+ * PART invoice — an ordinary membership_invoices row (purpose 'part') on the
+ * same /pay page, the same Paystack check (exact amount, currency, invoice),
+ * the same membership_settle, which posts only the payment because the
+ * charges are already on the ledger, and the same numbered receipt. A bank
+ * transfer claimed against it is checked like any other. Nothing is promised
+ * or scheduled: what is left stays on the account, reminders keep naming the
+ * real balance, and the family pays again whenever it can.
+ *
+ * Unlike a balance invoice, a part invoice does not go stale when the balance
+ * moves, because it was never a quote of the whole: it stays payable while
+ * it is no more than what is owed. Money arriving first (a desk payment, a
+ * waiver) that leaves less owed than its amount voids it at checkout, so a
+ * family can never pay more than it owes through it.
+ *
+ * The minimum keeps an instalment worth the Paystack charge and the receipt;
+ * a balance below twice the minimum is paid in full (`partMin` is 0 then, and
+ * the family account offers no choice). */
+const MPAY_PART_MIN = 1000;
+
+/** The instalment asked for, or null for the whole balance. A non-number is 0: refused, never "the whole". */
+function membership_part_arg(array $p): ?int {
+    if (!array_key_exists('amount', $p) || $p['amount'] === null || $p['amount'] === '') return null;
+    return is_numeric($p['amount']) && (float)$p['amount'] == (int)$p['amount'] ? (int)$p['amount'] : 0;
+}
+
+/** The smallest instalment allowed against a balance; 0 when the balance is too small to split. */
+function membership_part_min(int $due): int {
+    return $due >= 2 * MPAY_PART_MIN ? MPAY_PART_MIN : 0;
+}
+
+function membership_part_invoice(array $m, string $by, int $due, int $amount): array {
+    $mid = (string)$m['memberId'];
+    $min = membership_part_min($due);
+    if ($amount === $due) return membership_balance_invoice($m, $by);          // all of it is the balance invoice
+    if ($min === 0) return ['ok' => false, 'error' => 'part_not_allowed', 'detail' => 'The balance is ' . fees_money_text($due) . '. Amounts under ' . fees_money_text(2 * MPAY_PART_MIN) . ' are paid in full.'];
+    if ($amount < $min) return ['ok' => false, 'error' => 'part_too_small', 'detail' => 'Pay at least ' . fees_money_text($min) . ' at a time.', 'min' => $min, 'max' => $due];
+    if ($amount > $due) return ['ok' => false, 'error' => 'part_too_large', 'detail' => 'The balance is ' . fees_money_text($due) . '. You can’t pay more than is owed.', 'min' => $min, 'max' => $due];
+    $open = db_all("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose IN ('balance','advance','part') ORDER BY id DESC", [$mid]);
+    foreach ($open as $o) {
+        if (db_row("SELECT id FROM offline_payments WHERE invoiceId = ? AND status = 'pending' LIMIT 1", [(string)$o['invoiceId']])) return ['ok' => false, 'error' => 'offline_pending'];
+    }
+    foreach ($open as $o) {
+        if ((string)$o['purpose'] === 'part' && (int)$o['total'] === $amount) return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode((string)$o['payToken']), 'invoiceId' => (string)$o['invoiceId'], 'total' => $amount, 'left' => $due - $amount, 'existed' => true];
+    }
+    foreach ($open as $o) db_update('membership_invoices', ['status' => 'void', 'voidReason' => 'superseded: a new payment was asked for'], ['id' => $o['id']]);
+    $terms = membership_fee_terms();
+    $row = [
+        'memberId' => $mid, 'applicationId' => 0, 'payToken' => rand_hex(20),
+        'items' => json_encode([['kind' => 'part', 'label' => 'Part payment towards the balance', 'detail' => fees_money_text($due) . ' owed on ' . gmdate('j M Y') . '; ' . fees_money_text($due - $amount) . ' left after this',
+            'amount' => $amount, 'periodKey' => '']], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        'total' => $amount, 'currency' => (string)$terms['currency'], 'startDate' => gmdate('Y-m-d'),
+        'status' => 'open', 'purpose' => 'part', 'createdBy' => substr($by, 0, 64), 'createdAt' => now_iso(),
+    ];
+    $row = doc_invoice_insert($row);
+    audit('membership.part.invoice', $by, $mid, ['invoiceId' => $row['invoiceId'], 'total' => $amount, 'owed' => $due, 'superseded' => count($open)]);
+    return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode($row['payToken']), 'invoiceId' => $row['invoiceId'], 'total' => $amount, 'left' => $due - $amount];
 }
 
 /* ── Paying ahead ────────────────────────────────────────────────────────
@@ -461,7 +524,7 @@ function membership_advance_invoice(array $m, int $months, string $by, int $term
     if ($termCount !== 0) { foreach ($plan['termQuotes'] as $x) if ($x['terms'] === $termCount) $q = $x; }
     else { foreach ($plan['quotes'] as $x) if ($x['months'] === $months) $q = $x; }
     if (!$q) return ['ok' => false, 'error' => 'nothing_to_pay', 'detail' => $termCount !== 0 ? 'There is nothing to pay ahead for that many terms.' : 'There is nothing to pay ahead for that many months.'];
-    $open = db_all("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose IN ('balance','advance') ORDER BY id DESC", [$mid]);
+    $open = db_all("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose IN ('balance','advance','part') ORDER BY id DESC", [$mid]);
     foreach ($open as $o) {
         if (db_row("SELECT id FROM offline_payments WHERE invoiceId = ? AND status = 'pending' LIMIT 1", [(string)$o['invoiceId']])) return ['ok' => false, 'error' => 'offline_pending'];
     }
@@ -559,7 +622,7 @@ function membership_settle(string $invoiceId, string $via, string $reference, st
             fees_post($memberId, (string)$it['kind'], (int)$it['amount'], ['periodKey' => (string)$it['periodKey'], 'note' => (string)$it['label'], 'by' => 'invoice:' . $invoiceId]);
         }
         $credit = fees_post($memberId, 'payment', (int)$inv['total'], ['periodKey' => 'minv:' . $invoiceId,
-            'note' => ($balance ? 'Balance payment ' : ($purpose === 'advance' ? 'Paid ahead ' : 'Joining invoice ')) . $invoiceId . ' — ' . (MPAY_METHODS[$via] ?? ($via === 'paystack' ? 'Paystack' : $via)),
+            'note' => ($balance ? 'Balance payment ' : ($purpose === 'part' ? 'Part payment ' : ($purpose === 'advance' ? 'Paid ahead ' : 'Joining invoice '))) . $invoiceId . ' — ' . (MPAY_METHODS[$via] ?? ($via === 'paystack' ? 'Paystack' : $via)),
             'method' => $via, 'reference' => $reference, 'by' => $by]);
         if (!$credit) throw new RuntimeException('ledger_failed');
         /* The receipt is numbered and frozen inside this transaction
@@ -583,13 +646,18 @@ function membership_send_receipt(array $inv): array {
     if ($to === '') return ['ok' => false, 'error' => 'no_email'];
     $first = explode(' ', trim((string)$m['fullName']))[0] ?: 'your child';
     $ok = @send_mail($to, 'Thank you — payment received · receipt ' . $inv['receiptNo'], email_template([
-        'title' => ['advance' => 'Thank you. ' . $first . ' is paid ahead.', 'balance' => 'Thank you. ' . $first . '’s account is paid.'][(string)($inv['purpose'] ?? '')] ?? 'Thank you. ' . $first . ' is fully enrolled.',
+        'title' => ['advance' => 'Thank you. ' . $first . ' is paid ahead.', 'balance' => 'Thank you. ' . $first . '’s account is paid.', 'part' => 'Thank you. Your instalment is in.'][(string)($inv['purpose'] ?? '')] ?? 'Thank you. ' . $first . ' is fully enrolled.',
         'intro' => 'We have received your payment of ' . fees_money_text((int)$inv['total']) . '. Your support keeps the programme running.',
         'bodyHtml' => membership_items_html($inv, true)
             . '<p style="margin:16px 0 0;font-size:14px"><b>Receipt</b> ' . esc_html($inv['receiptNo']) . ' · <b>Invoice</b> ' . esc_html($inv['invoiceId']) . '</p>'
-            . ((string)($inv['purpose'] ?? '') === 'advance'
+            . ((string)($inv['purpose'] ?? '') === 'part'
+                ? '<p style="margin:12px 0 0;font-size:14px">' . (($left = (int)(fees_balance($m)['payable'] ?? 0)) > 0
+                    ? esc_html(fees_money_text($left)) . ' is still owed on ' . esc_html($first) . '’s account. Pay it, all at once or in more instalments, from the family account whenever you can.'
+                    : 'Nothing more is owed on ' . esc_html($first) . '’s account today.') . '</p>'
+                : '')
+            . ((string)($inv['purpose'] ?? '') === 'part' ? '' : ((string)($inv['purpose'] ?? '') === 'advance'
                 ? '<p style="margin:12px 0 0;font-size:14px">The payment is held on ' . esc_html($first) . '’s account and meets each charge on the day it falls due, so there is nothing more to pay until it is used up. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>'
-                : '<p style="margin:12px 0 0;font-size:14px">From next month the commitment fee is ' . esc_html(fees_money_text((int)fees_settings()['monthlyDues'])) . ' a month. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>'),
+                : '<p style="margin:12px 0 0;font-size:14px">From next month the commitment fee is ' . esc_html(fees_money_text((int)fees_settings()['monthlyDues'])) . ' a month. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>')),
         'ctaLabel' => 'View and print the receipt',
         'ctaUrl' => membership_receipt_url($inv),   // receipt.php renders the frozen receipt (documents.php)
         'footNote' => 'With thanks from the Next Generation Genius team.',
@@ -667,6 +735,16 @@ function public_membership_pay_init(array $p): array {
             if ($due <= 0) return ['ok' => false, 'error' => 'nothing_to_pay'];
             $fresh = membership_balance_invoice($m, 'system');
             return ['ok' => false, 'error' => 'balance_changed', 'detail' => (string)($fresh['payUrl'] ?? '')];
+        }
+    }
+    /* An instalment is never more than what is owed: paid down since another way so it now exceeds
+       the balance, it is withdrawn, and the family asks again for an amount that fits. */
+    if ((string)($inv['purpose'] ?? '') === 'part' && $m && function_exists('fees_balance')) {
+        $due = (int)(fees_balance($m)['payable'] ?? 0);
+        if ((int)$inv['total'] > $due) {
+            db_exec("UPDATE membership_invoices SET status = 'void', voidReason = ? WHERE id = ? AND status = 'open'", ['superseded: less is owed than this instalment', $inv['id']]);
+            audit('membership.part.superseded', 'system', (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'was' => (int)$inv['total'], 'owed' => $due]);
+            return ['ok' => false, 'error' => $due <= 0 ? 'nothing_to_pay' : 'part_exceeds_balance', 'detail' => fees_money_text($due)];
         }
     }
     $email = membership_contact($m);

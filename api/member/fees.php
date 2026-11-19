@@ -17,7 +17,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $res = gs_call('member.family.nudge', ['memberId' => $s['mid']]);
     } elseif ($action === 'pay') {
         rate_limit_check_actor('membership.pay', (string)$s['mid']);
-        $res = gs_call('member.fees.pay', ['memberId' => $s['mid']]);
+        $res = gs_call('member.fees.pay', ['memberId' => $s['mid']] + (array_key_exists('amount', $b ?? []) ? ['amount' => $b['amount']] : []));
     } else json_error('unknown_action', 400);
 } elseif ((string)($_GET['view'] ?? '') === 'family') {
     $res = gs_call('member.family.nudges', ['memberId' => $s['mid']]);

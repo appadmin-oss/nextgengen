@@ -787,7 +787,7 @@ function crMoRemindBlocks(d, ctx) {
     act: { l: p ? "Refresh" : "See who would be reminded", run: () => crMoRemindPreview(ctx) } });
   if (p) {
     const s = p.skipped || {};
-    const why = [[s.nothingPayable, "nothing payable"], [s.tooSoon, "reminded recently"], [s.optedOut, "asked not to be reminded"], [s.underMinimum, "under the minimum balance"], [s.noContact, "no way to reach the family (no app account, email or phone)"]]
+    const why = [[s.nothingPayable, "nothing payable"], [s.tooSoon, "reminded recently"], [s.paidRecently, "paid an instalment recently"], [s.optedOut, "asked not to be reminded"], [s.underMinimum, "under the minimum balance"], [s.noContact, "no way to reach the family (no app account, email or phone)"]]
       .filter(x => x[0] > 0).map(x => crNum(x[0]) + " " + x[1]).join(" · ");
     out.push({ type: "note", span: 6, icon: p.count ? "paper-plane-tilt" : "check-circle", tone: p.count ? "gold" : "ok",
       text: crPlural(p.count, "family", "families") + " due a reminder now.",

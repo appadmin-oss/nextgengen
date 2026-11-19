@@ -9622,6 +9622,7 @@ function AdminFees() {
                     Not included:{" "}
                     {[[prev.skipped.nothingPayable, "nothing payable"],
                       [prev.skipped.tooSoon, "reminded recently"],
+                      [prev.skipped.paidRecently, "paid an instalment recently"],
                       [prev.skipped.optedOut, "asked not to be reminded"],
                       [prev.skipped.underMinimum, "under the minimum balance"],
                       [prev.skipped.noContact, "no way to reach the family (no app account, email or phone)"]]

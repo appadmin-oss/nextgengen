@@ -2762,6 +2762,25 @@ not the child's:
   1st, so no reminder goes out while it lasts and the account shows *Paid ahead
   to <month>*. A fee changed in the meantime is charged at its new price
   against the same credit. Paying ahead waits until the joining invoice is paid.
+- **Pay in instalments (from 19 Nov 2026).** In the family app, *Fees → Pay*
+  asks **All of it** or **Part of it**. With *Part of it* the parent types any
+  amount from **₦1,000** up to everything owed today, sees what will be left,
+  and pays it on the same /pay page, by Paystack or by transfer. It is one
+  invoice for that amount; the receipt says what is still owed. Rules:
+  - Payments go into one pool and pay off the oldest charges first, whatever
+    the parent meant them for. An instalment clears fines, dues and fees in
+    the order they fell due, exactly like money taken at the desk.
+  - A balance under ₦2,000 is paid in full: there is no *Part of it*.
+  - The joining invoice is paid in full; instalments are for the balance after it.
+  - Only one payment is asked for at a time. A new instalment, a full payment
+    or *Pay ahead* replaces the open one.
+  - If money reaches the account another way so that less is owed than the
+    instalment, its link stops working and tells the parent to choose again.
+    Nobody can overpay through it.
+  - **Follow-ups:** the balance reminder still goes out for what is left. It
+    waits a full reminder interval after the instalment (the preview names
+    these *paid an instalment recently*), and every reminder now tells the
+    family they can pay part of it. Reminders must be switched on.
 - **"I've paid".** A parent who paid by transfer or at the desk tells you from
   *Fees → Paid by transfer or at the desk?* — one line per way they paid
   (transfer with its reference, cash with who took it, POS with its receipt

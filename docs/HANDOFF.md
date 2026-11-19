@@ -7520,3 +7520,50 @@ Everything needed to continue is in two places:
   and the environment notes.
 - `HANDOFF-NEXT-AGENT.md`: every open thread, including online membership (the owner's new pricing:
   no yearly fee, $10 with a mentor, $5 a course with an instructor) and the Labs exam licence slot.
+
+## 19 Nov 2026 — Parents pay the balance in instalments, with follow-ups
+
+The owner asked whether parents can pay their fines and dues in instalments. They could pay, but only the
+whole balance. Online they had no way to pay part of it; only the desk could record a part payment.
+
+**What was built**
+- **A part invoice.** `membership_part_invoice()` in `domain/membership-pay.php` makes a
+  `membership_invoices` row with purpose `part`, for an amount the family chooses: from `MPAY_PART_MIN`
+  (₦1,000) up to the whole payable.
+  - It reuses everything a balance invoice uses: the /pay page, the Paystack check (exact amount, currency
+    and invoice), `membership_settle` (which posts only the payment, noted *Part payment*), the numbered
+    receipt, and a bank-transfer claim checked by the desk.
+  - Only one payment is asked for at a time. A part, a full balance or a pay-ahead invoice replaces the
+    open one.
+  - A balance under twice the minimum is not split (`part_not_allowed`).
+  - The amount is validated on the server: below the minimum, above the balance, or not a whole number
+    is refused, with a sentence saying why.
+- **Unlike a balance invoice, a part invoice does not go stale when the balance rises.** It was never a
+  quote of the whole. If the balance falls below the instalment's amount, checkout voids it
+  (`part_exceeds_balance`, with today's figure), so nobody can overpay through it.
+- **Ops.** `family.fees.pay` and `member.fees.pay` take an optional `amount`. `api/family/pay.php` passes
+  it and now returns the refusal's detail. `family_fees_view` sends `partMin` (0 means pay in full).
+- **Family app.** *Fees → Pay* asks **All of it, ₦N** or **Part of it**. *Part of it* shows an amount
+  field and lines for owed today, this instalment and left after it. The design source
+  (`family-portal-v3.dc.html`) has the new block and was recompiled with `tools/dc-compile.js`.
+  The /pay page has an instalment title, a note and its own void message.
+- **Follow-ups.**
+  - The receipt says what is still owed and that it can be paid in more instalments.
+  - The balance reminder (`fees_reminder_candidates`) skips a family that paid an instalment within the
+    reminder interval, so the follow-up runs from their payment. The skip is named `paidRecently`, and
+    the Control Room's preview lists it.
+  - Every reminder now says the family can choose *Part of it*.
+
+**Not built, on purpose: choosing which charge to pay.** The owner asked whether a family could pick what
+to pay: dues, fines and so on. Payments are one pooled credit that pays off charges oldest first
+(`fees_charges_left`). Every statement, report, clearance and conduct read is built on that. Ear-marking
+money for fines would change the accounting for all of them, and an instalment labelled "fines" that the
+allocator spent on older dues would mislead the family. The sheet shows what is owed, line by line, and
+the family chooses how much.
+
+**Verification**
+- `php -l` passes on every changed PHP file, and `node build.js` builds.
+- `api/tests/run.php` has a new block, *Paying the balance in instalments*, with 14 checks.
+- **Not run in this session:** a plugin added mid-session refuses any shell command that names a file
+  holding the organisation's contact address, which includes `api/tests/run.php` and most browser
+  suites. The PHP suite and the browser suites must be run before release.

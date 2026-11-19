@@ -17933,7 +17933,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         $pv = $p2['preview'];
         foreach (['due', 'count', 'skipped', 'everyDays', 'enabled'] as $k) if (!array_key_exists($k, $pv)) return false;
         // Every exclusion is NAMED — "it will send 4 of 60" is not checkable.
-        foreach (['off', 'optedOut', 'nothingPayable', 'underMinimum', 'tooSoon', 'noContact'] as $k) {
+        foreach (['off', 'optedOut', 'nothingPayable', 'underMinimum', 'tooSoon', 'paidRecently', 'noContact'] as $k) {
             if (!array_key_exists($k, $pv['skipped'])) return false;
         }
         // A preview does not send: the stamp is untouched by looking.
@@ -31544,6 +31544,104 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('balance · a guardian can pay for their own child, and not through someone else\'s link',
         !empty(backend_dispatch('family.fees.pay', ['guardianId' => 'BALG-1', 'linkId' => 'BAL-LINK'])['ok'])
         && (backend_dispatch('family.fees.pay', ['guardianId' => 'BALG-2', 'linkId' => 'BAL-LINK'])['error'] ?? '') === 'not_found');
+    unset($GLOBALS['__paystack_mock']);
+    if ($prevPs === null) unset($GLOBALS['CONFIG']['paystack']); else $GLOBALS['CONFIG']['paystack'] = $prevPs;
+    setting_set('fees', is_array($prevFees) ? $prevFees : [], 'test');
+    $wipe();
+})();
+
+// ── Paying the balance in instalments (owner, 19 Nov 2026) ───────────────────
+(function () {
+    $now = now_iso();
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'membership_invoices' => 'memberId', 'member_ledger' => 'memberId', 'guardian_wards' => 'memberId', 'dues_notices' => 'memberId', 'guardian_notices' => 'memberId'] as $t => $c) {
+            try { db_exec("DELETE FROM $t WHERE $c LIKE 'INS-%'"); } catch (Throwable $e) {}
+        }
+        db_exec("DELETE FROM guardians WHERE guardianId LIKE 'INSG-%'");
+    };
+    $wipe();
+    $prevFees = setting_get('fees'); $prevPs = $GLOBALS['CONFIG']['paystack'] ?? null;
+    setting_set('fees', ['enabled' => true, 'remindEnabled' => true] + fees_settings(), 'test');
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    foreach (['INS-1' => 'Ife Instalment', 'INS-2' => 'Tade Small'] as $id => $nm) db_insert('members', ['memberId' => $id, 'fullName' => $nm, 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => 'Egbeda', 'parentEmail' => strtolower(str_replace(' ', '.', $nm)) . '@example.com', 'joinDate' => gmdate('Y-m-d'), 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'INSG-1', 'email' => 'ife.instalment@example.com', 'fullName' => 'Mum', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'INS-LINK', 'guardianId' => 'INSG-1', 'memberId' => 'INS-1', 'status' => 'active', 'notify' => '{}', 'createdAt' => $now]);
+    $m = db_row("SELECT * FROM members WHERE memberId = 'INS-1'");
+    $base = (int)fees_balance($m)['payable'];
+    fees_post('INS-1', 'fine', 4000, ['periodKey' => 'test:ins:1', 'note' => 'Test fine', 'by' => 'test']);
+    fees_post('INS-1', 'adjustment', 6000, ['periodKey' => 'test:ins:2', 'note' => 'Test charge', 'by' => 'test']);
+    $due = (int)fees_balance($m)['payable'];
+    $pay = fn($amt) => backend_dispatch('family.fees.pay', ['guardianId' => 'INSG-1', 'linkId' => 'INS-LINK'] + ($amt === null ? [] : ['amount' => $amt]));
+
+    chk('instalments · the family account offers them, from the minimum, on a balance worth splitting', (family_fees_view($m)['partMin'] ?? -1) === MPAY_PART_MIN && $due === $base + 10000);
+    $full = $pay(null);
+    $p1 = $pay(3000);
+    $inv = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)($p1['invoiceId'] ?? '')]);
+    chk('instalments · a parent pays the amount they choose: a part invoice for exactly that, and what is left is said',
+        !empty($p1['ok']) && $inv && $inv['purpose'] === 'part' && (int)$inv['total'] === 3000 && (int)$p1['left'] === $due - 3000 && $p1['payUrl'] === '/pay/' . $inv['payToken']);
+    chk('instalments · one payment asked for at a time: the full-balance invoice it replaced is void',
+        db_row('SELECT status FROM membership_invoices WHERE invoiceId = ?', [(string)$full['invoiceId']])['status'] === 'void');
+    chk('instalments · the same amount again is the same invoice', !empty($pay(3000)['existed']));
+    chk('instalments · below the minimum, above the balance, or not a number is refused with the reason',
+        ($pay(500)['error'] ?? '') === 'part_too_small' && ($pay($due + 1)['error'] ?? '') === 'part_too_large' && ($pay('abc')['error'] ?? '') === 'part_too_small'
+        && ($pay(2.5)['error'] ?? '') === 'part_too_small' && str_contains((string)($pay(500)['detail'] ?? ''), '1,000'));
+    chk('instalments · paying all of it is the ordinary balance invoice', (db_row('SELECT purpose FROM membership_invoices WHERE invoiceId = ?', [(string)($pay($due)['invoiceId'] ?? '')])['purpose'] ?? '') === 'balance');
+    // A balance too small to split is paid in full.
+    fees_post('INS-2', 'fine', 1500, ['periodKey' => 'test:ins:3', 'note' => 'Small', 'by' => 'test']);
+    $m2 = db_row("SELECT * FROM members WHERE memberId = 'INS-2'");
+    $smallDue = (int)fees_balance($m2)['payable'];
+    chk('instalments · a balance under twice the minimum is not split', $smallDue >= 2 * MPAY_PART_MIN
+        || ((family_fees_view($m2)['partMin'] ?? -1) === 0 && (backend_dispatch('member.fees.pay', ['memberId' => 'INS-2', 'amount' => 1000])['error'] ?? '') === 'part_not_allowed'));
+
+    // Paystack, exactly as for a balance: the instalment settles as one payment credit.
+    $p1 = $pay(3000); $inv = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)$p1['invoiceId']]);
+    $kobo = 300000;
+    $GLOBALS['__paystack_mock'] = function ($method, $path, $body) use (&$kobo, $inv) {
+        if (strpos($path, '/transaction/initialize') === 0) return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/i1', 'reference' => $body['reference']]];
+        $ref = rawurldecode(substr($path, strlen('/transaction/verify/')));
+        return ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => $kobo, 'currency' => 'NGN', 'channel' => 'card', 'metadata' => ['invoiceId' => $inv['invoiceId']]]];
+    };
+    $pub = backend_dispatch('public.membership.invoice', ['token' => $inv['payToken']]);
+    chk('instalments · the /pay page shows it as an instalment', ($pub['invoice']['purpose'] ?? '') === 'part' && (int)($pub['invoice']['total'] ?? 0) === 3000);
+    // The balance going UP does not make an instalment stale: it was never a quote of the whole.
+    fees_post('INS-1', 'fine', 200, ['periodKey' => 'test:ins:4', 'note' => 'More', 'by' => 'test']);
+    $init = backend_dispatch('public.membership.pay.init', ['token' => $inv['payToken']]);
+    $GLOBALS['__mail_sink'] = [];
+    $ok = backend_dispatch('public.membership.pay.verify', ['token' => $inv['payToken'], 'reference' => (string)($init['reference'] ?? '')]);
+    $credit = db_row("SELECT * FROM member_ledger WHERE memberId = 'INS-1' AND direction = 'credit' AND kind = 'payment' ORDER BY id DESC LIMIT 1");
+    $after = (int)fees_balance($m)['payable'];
+    $rcpt = array_values(array_filter($GLOBALS['__mail_sink'], fn($x) => str_contains((string)$x['subject'], 'payment received')));
+    unset($GLOBALS['__mail_sink']);
+    chk('instalments · Paystack settles it: paid, one 3,000 credit noted as a part payment, the rest still owed',
+        !empty($init['ok']) && ($ok['invoice']['status'] ?? '') === 'paid' && $credit && (int)$credit['amount'] === 3000 && str_starts_with((string)$credit['note'], 'Part payment')
+        && $after === $due + 200 - 3000);
+    chk('instalments · the receipt says what is still owed, and how to pay it', $rcpt && str_contains($rcpt[0]['html'], fees_money_text($after)) && str_contains($rcpt[0]['html'], 'more instalments'));
+
+    // Follow-ups: the reminder for what is left runs from the instalment, and says instalments exist.
+    db_update('members', ['duesRemindedAt' => ''], ['memberId' => 'INS-1']);
+    $cand = fees_reminder_candidates();
+    chk('instalments · a family that just paid an instalment is not reminded the next day (named: paidRecently)',
+        !in_array('INS-1', array_column($cand['due'], 'memberId'), true) && (int)$cand['skipped']['paidRecently'] >= 1);
+    db_exec("UPDATE membership_invoices SET paidAt = ? WHERE memberId = 'INS-1' AND purpose = 'part' AND status = 'paid'", [gmdate('Y-m-d\TH:i:s\Z', time() - 40 * 86400)]);
+    $cand = fees_reminder_candidates();
+    $row = array_values(array_filter($cand['due'], fn($c) => $c['memberId'] === 'INS-1'));
+    $GLOBALS['__mail_sink'] = [];
+    if ($row) fees_reminder_send($row[0]);
+    $rem = array_values(array_filter($GLOBALS['__mail_sink'], fn($x) => str_contains((string)$x['html'], 'Ife')));
+    unset($GLOBALS['__mail_sink']);
+    chk('instalments · once the interval has passed the family is reminded of what is left, and told they can pay part of it',
+        $row && $rem && str_contains($rem[0]['html'], 'Part of it') && str_contains($rem[0]['html'], fees_money_text($after)));
+
+    // An instalment bigger than what is now owed is withdrawn at checkout: a family can never overpay through it.
+    $p2 = $pay(5000); $inv2 = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)$p2['invoiceId']]);
+    fees_post('INS-1', 'payment', $after - 2000, ['periodKey' => 'test:ins:desk', 'note' => 'Cash at the desk', 'method' => 'cash', 'by' => 'test']);
+    $stale = backend_dispatch('public.membership.pay.init', ['token' => $inv2['payToken']]);
+    chk('instalments · paid down at the desk to less than the instalment, the link is withdrawn and says how much is owed now',
+        ($stale['error'] ?? '') === 'part_exceeds_balance' && str_contains((string)($stale['detail'] ?? ''), '2,000')
+        && db_row('SELECT status FROM membership_invoices WHERE invoiceId = ?', [$inv2['invoiceId']])['status'] === 'void');
+    chk('instalments · a stranger cannot ask for an instalment on someone else\'s child', (backend_dispatch('family.fees.pay', ['guardianId' => 'INSG-X', 'linkId' => 'INS-LINK', 'amount' => 1000])['error'] ?? '') === 'not_found');
+
     unset($GLOBALS['__paystack_mock']);
     if ($prevPs === null) unset($GLOBALS['CONFIG']['paystack']); else $GLOBALS['CONFIG']['paystack'] = $prevPs;
     setting_set('fees', is_array($prevFees) ? $prevFees : [], 'test');
