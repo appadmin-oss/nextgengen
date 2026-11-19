@@ -119,7 +119,7 @@ const FEES_DEFAULTS = [
     'remindEveryDays' => 14,
     /* The longest an instalment plan may run, first instalment to last
        (domain/payment-plans.php). Admin-set; the server refuses a longer one. */
-    'planMaxDays' => 120,
+    'planMaxDays' => 183,
     'remindMinBalance' => 1,
     /* Notices BEFORE a charge falls due (domain/dues-notices.php): the month's
        dues and a membership renewal, `noticeDaysBefore` days ahead, to every
@@ -382,7 +382,7 @@ function fees_settings_save(array $in, string $by): array {
            told, rather than getting a daily chase that nobody asked to defend. */
         'remindEveryDays' => max(FEES_REMIND_MIN_DAYS, min(FEES_REMIND_MAX_DAYS, (int)($in['remindEveryDays'] ?? $cur['remindEveryDays']) ?: (int)$cur['remindEveryDays'])),
         'remindMinBalance' => fees_money($in['remindMinBalance'] ?? null, (int)$cur['remindMinBalance']),
-        'planMaxDays'    => max(14, min(365, (int)($in['planMaxDays'] ?? ($cur['planMaxDays'] ?? 120)) ?: 120)),
+        'planMaxDays'    => max(14, min(365, (int)($in['planMaxDays'] ?? ($cur['planMaxDays'] ?? 183)) ?: 183)),
         'noticeEnabled'  => $bool('noticeEnabled'),
         'noticeDaysBefore' => max(FEES_NOTICE_DAYS_MIN, min(FEES_NOTICE_DAYS_MAX, (int)($in['noticeDaysBefore'] ?? $cur['noticeDaysBefore']) ?: (int)$cur['noticeDaysBefore'])),
         'noticeApp'      => $bool('noticeApp'),

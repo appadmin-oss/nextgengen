@@ -771,7 +771,7 @@ class Fp3Portal extends React.Component {
           if (S.plName.trim().length < 3) return this.setState({ shErr: "Write your full name to agree." });
           if (!S.plAgree) return this.setState({ shErr: "Tick the box to agree to the terms." });
           this.write(() => NGGApi.family.payplan.create(w.linkId, { instalments: S.plN, frequency: S.plF, firstDue: S.fFrom, agree: true, termsVersion: O.termsVersion, agreedName: S.plName.trim() }),
-            () => this.setState({ shDone: ["Plan set up", "The first instalment of " + N(Q.items[0].amount) + " is due on " + fp3PlanDay(Q.items[0].dueDate) + ". We’ll remind you a few days before each one."] }), () => this.loadWard(w.linkId));
+            () => this.setState({ shDone: ["Plan sent for approval", "NGG will look at it and tell you when it is approved. The first instalment of " + N(Q.items[0].amount) + " would be due on " + fp3PlanDay(Q.items[0].dueDate) + " — if NGG approves it after that day, every date moves along. We’ll remind you a few days before each one."] }), () => this.loadWard(w.linkId));
         };
       }
       if (sh === "leave") {
@@ -1176,10 +1176,10 @@ function fp3PlanFirst(offer) {
 function fp3PlanView(F, first, T, N) {
   const P = F.plan;
   if (!P) return { planOn: false, planOfferOn: !!F.planOffer && F.payable > 0, planOfferL: "Agree a plan to clear " + first + "’s " + N(F.payable) + " in two to six instalments, weekly or monthly. We remind you before each one." };
-  const H = { on_track: ["On track", T.ok], behind: ["Behind", T.warn], broken: ["Lapsed", T.bad || T.warn], completed: ["Completed", T.ok], cancelled: ["Ended", T.neutral] }[P.health] || ["", T.neutral];
+  const H = { pending: ["Waiting for approval", T.warn], declined: ["Not approved", T.neutral], on_track: ["On track", T.ok], behind: ["Behind", T.warn], broken: ["Lapsed", T.bad || T.warn], completed: ["Completed", T.ok], cancelled: ["Ended", T.neutral] }[P.health] || ["", T.neutral];
   const done = P.items.filter(i => i.status === "paid").length;
   const pct = P.total ? Math.round(100 * P.paid / P.total) : 0;
-  const warn = P.health === "broken" ? "An instalment is more than " + (P.graceDays || 14) + " days late, so the plan has lapsed and " + N(P.remaining) + " is owed as normal. Pay what you can, or ask the centre about a new plan."
+  const warn = P.health === "pending" ? "NGG will look at the plan and tell you when it is approved. Nothing is due on it until then — if that is after the first date, every date moves along." : P.health === "broken" ? "An instalment is more than " + (P.graceDays || 14) + " days late, so the plan has lapsed and " + N(P.remaining) + " is owed as normal. Pay what you can, or ask the centre about a new plan."
     : P.health === "behind" ? N(P.overdue) + " is overdue (" + P.daysLate + (P.daysLate === 1 ? " day" : " days") + "). Pay it to keep the plan on track."
     : "";
   return {

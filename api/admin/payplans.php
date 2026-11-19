@@ -13,7 +13,7 @@ if ($method === 'GET') {
                                   'page' => (int)($_GET['page'] ?? 0), 'pageSize' => (int)($_GET['pageSize'] ?? 50)]);
 } elseif ($method === 'POST') {
     $b = read_json_body();   // CSRF is checked for every write in bootstrap (csrf_require)
-    $map = ['create' => 'admin.payplans.create', 'cancel' => 'admin.payplans.cancel', 'note' => 'admin.payplans.note'];
+    $map = ['create' => 'admin.payplans.create', 'cancel' => 'admin.payplans.cancel', 'note' => 'admin.payplans.note', 'decide' => 'admin.payplans.decide'];
     $op = $map[(string)($b['action'] ?? '')] ?? null;
     if (!$op) json_error('unknown_action', 400);
     unset($b['action'], $b['requesterId']);

@@ -1036,6 +1036,10 @@ function crMoAmountsForm(cfg, B, defaults) {
         { id: "payFeeFlatUnder", l: "…waived on payments under (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.payFeeFlatUnder), check: int(0, B.payFeeCapMax * 100) },
         { id: "payFeeCap", l: "Paystack’s charge is capped at (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.payFeeCap), check: int(0, B.payFeeCapMax), help: "0 means no cap." },
       ] },
+      { h: "Instalment plans", help: "Every plan waits for approval in Money → Instalment plans before it runs.", rows: [
+        { id: "planMaxDays", l: "Longest plan, first instalment to last (days)", c: "input", type: "number", im: "numeric", value: String(cfg.planMaxDays || 183), check: int(B.planMaxDaysMin || 14, B.planMaxDaysMax || 365),
+          help: "A longer plan is refused, whether a family or staff set it up. Between " + (B.planMaxDaysMin || 14) + " and " + (B.planMaxDaysMax || 365) + " days." },
+      ] },
       { h: "Arrears reminders", rows: [
         { id: "remindEnabled", l: "Remind guardians about arrears", c: "toggle", value: !!cfg.remindEnabled },
         { id: "remindEveryDays", l: "No more often than every (days)", c: "input", type: "number", im: "numeric", value: String(cfg.remindEveryDays), check: int(B.remindMinDays, B.remindMaxDays),
@@ -1614,10 +1618,10 @@ Object.assign(CR_TAB_DEFS, {
    An agreed schedule for clearing a balance, and whether it is being kept. Every
    figure is the server's: progress is read from the ledger, so a payment taken at
    the desk moves a plan as surely as one made online. Broken plans first. */
-const CR_PP_HEALTH = { on_track: ["On track", "ok"], behind: ["Behind", "warn"], broken: ["Lapsed", "bad"], completed: ["Completed", "ok"], cancelled: ["Ended", "neutral"] };
-const CR_PP_FILTERS = [["open", "Running"], ["broken", "Lapsed"], ["behind", "Behind"], ["on_track", "On track"], ["completed", "Completed"], ["cancelled", "Ended"], ["", "All"]];
+const CR_PP_HEALTH = { pending: ["Waiting for approval", "warn"], declined: ["Not approved", "neutral"], on_track: ["On track", "ok"], behind: ["Behind", "warn"], broken: ["Lapsed", "bad"], completed: ["Completed", "ok"], cancelled: ["Ended", "neutral"] };
+const CR_PP_FILTERS = [["pending", "Waiting for approval"], ["open", "Running"], ["broken", "Lapsed"], ["behind", "Behind"], ["on_track", "On track"], ["completed", "Completed"], ["cancelled", "Ended"], ["", "All"]];
 const CR_PP_FREQ = [["weekly", "Every week"], ["fortnightly", "Every two weeks"], ["monthly", "Every month"]];
-const CR_PP_EVENT = { created: "Agreed", reminded: "Reminder sent", missed: "Instalment missed", paid: "Instalment covered", broken: "Plan lapsed", completed: "Completed", cancelled: "Ended by staff", note: "Note" };
+const CR_PP_EVENT = { approved: "Approved", declined: "Not approved", created: "Agreed", reminded: "Reminder sent", missed: "Instalment missed", paid: "Instalment covered", broken: "Plan lapsed", completed: "Completed", cancelled: "Ended by staff", note: "Note" };
 const CR_PP_ITEM = { paid: "Paid", part: "Part paid", due: "Not yet due", late: "Late" };
 function crPpDay(d) { return d ? crDate(d) : "—"; }
 function crPpServer(health) {
@@ -1641,7 +1645,7 @@ async function crPpOpen(ctx, planId) {
   try { r = await NGGApi.admin.payplans.get(planId); }
   catch (e) { ctx.toast(crErr(e, "Couldn’t open that plan."), null, true); return; }
   const p = r.plan, m = r.member || {}, h = CR_PP_HEALTH[p.health] || [p.health];
-  const live = p.status === "active";
+  const live = p.status === "active" || p.status === "pending";
   ctx.drawer({
     title: m.fullName || p.memberId, name: m.fullName || "?", sub: p.planId + " · " + h[0],
     stats: [["Paid", fmtMoney(p.paid) + " of " + fmtMoney(p.total)], ["Overdue", p.overdue ? fmtMoney(p.overdue) : "Nothing"], ["Left", fmtMoney(p.remaining)]],
@@ -1657,11 +1661,22 @@ async function crPpOpen(ctx, planId) {
         t: (CR_PP_EVENT[e.kind] || e.kind) + (e.seq ? " · instalment " + e.seq : "") + (e.amount ? " · " + fmtMoney(e.amount) : ""), s: [e.detail, e.actor && e.actor !== "system" ? "by " + e.actor : ""].filter(Boolean).join(" · "), m: crDate(e.at, true) })) },
     ],
     actions: [
-      { l: "Add a note", icon: "note", primary: !live ? false : true, run: () => crPpNote(ctx, p) },
+      p.status === "pending" ? { l: "Approve", icon: "check", primary: true, run: () => crPpDecide(ctx, p, true) } : null,
+      p.status === "pending" ? { l: "Decline", run: () => crPpDecide(ctx, p, false) } : null,
+      { l: "Add a note", icon: "note", primary: p.status === "active", run: () => crPpNote(ctx, p) },
       live ? { l: "End the plan", run: () => crPpCancel(ctx, p) } : null,
       { l: "Open their account", run: () => { ctx.closeDrawer(); ctx.go("money", "fees", "account/" + encodeURIComponent(p.memberId)); } },
     ].filter(Boolean),
   });
+}
+/** Approve or decline a plan a family asked for (or staff set up). A decline needs a sentence the family reads. */
+function crPpDecide(ctx, p, approve) {
+  ctx.form({ title: (approve ? "Approve " : "Decline ") + p.planId, submit: approve ? "Approve the plan" : "Decline the plan", busyLabel: "Saving…",
+    intro: approve ? fmtMoney(p.total) + " in " + p.instalments + " instalments. If the first date has already passed, every date moves to start today — same amounts, same gaps. The family is told."
+      : "The family is told, with your reason, and the balance is owed as normal. They can ask for a different plan.",
+    values: { reason: "" }, fields: approve ? [] : [{ id: "reason", l: "Why it is not approved", type: "textarea", rows: 3, req: true, max: 600, help: "The family reads this.", check: v => v.trim().length < 8 ? "Say why, in a sentence the family can read." : "" }],
+    onSubmit: async v => { await NGGApi.admin.payplans.decide(p.planId, approve ? "approve" : "decline", (v.reason || "").trim()); },
+    done: () => { ctx.closeDrawer(); ctx.reload(); return approve ? "Plan approved. The family has been told." : "Plan declined. The family has been told why."; } });
 }
 function crPpNote(ctx, p) {
   ctx.form({ title: "Note on " + p.planId, submit: "Add the note", busyLabel: "Saving…",
@@ -1721,6 +1736,7 @@ Object.assign(CR_TAB_DEFS, {
       const c = d.counts, s = d.sums;
       return [
         { type: "kpis", span: 6, items: [
+          { l: "Waiting for approval", v: crNum(c.pending || 0), tone: c.pending ? "down" : "flat", s: c.pending ? "open one to approve or decline" : "nothing to decide" },
           { l: "Running", v: crNum((c.on_track || 0) + (c.behind || 0) + (c.broken || 0)), s: crNum(c.on_track || 0) + " on track · " + crNum(c.behind || 0) + " behind" },
           { l: "Lapsed", v: crNum(c.broken || 0), tone: c.broken ? "down" : "flat", s: "an instalment over " + d.grace + " days late" },
           { l: "Owed on running plans", v: fmtMoney(s.owed || 0), s: fmtMoney(s.overdue || 0) + " of it overdue" },

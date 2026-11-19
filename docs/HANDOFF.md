@@ -7870,3 +7870,31 @@ How it behaves:
     note, and offboarding with the class handed back.
   - No page errors in either.
 - PHP checks for both are in `run.php` and run in CI.
+
+## 2026-11-19 — one plan system: payment-plans, with approval and the fairness rules
+
+Two sessions built instalment plans the same afternoon (`domain/payment-plans.php`
+from the finme session, `domain/fee-plans.php` from this one). Merged into ONE:
+finme's (reminders, grace, the event record, paying an instalment online) is
+kept, and `fee-plans.php` and its table are gone (its migration number 242 now
+belongs to the assignments change). The owner's rules were moved into it:
+
+- **Every plan waits for approval** (`status = 'pending'`, health `pending`):
+  nothing is payable, late or reminded on it until `admin.payplans.decide`
+  (cap `fees`, compare-and-set) approves it; a decline needs a sentence the
+  family reads (`plan_approved` / `plan_declined` notices). Staff-made plans
+  wait too. Control Room → Money → Instalment plans → "Waiting for approval".
+- **Approved after its first date, a plan is re-dated** from the approval day
+  — same amounts, same gaps — so nobody is late before NGG says yes.
+- **The longest plan is the admin's** `planMaxDays` (fees settings, 14–365,
+  default 183), Money → Amounts → Instalment plans; enforced on the server.
+- **Fair to the naira:** no instalment differs from another by more than ₦1;
+  the odd naira go one each to the first instalments.
+- **No interest, no charge** for paying by plan — stated in the terms
+  (version `2026-11b`).
+
+Migrations after the three-way merge: 240–241 (registration steps, WhatsApp),
+242 (assignments), 243 (payment plans), 244 (instructor management). A
+database that ran the finme branch on its own has its plans tables already
+(243 creates IF NOT EXISTS) but 244's `ALTER TABLE volunteers` will refuse a
+duplicate column there — none is known to have been deployed.

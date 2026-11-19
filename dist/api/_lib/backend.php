@@ -666,6 +666,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.payplans.for'             => 'admin_plans_for',
             'admin.payplans.create'          => 'admin_plans_create',
             'admin.payplans.cancel'          => 'admin_plans_cancel',
+            'admin.payplans.decide'          => 'admin_plans_decide',
             'admin.payplans.note'            => 'admin_plans_note',
             'admin.fees.void'             => 'admin_fees_void',
             'admin.fees.mou'              => 'admin_fees_mou',

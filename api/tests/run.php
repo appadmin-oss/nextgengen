@@ -31859,7 +31859,14 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('plans · a quote splits the whole balance into equal instalments, the remainder on the first, dates a month apart',
         $due === 24000 && !empty($q['ok']) && array_column($q['items'], 'amount') === [6000, 6000, 6000, 6000] && $q['items'][1]['dueDate'] === plan_dates($first, 2, 'monthly')[1]
         && ($q['termsVersion'] ?? '') === PLAN_TERMS_VERSION);
-    chk('plans · an uneven balance puts the remainder on the first instalment', array_column(plan_schedule(10001, 3, 'weekly', $first, $today)['items'], 'amount') === [3335, 3333, 3333]);
+    chk('plans · fair to the naira: an uneven balance spreads the odd naira ₦1 at a time from the first instalment, never a larger last one',
+        array_column(plan_schedule(10001, 3, 'weekly', $first, $today)['items'], 'amount') === [3334, 3334, 3333]
+        && max(array_column(plan_schedule(1000005, 6, 'weekly', $first, $today)['items'], 'amount')) - min(array_column(plan_schedule(1000005, 6, 'weekly', $first, $today)['items'], 'amount')) <= 1);
+    $keepFees = setting_get('fees');
+    fees_settings_save(['planMaxDays' => 30], 'test');
+    chk('plans · the admin sets the longest plan: past it, a schedule is refused whoever asks', (plan_schedule(24000, 3, 'monthly', $first, $today)['error'] ?? '') === 'too_long'
+        && !empty(plan_schedule(24000, 3, 'fortnightly', $first, $today)['ok']));
+    setting_set('fees', $keepFees, 'test');
     chk('plans · a monthly date on the 31st falls on the month’s last day', plan_dates('2027-01-31', 2, 'monthly')[1] === '2027-02-28');
     chk('plans · the limits are refused with a reason: too many, too few, a past day, too far off, instalments under the minimum (six monthly fit in six months)',
         ($fam('quote', ['instalments' => 7, 'frequency' => 'monthly', 'firstDue' => $first])['error'] ?? '') === 'bad_count'
@@ -31883,6 +31890,16 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && $row['createdBy'] === 'guardian:PLNG-1' && (int)$row['total'] === 24000 && count(plan_items($pid)) === 4
         && $ev && $ev[0]['kind'] === 'created' && str_contains($ev[0]['detail'], 'Mrs Funmi Plan')
         && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'plan.created' AND subject = 'PLN-1'")['c'] >= 1);
+    chk('plans · a new plan WAITS for approval: nothing is payable or late on it, and only `fees` staff can decide it',
+        $row['status'] === 'pending' && plan_state($row, $m)['health'] === 'pending' && plan_state($row, $m, gmdate('Y-m-d', strtotime($today . ' +90 days')))['overdue'] === 0
+        && ($fam('pay')['error'] ?? '') === 'no_plan'
+        && empty(backend_dispatch('admin.payplans.decide', ['requesterId' => 'PLN-1', 'planId' => $pid, 'decision' => 'approve'])['ok'])
+        && (backend_dispatch('admin.payplans.decide', ['requesterId' => $ADM, 'planId' => $pid, 'decision' => 'decline', 'reason' => 'no'])['error'] ?? '') === 'reason_required');
+    $dec = backend_dispatch('admin.payplans.decide', ['requesterId' => $ADM, 'planId' => $pid, 'decision' => 'approve']);
+    $row = db_row('SELECT * FROM payment_plans WHERE planId = ?', [$pid]);
+    chk('plans · approved, it runs; it is decided once; the family is told', !empty($dec['ok']) && $row['status'] === 'active'
+        && (backend_dispatch('admin.payplans.decide', ['requesterId' => $ADM, 'planId' => $pid, 'decision' => 'approve'])['error'] ?? '') === 'not_pending'
+        && (bool)db_row("SELECT 1 FROM dues_notices WHERE memberId = 'PLN-1' AND kind = 'plan_approved'"));
     chk('plans · one plan at a time', ($fam('create', ['instalments' => 2, 'frequency' => 'monthly', 'firstDue' => $first, 'agree' => true, 'termsVersion' => PLAN_TERMS_VERSION])['error'] ?? '') === 'plan_exists');
     $s = plan_state($row, $m);
     chk('plans · a new plan is on track, nothing paid, and asks for the first instalment', $s['health'] === 'on_track' && $s['paid'] === 0 && $s['payNow'] === 6000 && $s['next']['seq'] === 1);
@@ -31956,6 +31973,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $prow = db_row('SELECT * FROM payment_plans WHERE planId = ?', [(string)($sc['plan']['planId'] ?? '')]);
     chk('plans · a staff-made plan records the staff member, the parent who agreed and how', !empty($sc['ok']) && $prow['source'] === 'staff' && $prow['createdBy'] === $ADM
         && str_contains(plan_events($prow['planId'])[0]['detail'], 'by phone') && (int)$prow['total'] === (int)fees_balance($m)['payable']);
+    chk('plans · a staff-made plan waits for approval too', $prow['status'] === 'pending');
+    backend_dispatch('admin.payplans.decide', ['requesterId' => $ADM, 'planId' => $prow['planId'], 'decision' => 'approve']);
+    $prow = db_row('SELECT * FROM payment_plans WHERE planId = ?', [$prow['planId']]);
     // Completing.
     fees_post('PLN-1', 'payment', (int)$prow['total'], ['periodKey' => 'test:pln:all', 'note' => 'All of it', 'method' => 'transfer', 'by' => 'test']);
     $done = plan_sync($prow);

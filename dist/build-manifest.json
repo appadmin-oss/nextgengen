@@ -1,6 +1,6 @@
 {
-  "buildId": "f482549cea",
-  "builtAt": "2026-11-19T18:20:39.951Z",
+  "buildId": "f59e75e6c3",
+  "builtAt": "2026-11-19T18:28:00.405Z",
   "bundle": {
     "file": "app.54a2b035c1.min.js",
     "bytes": 1674238,
@@ -8,9 +8,9 @@
     "files": 31
   },
   "more": {
-    "file": "app-more.cf92f81a0b.min.js",
-    "bytes": 3905181,
-    "gzipBytes": 1115484,
+    "file": "app-more.d723de04aa.min.js",
+    "bytes": 3907418,
+    "gzipBytes": 1116119,
     "files": 64,
     "list": [
       "src/modules/idcards/ids-core.jsx",
@@ -108,13 +108,13 @@
   },
   "assets": {
     "app.min.js": "app.54a2b035c1.min.js",
-    "app-more.min.js": "app-more.cf92f81a0b.min.js",
+    "app-more.min.js": "app-more.d723de04aa.min.js",
     "app-study.min.js": "app-study.a1a565d914.min.js",
     "styles.css": "styles.f4fb558cb8.css",
     "styles-app.css": "styles-app.9d70cdc003.css",
     "data.js": "data.ec97c65376.js",
     "photos.js": "photos.36b0b4ea72.js",
-    "api-client.js": "api-client.00b19b16a1.js",
+    "api-client.js": "api-client.dc982b3bde.js",
     "outbox.js": "outbox.042a8c9122.js",
     "styles-app-public.css": "styles-app-public.74238a9606.css",
     "phosphor.css": "phosphor-used.b694d33560.css"

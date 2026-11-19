@@ -2264,6 +2264,7 @@
         of:     (memberId) => request('/admin/payplans.php' + qs({ view: 'for', memberId })),
         create: (d) => request('/admin/payplans.php', { body: Object.assign({ action: 'create' }, d) }),
         cancel: (planId, reason) => request('/admin/payplans.php', { body: { action: 'cancel', planId, reason } }),
+        decide: (planId, decision, reason) => request('/admin/payplans.php', { body: { action: 'decide', planId, decision, reason } }),
         note:   (planId, text) => request('/admin/payplans.php', { body: { action: 'note', planId, text } }),
       },
       fees: {
