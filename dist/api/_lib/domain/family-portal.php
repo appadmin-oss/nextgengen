@@ -125,6 +125,10 @@ function family_fees_view(array $m): ?array {
         'payable' => (int)$a['payable'], 'outstanding' => (int)$a['outstanding'], 'payOnline' => !empty($a['payOnline']),
         /* Paystack's charge on paying online, borne by the family (fees.payFeeOn) — shown before they go to Paystack. */
         'payFee' => !empty($a['payOnline']) && function_exists('paystack_family_charge') ? paystack_family_charge($inv ? (int)$inv['total'] : (int)$a['payable'], $cfg) : 0,
+        /* The smallest instalment a family may pay towards today's balance (membership_part_min); 0 = pay in full. */
+        'partMin' => !empty($a['payOnline']) && !$inv && function_exists('membership_part_min') ? membership_part_min((int)$a['payable']) : 0,
+        // The instalment plan on this child, or the offer to make one (payment-plans.php).
+        ...(function_exists('plan_family_view') ? plan_family_view($m, (int)$a['payable'], (bool)$inv) : ['plan' => null, 'planOffer' => null]),
         'offlinePending' => (bool)db_row("SELECT 1 FROM member_requests WHERE memberId = ? AND kind = 'payment' AND status = 'open' LIMIT 1", [$mid]),
         'lines' => $lines, 'next' => $next, 'entries' => $entries,
         'joining' => $inv ? ['invoiceId' => (string)$inv['invoiceId'], 'start' => (string)$inv['startDate'], 'total' => (int)$inv['total'],
@@ -147,8 +151,6 @@ function family_fees_view(array $m): ?array {
         'ahead' => !$inv && !empty($cfg['enabled']) && function_exists('membership_advance_plan') && member_is_ngg($m) ? membership_advance_plan($m) : null,
         // What the child asked of their parents lately (member_family_nudge).
         'asked' => function_exists('family_nudges_of') ? family_nudges_of($mid, 14) : null,
-        /* Instalment plans (domain/fee-plans.php): the plan in play, or the offer to ask for one. */
-        'plans' => function_exists('family_fee_plan_block') ? family_fee_plan_block($m, (int)$a['payable']) : null,
         'claim' => ($c = db_row("SELECT amount, reference, createdAt FROM member_requests WHERE memberId = ? AND kind = 'payment' AND status = 'open' ORDER BY id DESC LIMIT 1", [$mid]))
             ? ['amount' => (int)$c['amount'], 'reference' => (string)$c['reference'], 'at' => substr((string)$c['createdAt'], 0, 10)] : null,
     ];

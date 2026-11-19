@@ -287,12 +287,13 @@ function member_event_sentence(string $event, array $meta): string {
 function member_merge_policy(): array {
     return [
         'member_ledger'          => 'BLOCK',          // money: never combined silently
-        'fee_plans'              => 'BLOCK',          // an instalment plan reads that member's ledger: money, so never moved silently
         'membership_invoices'    => 'BLOCK',          // a joining invoice and its receipt name one member
         'offline_payments'       => 'BLOCK',          // evidence of money paid for one member
         'mou_agreements'         => 'BLOCK',          // a signed Membership Agreement names one child and their family; never re-addressed
         'documents'              => 'BLOCK',          // an issued invoice, receipt or certificate names one member; it is never re-addressed
         'unapplied_payments'     => 'BLOCK',          // money that arrived for one member, not yet decided
+        'payment_plans'          => 'BLOCK',          // an instalment plan agreed for one member's balance (payment-plans.php)
+        'payment_plan_events'    => 'BLOCK',          // the record of that plan
         'member_stats'           => 'KEEP_SURVIVOR',  // xp/streak are not additive
         'member_status_log'      => 'KEEP_SURVIVOR',  // the survivor's dates are the ones their fee is earned off on
         'member_progress'        => 'MOVE_UNIQUE',

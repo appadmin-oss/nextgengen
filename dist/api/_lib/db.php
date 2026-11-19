@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 242;
+const NGG_SCHEMA_TARGET = 244;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6707,25 +6707,6 @@ function db_migrate(PDO $db): void {
         241 => "
             CREATE TABLE IF NOT EXISTS whatsapp_optout (phone TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT '', via TEXT NOT NULL DEFAULT '');
         ",
-<<<<<<< HEAD
-        /* Instalment plans (domain/fee-plans.php). One row per plan; the
-           schedule is fixed JSON, and what has been paid is READ from the
-           ledger, never stored here. */
-        242 => "
-            CREATE TABLE IF NOT EXISTS fee_plans (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              planId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL, guardianId TEXT NOT NULL DEFAULT '',
-              source TEXT NOT NULL DEFAULT 'family', agreedVia TEXT NOT NULL DEFAULT 'app',
-              signedName TEXT NOT NULL DEFAULT '', termsVersion TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
-              count INTEGER NOT NULL DEFAULT 0, cadence TEXT NOT NULL DEFAULT 'monthly', startDate TEXT NOT NULL DEFAULT '',
-              total INTEGER NOT NULL DEFAULT 0, scheduleJson TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'pending',
-              createdBy TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '',
-              decidedBy TEXT NOT NULL DEFAULT '', decidedAt TEXT NOT NULL DEFAULT '', declineReason TEXT NOT NULL DEFAULT '',
-              cancelReason TEXT NOT NULL DEFAULT '', completedAt TEXT NOT NULL DEFAULT ''
-            );
-            CREATE INDEX IF NOT EXISTS idx_fee_plans_member ON fee_plans(memberId, status);
-            CREATE INDEX IF NOT EXISTS idx_fee_plans_status ON fee_plans(status);
-=======
 
         /*
          * Hand-ins that get marked and returned work that comes back
@@ -6740,7 +6721,60 @@ function db_migrate(PDO $db): void {
             ALTER TABLE assignment_submissions ADD COLUMN resubmitBy TEXT DEFAULT '';
             ALTER TABLE assignment_submissions ADD COLUMN markMinutes INTEGER;
             CREATE INDEX IF NOT EXISTS idx_sub_status ON assignment_submissions(status);
->>>>>>> origin/claude/stoic-hamilton-1f18hh
+        ",
+        /* 243 — instalment plans (domain/payment-plans.php): an agreed schedule for clearing a balance.
+           A plan records who agreed it, when, to which terms and from what starting point (`startPaid`,
+           the payments on the account when it began); its instalments are dated amounts; its events are
+           the accountability record — created, reminded, missed, paid, completed, cancelled, notes —
+           each with who and when. Progress is never stored: it is read from the ledger every time. */
+        243 => "
+            CREATE TABLE IF NOT EXISTS payment_plans (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              planId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL,
+              total INTEGER NOT NULL DEFAULT 0, instalments INTEGER NOT NULL DEFAULT 0, frequency TEXT NOT NULL DEFAULT 'monthly',
+              firstDue TEXT NOT NULL DEFAULT '', startPaid INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'active', source TEXT NOT NULL DEFAULT 'family',
+              createdBy TEXT NOT NULL DEFAULT '', agreedBy TEXT NOT NULL DEFAULT '', agreedAt TEXT NOT NULL DEFAULT '', termsVersion TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '', completedAt TEXT NOT NULL DEFAULT '',
+              cancelledAt TEXT NOT NULL DEFAULT '', cancelledBy TEXT NOT NULL DEFAULT '', cancelReason TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_payment_plans_member ON payment_plans(memberId, status);
+            CREATE INDEX IF NOT EXISTS idx_payment_plans_status ON payment_plans(status, id);
+            CREATE TABLE IF NOT EXISTS payment_plan_items (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              planId TEXT NOT NULL, seq INTEGER NOT NULL, dueDate TEXT NOT NULL DEFAULT '', amount INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_plan_items ON payment_plan_items(planId, seq);
+            CREATE INDEX IF NOT EXISTS idx_payment_plan_items_due ON payment_plan_items(dueDate);
+            CREATE TABLE IF NOT EXISTS payment_plan_events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              planId TEXT NOT NULL, memberId TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT '', seq INTEGER NOT NULL DEFAULT 0,
+              actor TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', amount INTEGER NOT NULL DEFAULT 0, at TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_payment_plan_events_plan ON payment_plan_events(planId, id);
+        ",
+        /* 244 — instructor management (domain/instructor-admin.php). A volunteer record gains its working
+           life: leave (from, until, why), offboarding (when, by whom, why — the record is kept, the
+           access is not), the safeguarding check's date and expiry, and the next review. people_notes is
+           the record of what was said and decided about a person — notes, reviews, warnings,
+           commendations, every lifecycle change — with who and when. */
+        244 => "
+            ALTER TABLE volunteers ADD COLUMN leaveFrom TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN leaveUntil TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN leaveReason TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN offboardedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN offboardedBy TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN offboardReason TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN safeguardingCheckedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN safeguardingExpires TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN reviewDue TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS people_notes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectType TEXT NOT NULL, subjectId TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'note',
+              text TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL DEFAULT '', at TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_people_notes_subject ON people_notes(subjectType, subjectId, id);
         ",
     ];
 

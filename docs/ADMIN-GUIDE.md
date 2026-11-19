@@ -1094,6 +1094,41 @@ birth) is emailed a 6-digit code and must enter it before the application
 changes. Without it, anyone who knew the email and the birthday could replace
 a child's guardian and photo.
 
+### Managing instructors (Mentors & volunteers → Instructors, from 19 Nov 2026)
+
+Everyone approved as an instructor, in your centres. Needs the *people*
+permission.
+
+- **What needs doing** counts, and filters the list to:
+  - safeguarding not cleared or expired (they may not be with children);
+  - checks expiring within 30 days;
+  - instructors with classes on the timetable but nothing filed in 30 days;
+  - Instructor Academy not completed;
+  - no member account (they cannot file a class without one);
+  - reviews overdue;
+  - classes on the timetable with no instructor.
+- **The list** puts the instructor with the most issues first. Chips switch
+  between teaching or on leave (the default), teaching, on leave, offboarded
+  and everyone. **Export CSV** downloads the roster.
+- **Open an instructor** to see:
+  - what they teach and their safeguarding check (cleared on, expires on);
+  - their Academy, their account and their next review;
+  - their classes on the timetable and the classes they filed;
+  - their **record**.
+- **Edit what they teach** changes their courses and the compliance dates.
+  A course they still teach on the timetable cannot be taken off them: give
+  those classes to someone else first, in Learning → Timetable.
+- **Put on leave** takes a first day, a last day (optional) and why. It
+  lists the classes that need cover; **End leave** brings them back.
+- **Add to their record**: a note, a review (which can set the next review
+  date), a warning or a commendation. It is kept with your name and the time.
+- **Offboard** needs a reason. Their access to the instructor portal ends at
+  once, their record stays, and their classes are taken off them and listed
+  for cover. **Reinstate** (with a reason) restores access; classes are not
+  handed back automatically.
+
+Every change is on the instructor's record and in the audit log.
+
 ### Volunteer registrations (Mentors → Volunteers)
 
 Both volunteer forms (Summer School at /volunteer, NGG all year at
@@ -2820,6 +2855,50 @@ not the child's:
   1st, so no reminder goes out while it lasts and the account shows *Paid ahead
   to <month>*. A fee changed in the meantime is charged at its new price
   against the same credit. Paying ahead waits until the joining invoice is paid.
+- **Pay in instalments (from 19 Nov 2026).** In the family app, *Fees → Pay*
+  asks **All of it** or **Part of it**. With *Part of it* the parent types any
+  amount from **₦1,000** up to everything owed today, sees what will be left,
+  and pays it on the same /pay page, by Paystack or by transfer. It is one
+  invoice for that amount; the receipt says what is still owed. Rules:
+  - Payments go into one pool and pay off the oldest charges first, whatever
+    the parent meant them for. An instalment clears fines, dues and fees in
+    the order they fell due, exactly like money taken at the desk.
+  - A balance under ₦2,000 is paid in full: there is no *Part of it*.
+  - The joining invoice is paid in full; instalments are for the balance after it.
+  - Only one payment is asked for at a time. A new instalment, a full payment
+    or *Pay ahead* replaces the open one.
+  - If money reaches the account another way so that less is owed than the
+    instalment, its link stops working and tells the parent to choose again.
+    Nobody can overpay through it.
+  - **Follow-ups:** the balance reminder still goes out for what is left. It
+    waits a full reminder interval after the instalment (the preview names
+    these *paid an instalment recently*), and every reminder now tells the
+    family they can pay part of it. Reminders must be switched on.
+- **Instalment plans (from 19 Nov 2026).** A plan is a schedule the family
+  agrees to: the whole balance in 2 to 6 instalments, weekly, every two weeks
+  or monthly, starting within a month and lasting at most six months.
+  - **Setting one up.** A parent opens *Fees → Can’t pay it all at once? → Set
+    up a payment plan*, picks the instalments, sees the dates and amounts
+    from the server and the terms, types their name and ticks to agree. Staff
+    can make one in **Money → Instalment plans → New plan** for a parent who
+    agreed by phone, in person or in writing; you say which.
+  - **What counts.** Any payment to the account counts, however it is made
+    (online, transfer, cash at the desk), so record money as usual. New dues
+    that fall while a plan runs are charged as normal and are not part of it.
+    A waiver that cuts the balance shortens the plan too.
+  - **Health.** *On track*; *Behind* (an instalment is late, for up to 14
+    days); *Lapsed* (more than 14 days late: the plan stops protecting the
+    family and the balance is owed as normal); *Completed*; *Ended* by staff.
+  - **Follow-ups.** The family is told 3 days before each instalment, the
+    day after one is missed, and once when a plan lapses. While a plan is on
+    track or behind, the general arrears reminder is not sent as well (the
+    preview names these *on a plan*).
+  - **The record.** *Money → Instalment plans* lists every plan, lapsed
+    first, with what is paid, the next instalment and what is overdue.
+    Open one to see the schedule against the money, who agreed, when, to
+    which version of the terms, every reminder sent, every instalment
+    covered or missed, and staff notes. **Add a note** for a call or a
+    promise. **End the plan** needs a reason, which the family is sent.
 - **"I've paid".** A parent who paid by transfer or at the desk tells you from
   *Fees → Paid by transfer or at the desk?* — one line per way they paid
   (transfer with its reference, cash with who took it, POS with its receipt

@@ -64,6 +64,7 @@ const CR_PAGES = {
     { id: "mentors", label: "Mentors", desc: "The mentor develops the person.", cap: "people" },
     { id: "mentorship", label: "Pairings", desc: "Who mentors whom, and whether the weekly review is happening.", cap: "people" },
     { id: "volunteers", label: "Volunteers", desc: "Everyone helping on Saturdays.", cap: "people" },
+    { id: "instructors", label: "Instructors", desc: "Who teaches what, whether they are cleared to be with children, whether they are filing their classes, and the record of what was decided about them.", cap: "people" },
     { id: "companion", label: "Companion check-ins", desc: "How members say they are doing, between sessions.", cap: "club" },
   ] },
   /* The Anchor Pods workspace (MENTORSHIP.md §4.2; cr-tab-mentorship.jsx).
@@ -84,6 +85,7 @@ const CR_PAGES = {
   money: { label: "Money", icon: "wallet", tabs: [
     { id: "membership", label: "Membership payments", desc: "Joining invoices: Paystack, and offline payments a second person checks against their evidence.", cap: "fees" },
     { id: "fees", label: "Dues & arrears", desc: "Every naira owed, paid and waived, with the reason kept on the account.", cap: "fees" },
+    { id: "payplans", label: "Instalment plans", desc: "Balances families are clearing in agreed instalments: who agreed, what is due, what is late, and the record of every reminder, payment and decision.", cap: "fees" },
     { id: "volpay", label: "Volunteer pay", desc: "What active volunteers earn for each programme day they are present and active, the rules that decide it, and paying each period.", cap: "fees" },
     { id: "conduct", label: "Conduct & fines", desc: "Every rule in one place, uploading fines, the compliance board, the policy and the programme calendars.", cap: ["fees", "people", "summer"] },
     { id: "donations", label: "Donations", desc: "Gifts received through Paystack and bank transfer.", cap: "settings" },

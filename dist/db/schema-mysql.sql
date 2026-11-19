@@ -5457,25 +5457,52 @@ CREATE TABLE IF NOT EXISTS whatsapp_optout (
   phone VARCHAR(32) NOT NULL PRIMARY KEY, at VARCHAR(32) NOT NULL DEFAULT '', via VARCHAR(24) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (241) ON DUPLICATE KEY UPDATE version = version;
-<<<<<<< HEAD
--- 242: instalment plans (domain/fee-plans.php)
-CREATE TABLE IF NOT EXISTS fee_plans (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  planId VARCHAR(24) NOT NULL, memberId VARCHAR(48) NOT NULL, guardianId VARCHAR(48) NOT NULL DEFAULT '',
-  source VARCHAR(12) NOT NULL DEFAULT 'family', agreedVia VARCHAR(12) NOT NULL DEFAULT 'app',
-  signedName VARCHAR(160) NOT NULL DEFAULT '', termsVersion VARCHAR(16) NOT NULL DEFAULT '', note VARCHAR(400) NOT NULL DEFAULT '',
-  count INT NOT NULL DEFAULT 0, cadence VARCHAR(12) NOT NULL DEFAULT 'monthly', startDate VARCHAR(10) NOT NULL DEFAULT '',
-  total INT NOT NULL DEFAULT 0, scheduleJson TEXT, status VARCHAR(12) NOT NULL DEFAULT 'pending',
-  createdBy VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
-  decidedBy VARCHAR(48) NOT NULL DEFAULT '', decidedAt VARCHAR(32) NOT NULL DEFAULT '', declineReason VARCHAR(400) NOT NULL DEFAULT '',
-  cancelReason VARCHAR(400) NOT NULL DEFAULT '', completedAt VARCHAR(32) NOT NULL DEFAULT '',
-  UNIQUE KEY uq_fee_plan (planId), KEY idx_fee_plans_member (memberId, status), KEY idx_fee_plans_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-=======
 
 -- ── 242 · Assignments: a returned hand-in's "resubmit by" date, and time-to-mark ──
 ALTER TABLE assignment_submissions ADD COLUMN resubmitBy VARCHAR(10) NOT NULL DEFAULT '';
 ALTER TABLE assignment_submissions ADD COLUMN markMinutes INT NULL;
 CREATE INDEX idx_sub_status ON assignment_submissions(status);
->>>>>>> origin/claude/stoic-hamilton-1f18hh
 INSERT INTO schema_version (version) VALUES (242) ON DUPLICATE KEY UPDATE version = version;
+-- 243 — instalment plans (domain/payment-plans.php): the agreement, its dated instalments, and the accountability log.
+CREATE TABLE IF NOT EXISTS payment_plans (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  planId VARCHAR(40) NOT NULL, memberId VARCHAR(64) NOT NULL,
+  total INT NOT NULL DEFAULT 0, instalments INT NOT NULL DEFAULT 0, frequency VARCHAR(16) NOT NULL DEFAULT 'monthly',
+  firstDue VARCHAR(10) NOT NULL DEFAULT '', startPaid INT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT 'active', source VARCHAR(16) NOT NULL DEFAULT 'family',
+  createdBy VARCHAR(80) NOT NULL DEFAULT '', agreedBy VARCHAR(160) NOT NULL DEFAULT '', agreedAt VARCHAR(32) NOT NULL DEFAULT '', termsVersion VARCHAR(32) NOT NULL DEFAULT '',
+  note VARCHAR(600) NOT NULL DEFAULT '', completedAt VARCHAR(32) NOT NULL DEFAULT '',
+  cancelledAt VARCHAR(32) NOT NULL DEFAULT '', cancelledBy VARCHAR(80) NOT NULL DEFAULT '', cancelReason VARCHAR(600) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_payment_plan (planId), KEY idx_payment_plans_member (memberId, status), KEY idx_payment_plans_status (status, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS payment_plan_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  planId VARCHAR(40) NOT NULL, seq INT NOT NULL, dueDate VARCHAR(10) NOT NULL DEFAULT '', amount INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_payment_plan_items (planId, seq), KEY idx_payment_plan_items_due (dueDate)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS payment_plan_events (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  planId VARCHAR(40) NOT NULL, memberId VARCHAR(64) NOT NULL DEFAULT '', kind VARCHAR(24) NOT NULL DEFAULT '', seq INT NOT NULL DEFAULT 0,
+  actor VARCHAR(160) NOT NULL DEFAULT '', detail VARCHAR(600) NOT NULL DEFAULT '', amount INT NOT NULL DEFAULT 0, at VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_payment_plan_events_plan (planId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (243) ON DUPLICATE KEY UPDATE version = version;
+
+-- 244 — instructor management (domain/instructor-admin.php): leave, offboarding, safeguarding expiry, reviews; the people record.
+ALTER TABLE volunteers ADD COLUMN leaveFrom VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN leaveUntil VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN leaveReason VARCHAR(600) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN offboardedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN offboardedBy VARCHAR(80) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN offboardReason VARCHAR(600) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN safeguardingCheckedAt VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN safeguardingExpires VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN reviewDue VARCHAR(10) NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS people_notes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectType VARCHAR(24) NOT NULL, subjectId VARCHAR(64) NOT NULL, kind VARCHAR(24) NOT NULL DEFAULT 'note',
+  text VARCHAR(2000) NOT NULL DEFAULT '', actor VARCHAR(80) NOT NULL DEFAULT '', at VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_people_notes_subject (subjectType, subjectId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (244) ON DUPLICATE KEY UPDATE version = version;

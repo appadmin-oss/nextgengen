@@ -292,6 +292,8 @@ function member_merge_policy(): array {
         'mou_agreements'         => 'BLOCK',          // a signed Membership Agreement names one child and their family; never re-addressed
         'documents'              => 'BLOCK',          // an issued invoice, receipt or certificate names one member; it is never re-addressed
         'unapplied_payments'     => 'BLOCK',          // money that arrived for one member, not yet decided
+        'payment_plans'          => 'BLOCK',          // an instalment plan agreed for one member's balance (payment-plans.php)
+        'payment_plan_events'    => 'BLOCK',          // the record of that plan
         'member_stats'           => 'KEEP_SURVIVOR',  // xp/streak are not additive
         'member_status_log'      => 'KEEP_SURVIVOR',  // the survivor's dates are the ones their fee is earned off on
         'member_progress'        => 'MOVE_UNIQUE',

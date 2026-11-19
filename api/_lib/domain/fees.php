@@ -1561,11 +1561,21 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
 function fees_reminder_candidates(?array $cfg = null, int $limit = FEES_CANDIDATE_MAX): array {
     $cfg = $cfg ?? fees_settings();
     $out = ['due' => [], 'skipped' => ['off' => 0, 'optedOut' => 0, 'nothingPayable' => 0,
-                                       'underMinimum' => 0, 'tooSoon' => 0, 'noContact' => 0]];
+                                       'underMinimum' => 0, 'tooSoon' => 0, 'paidRecently' => 0, 'onPlan' => 0, 'noContact' => 0]];
     if (empty($cfg['enabled']) || empty($cfg['remindEnabled'])) { $out['skipped']['off'] = 1; return $out; }
     $everyDays = max(FEES_REMIND_MIN_DAYS, (int)$cfg['remindEveryDays']);
     $minBal = max(1, (int)$cfg['remindMinBalance']);
     $now = time();
+    /* A family that paid an instalment (membership_part_invoice) is not reminded until a full interval
+       after it: the follow-up for what is left runs from their payment, not from the last reminder.
+       One grouped read, not one per member. */
+    $installed = [];
+    if (function_exists('membership_part_min')) {
+        foreach (db_all("SELECT memberId, MAX(paidAt) at FROM membership_invoices WHERE purpose = 'part' AND status = 'paid' AND paidAt >= ? GROUP BY memberId",
+            [gmdate('Y-m-d\TH:i:s\Z', $now - $everyDays * 86400)]) as $r) $installed[(string)$r['memberId']] = (string)$r['at'];
+    }
+    // A family keeping an instalment plan gets the plan's reminders instead (payment-plans.php); a lapsed plan does not protect them.
+    $onPlan = function_exists('plan_protected_members') ? plan_protected_members() : [];
     foreach (db_all("SELECT * FROM members WHERE status = 'active' ORDER BY id LIMIT " . max(1, min(FEES_SCAN_MAX, $limit * 5))) as $m) {
         if (count($out['due']) >= $limit) break;
         if ((int)($m['duesRemindOff'] ?? 0) === 1) { $out['skipped']['optedOut']++; continue; }
@@ -1574,6 +1584,8 @@ function fees_reminder_candidates(?array $cfg = null, int $limit = FEES_CANDIDAT
         if ((int)$bal['payable'] < $minBal) { $out['skipped']['underMinimum']++; continue; }
         $last = strtotime((string)($m['duesRemindedAt'] ?? '')) ?: 0;
         if ($last > 0 && ($now - $last) < $everyDays * 86400) { $out['skipped']['tooSoon']++; continue; }
+        if (isset($installed[(string)$m['memberId']])) { $out['skipped']['paidRecently']++; continue; }
+        if (isset($onPlan[(string)$m['memberId']])) { $out['skipped']['onPlan']++; continue; }
         $ct = function_exists('dues_contacts') ? dues_contacts($m) : ['guardianIds' => [], 'emails' => array_filter([trim((string)($m['parentEmail'] ?? ''))]), 'phones' => []];
         if (!$ct['guardianIds'] && !$ct['emails'] && !$ct['phones']) { $out['skipped']['noContact']++; continue; }
         $out['due'][] = ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'],
@@ -1623,6 +1635,13 @@ function fees_reminder_send(array $cand, ?array $cfg = null): bool {
         $body .= '<p style="margin:0 0 10px;color:#5a6488;font-size:13px">'
               . $first . '\'s training place costs the programme ' . $money((int)$bal['programmeCost'])
               . '. That is covered by Next Generation Genius and is not something you are asked to pay.</p>';
+    }
+    /* The instalment route, said where the money is asked for: a family that cannot clear it at once
+       pays what it can from the family app (membership_part_invoice), and is not chased the next day. */
+    $partMin = function_exists('membership_part_min') && function_exists('paystack_secret') && paystack_secret() !== '' ? membership_part_min((int)$bal['payable']) : 0;
+    if ($partMin > 0) {
+        $body .= '<p style="margin:0 0 10px">You don’t have to pay it all at once. In the NGG Family app, open Fees, press Pay and choose '
+              . '<b>Part of it</b> to pay any amount from ' . $money($partMin) . '. What is left stays on the account for later.</p>';
     }
     $body .= '<p style="margin:0 0 10px">If any of this looks wrong, or if now is a difficult time, please reply to this '
           . 'message or speak to your centre coordinator — we would rather hear from you than not.</p>';
