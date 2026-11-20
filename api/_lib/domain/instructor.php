@@ -607,7 +607,7 @@ function admin_staff_performance(array $p): array {
     /* The staff list is mentors and instructors together, because the question
      * "who has gone quiet" does not care which table someone lives in. */
     $staff = [];
-    foreach (db_all("SELECT mentorId id, fullName, email, centre, department, programme, status, rank FROM mentors ORDER BY fullName") as $m) {
+    foreach (db_all("SELECT mentorId id, fullName, email, centre, department, programme, status, `rank` FROM mentors ORDER BY fullName") as $m) {
         if ($scope !== null && trim((string)$m['centre']) !== '' && !in_array((string)$m['centre'], $scope, true)) continue;
         $staff[] = ['staffId' => (string)$m['id'], 'kind' => ($m['rank'] ?? '') === 'lead' ? 'lead mentor' : 'mentor',
             'fullName' => (string)$m['fullName'],

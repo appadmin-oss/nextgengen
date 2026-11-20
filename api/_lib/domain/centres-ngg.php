@@ -238,7 +238,12 @@ function centre_name_key(string $name): string {
 /** Once per deployment: Summer School's centres apart and retired, the NGG defaults in place, members connected. */
 function centres_split_seed_once(): array {
     if ((string)setting_raw('centres_split_seed') === CENTRES_SPLIT_SEED) return ['ok' => true, 'already' => true];
-    $hasData = (int)(db_row('SELECT COUNT(*) c FROM centres')['c'] ?? 0) + (int)(db_row("SELECT COUNT(*) c FROM members WHERE centre <> '' AND centre IS NOT NULL")['c'] ?? 0);
+    /* The online centre is not data: migration 236 (and the MySQL mirror's
+       INSERT IGNORE) seeds it on every database, fresh ones included. Counted,
+       it made a brand-new MySQL install — which has no SQLite-style "fresh
+       install" marker — look like a deployment with centres to split, and the
+       split then created Egbeda and Ayobo on it, NGG-only. */
+    $hasData = (int)(db_row('SELECT COUNT(*) c FROM centres WHERE centreId <> ?', [CENTRE_ONLINE_ID])['c'] ?? 0) +(int)(db_row("SELECT COUNT(*) c FROM members WHERE centre <> '' AND centre IS NOT NULL")['c'] ?? 0);
     if ($hasData === 0) { setting_set('centres_split_seed', CENTRES_SPLIT_SEED, 'system'); return ['ok' => true, 'empty' => true]; }
 
     $report = ['split' => [], 'retired' => [], 'created' => [], 'kept' => [], 'membersTidied' => 0, 'participantsMoved' => 0];

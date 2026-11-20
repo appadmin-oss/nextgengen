@@ -635,6 +635,18 @@ without either:
    WHERE expiresAt = '' AND status = 'assigned';
   ```
 
+  **MySQL 8 (not MariaDB) refused 17 statements of the mirror until 20 November
+  2026** — a bare `rank` column (reserved since 8.0.2) and TEXT columns with a
+  literal DEFAULT (error 1101). On such a host `courage_marks`,
+  `member_promotions`, `admin_approvals`, `contact_replies`,
+  `membership_invoices`, `photo_framing`, `vol_tiers` and `mentor_match_offers`
+  were never created, `mentors.rank` never added, and `schema_meta` reads
+  `mysql_schema_status = partial`. Nothing to run by hand: the corrected mirror
+  has a new hash, so the first request after the deploy replays it and creates
+  what is missing (every statement is idempotent), and the status turns `ok`.
+  A host that imports the file by hand re-imports the whole file. MariaDB hosts
+  already had these tables and are unaffected.
+
 - **The first admin sign-in** self-provisions the super-admin, so you never need
   a shell to bootstrap access.
 - **All transactional email is synchronous** — registration confirmations,

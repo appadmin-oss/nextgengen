@@ -386,7 +386,7 @@ function mentoring_leads(string $centre, string $exceptMemberId): array {
     if ($centre === '') return [];
     $out = [];
     foreach (db_all("SELECT memberId, volunteerId FROM mentors
-                     WHERE status = 'active' AND rank = 'lead' AND centre = ?", [$centre]) as $r) {
+                     WHERE status = 'active' AND `rank` = 'lead' AND centre = ?", [$centre]) as $r) {
         $id = trim((string)($r['memberId'] ?? '')) ?: trim((string)($r['volunteerId'] ?? ''));
         if ($id !== '' && $id !== $exceptMemberId) $out[$id] = true;
     }

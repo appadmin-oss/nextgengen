@@ -7715,3 +7715,33 @@ index on status):
 - Tests: PHP "homework 7/8/9" (29 checks); reach scoping, returned-is-open (sub_ids_for and Today), guardian
   scoping, once-only and quiet hours each mutated and seen to fail.
 
+
+## 2026-11-20 — The MySQL mirror applies on MySQL 8, and the PHP suite runs to the end there
+
+`npm run test:mysql` stopped with a fatal at run.php ~706: applied to a fresh MySQL 8.0.46 database,
+`db/schema-mysql.sql` failed 17 statements (MariaDB, where the mirror was last verified, accepts all of them).
+- **Bare `rank`** (reserved since MySQL 8.0.2): `vol_tiers` CREATE and its seed INSERT, `ALTER TABLE mentors ADD
+  COLUMN rank`, `idx_mentors_centre_rank`, `mentor_match_offers` CREATE and its `uq_moffer`. Backtick-quoted, never
+  renamed. Code: `DB_RESERVED_COLUMNS` gains `rank` (db_insert/db_update quote it — mentor creation was a 1064 on
+  MySQL 8), and four hand-written queries quote it (instructor.php staff list, mentoring_leads, mentor.php list,
+  volunteer tiers); three test queries too.
+- **TEXT/MEDIUMTEXT with a literal DEFAULT** (1101), which failed the whole CREATE: `courage_marks.evidence`,
+  `member_promotions.evidence`, `admin_approvals.args`, `contact_replies.body`, `membership_invoices.items`,
+  `photo_framing.geomJson`/`adjustJson`. Now `TEXT NULL` (the mirror's existing form); every writer supplies the
+  value and every reader casts. The other 1146s were ALTERs/indexes on those absent tables. SQLite unchanged.
+- Existing MySQL 8 deployments need nothing run by hand: the new hash makes the next request replay the mirror
+  (docs/SETUP.md). Ladder untouched; NGG_SCHEMA_TARGET stays 242.
+- Guards (run.php): the mirror has no unquoted MySQL 8 reserved word as a column / index / INSERT column and no
+  TEXT/BLOB literal DEFAULT (the reserved list copied from INFORMATION_SCHEMA.KEYWORDS); no hand-written query in
+  api/ names a DB_RESERVED_COLUMNS word bare. Both seen failing on the unfixed tree and self-tested on planted text.
+- With the schema in, the suite ran on and found, each fixed: a fresh MySQL install ran the one-time centres
+  split (the seeded NGG Online row counted as "data") and created Egbeda/Ayobo NGG-only — the online centre is no
+  longer counted; `UPDATE mentor_tasks … WHERE id = (SELECT … FROM mentor_tasks …)` is error 1093 on MySQL
+  (`ms_task_close_earliest`, two sites); `policy_relift` judged a re-entry fee before its suspension when InnoDB
+  returned rows by index, so voiding an absence left the ₦5,000 fee owed (suspensions now first); `sort()` on an
+  unset session in the half-day pairing crashed the fresh-start preview (both drivers). Test-only: formation 213
+  runs the MySQL fixups on MySQL, the ledger index check reads information_schema, a fixture wrote a 26-character
+  division name where every writer stores the id.
+- Still flaky, not fixed: "…and appears under recently finished" (12 games completed in one second, `ORDER BY
+  updatedAt LIMIT 10`, random matchId tie order on MySQL), and clock-dependent checks (homework 9, walk, maths lab
+  mini review, rulebook, punctuality) that fail on clean HEAD too depending on the hour.
