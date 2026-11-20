@@ -38648,8 +38648,12 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $day = strtotime(gmdate('Y-m-d') . 'T10:00:00Z');   // 11:00 Lagos
     $mk = fn($title, $dueTs) => staff_assignments_save($ins + ['data' => ['title' => $title, 'track' => 'Coding', 'instructions' => 'Do it.', 'status' => 'published', 'proof' => 'text', 'points' => 10,
         'dueAt' => gmdate('Y-m-d\TH:i:s\Z', $dueTs)]])['assignmentId'] ?? '';
-    $late = $mk('Late one', $day - 5 * 3600);
-    $marked = $mk('Marked one', time() + 3600);
+    // Dates relative to NOW, not to a fixed hour: 05:00 UTC "today" is still in the future
+    // between midnight and five, and time()+1h is next week late on a Sunday in Lagos.
+    // Overdue before both now and the 11:00 reminder run; marked work due at the last minute
+    // of today in Lagos, which is always still to come and always this week.
+    $late = $mk('Late one', min($day - 5 * 3600, time() - 2 * 3600));
+    $marked = $mk('Marked one', strtotime(gmdate('Y-m-d', time() + 3600) . 'T22:59:00Z'));
     assignment_submit(['memberId' => 'ASGX-A', 'assignmentId' => $marked, 'text' => 'A PRIVATE ANSWER']);
     staff_assignment_grade($ins + ['submissionId' => (string)db_row("SELECT submissionId FROM assignment_submissions WHERE assignmentId = ? AND memberId = 'ASGX-A'", [$marked])['submissionId'], 'grade' => 9, 'feedback' => 'Well argued.']);
     $w = family_ward(['guardianId' => 'G-ASGX-1', 'linkId' => 'GW-ASGX-A']);
