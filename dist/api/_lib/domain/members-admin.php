@@ -307,6 +307,7 @@ function member_merge_policy(): array {
         'learning_log'           => 'MOVE',           // what they learnt outside NGG travels with them
         'member_state'           => 'MOVE_UNIQUE',
         'member_timetables'      => 'MOVE_UNIQUE',    // one personal week per person; the survivor's stands
+        'online_session_joins'   => 'MOVE_UNIQUE',    // online session attendance travels with the person; one row per session (online.php)
         'member_assessments'     => 'MOVE_UNIQUE',
         'community_reads'        => 'MOVE_UNIQUE',
         'community_poll_votes'   => 'MOVE_UNIQUE',    // one person, one vote
