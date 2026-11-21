@@ -1279,9 +1279,18 @@ the Pay button straight away. A payment Paystack marks *failed* is said as faile
 invoice stays open and the family is told it did not go through. If their bank
 debited them anyway, the bank returns the money, usually within 24 hours; after
 two working days they are told to contact the centre with the invoice number.
-The attempt is recorded once, with Paystack's reason. In **Money → Membership
-invoices** the open invoice shows *Online payment failed · date · Paystack:
-reason · ref*, so the desk can answer the parent who rings. Look the reference up
+The attempt is recorded once, with Paystack's reason, sorted into one of five
+kinds: *Not enough funds*, *Bank declined*, *Card details*, *Bank or Paystack
+timed out*, or *Failed*. The family is told what will work for that kind. For
+not enough funds: pay a smaller amount, or by bank transfer. For a decline:
+another card, USSD or a transfer. For card details: check the PIN, expiry and
+number. For a timeout: simply try again. **If the invoice is still unpaid 30
+minutes after the failure, the family gets one email** with the same advice,
+NGG's bank details (if set) and the pay link. Only one per invoice, and none if
+they have paid or a transfer is waiting to be checked. In **Money → Membership
+invoices** the open invoice shows *Online payment failed: kind · date ·
+Paystack's words · ref · family emailed (date)*, so the desk can answer the
+parent who rings. Look the reference up
 in the Paystack dashboard if the family says money left their account.
 
 **Amounts.** A payment for less than the checkout never settles. A payment for

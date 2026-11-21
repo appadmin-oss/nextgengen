@@ -1482,6 +1482,9 @@ function MembershipPayPage({ setPage }) {
      (the server re-asks Paystack each time), and keeps the reference in the address so a refresh asks
      too. The family can still say they did not finish, which is the only way to the Pay button here. */
   const [settle, setSettle] = React.useState(null);
+  /* A failed payment, with WHY (from Paystack's own reason) and what will work instead — another card or
+     USSD for a decline, a smaller amount or a transfer for a short balance, simply again for a timeout. */
+  const [fail, setFail] = React.useState(null);
   const clearRef = () => { try { history.replaceState({ page: "pay" }, "", "/pay/" + encodeURIComponent(token)); } catch (_) {} };
   const load = React.useCallback(() => {
     let ref = "";
@@ -1491,7 +1494,7 @@ function MembershipPayPage({ setPage }) {
     req.then(r => {
       setSt({ state: "ready", inv: r.invoice });
       if (ref && r.invoice.status === "open" && r.paystackStatus === "settling") { setSettle({ ref, left: 30, long: false }); return; }
-      if (ref && r.paystackStatus === "failed") setErr("Paystack says that payment did not go through. If your bank took the money anyway, the bank returns it, usually within 24 hours. If it has not come back after two working days, contact your centre with invoice " + (r.invoice.invoiceId || "") + ". You can try again now.");
+      if (ref && r.paystackStatus === "failed") setFail(r.paystackFail || { why: "The payment did not go through.", steps: ["Try again, or use another card."] });
       if (ref) clearRef();
     }).catch(e => {
       if (ref && e.code !== "not_found") { setErr(e.code === "payment_mismatch" ? "Paystack reported a payment that does not match this invoice. Nothing was recorded — contact the centre before paying again." : "We couldn’t confirm the payment yet. If money left your account, do not pay again — refresh this page in a minute."); return NGGApi.public.membershipInvoice(token).then(r => setSt({ state: "ready", inv: r.invoice }), () => setSt({ state: "error", e })); }
@@ -1505,7 +1508,7 @@ function MembershipPayPage({ setPage }) {
       NGGApi.public.membershipVerify(token, settle.ref).then(r => {
         if (r.invoice.status !== "open" || r.paystackStatus !== "settling") {
           setSettle(null); setSt({ state: "ready", inv: r.invoice }); clearRef();
-          if (r.paystackStatus === "failed") setErr("Paystack says that payment did not go through. If your bank took the money anyway, the bank returns it, usually within 24 hours. If it has not come back after two working days, contact your centre with invoice " + (r.invoice.invoiceId || "") + ". You can try again now.");
+          if (r.paystackStatus === "failed") setFail(r.paystackFail || { why: "The payment did not go through.", steps: ["Try again, or use another card."] });
           return;
         }
         setSettle(s => s && (s.left <= 1 ? { ...s, left: 0, long: true } : { ...s, left: s.left - 1 }));
@@ -1514,7 +1517,7 @@ function MembershipPayPage({ setPage }) {
     return () => clearTimeout(t);
   }, [settle, token]);
   const pay = async () => {
-    setBusy(true); setErr("");
+    setBusy(true); setErr(""); setFail(null);
     try { const r = await NGGApi.public.membershipPay(token); if (!nggPaystackUrlOk(r.authorizationUrl)) throw new Error("bad_checkout"); window.location.assign(r.authorizationUrl); }
     catch (e) {
       setBusy(false);
@@ -1560,6 +1563,13 @@ function MembershipPayPage({ setPage }) {
             </table>
             {inv.invoiceUrl && inv.status !== "paid" && <p className="mpay-print"><a href={inv.invoiceUrl} target="_blank" rel="noopener noreferrer">Print or save this invoice</a></p>}
             {err && <div className="mpay-err" role="alert">{err}</div>}
+            {fail && inv.status === "open" && (
+              <div className="mpay-err mpay-fail" role="alert">
+                <b>{fail.why}</b>
+                {fail.steps && fail.steps.length > 0 && <ul>{fail.steps.map((t, i) => <li key={i}>{t}</li>)}</ul>}
+                <p>If your bank took the money anyway, it returns it, usually within 24 hours. Not back after two working days? Contact your centre with invoice <span className="mpay-mono">{inv.invoiceId}</span>.</p>
+              </div>
+            )}
             {inv.status === "paid" ? (
               <div className="mpay-done">
                 <p>Paid {inv.paidAt ? new Date(inv.paidAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : ""}. Receipt <b>{inv.receiptNo}</b> has been emailed to you.</p>

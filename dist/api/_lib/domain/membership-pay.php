@@ -892,8 +892,9 @@ function membership_paystack_verify(string $reference): array {
         if (paystack_settle_word((string)($d['status'] ?? '')) === 'failed' && (string)($d['reference'] ?? '') === $reference
             && !db_row("SELECT id FROM audit_log WHERE event = 'membership.paystack.failed' AND meta LIKE ? LIMIT 1", ['%"' . $reference . '"%']))
             audit('membership.paystack.failed', 'paystack', (string)$inv['memberId'], ['invoiceId' => (string)$inv['invoiceId'], 'reference' => $reference,
-                'reason' => mb_substr((string)($d['gateway_response'] ?? ''), 0, 120), 'channel' => (string)($d['channel'] ?? ''), 'amount' => (int)($d['amount'] ?? 0)]);
-        return ['ok' => true, 'status' => (string)($d['status'] ?? 'pending'), 'invoice' => $inv];
+                'reason' => mb_substr((string)($d['gateway_response'] ?? ''), 0, 120), 'kind' => paystack_fail_kind((string)($d['gateway_response'] ?? '')),
+                'channel' => (string)($d['channel'] ?? ''), 'amount' => (int)($d['amount'] ?? 0)]);
+        return ['ok' => true, 'status' => (string)($d['status'] ?? 'pending'), 'invoice' => $inv, 'reason' => (string)($d['gateway_response'] ?? '')];
     }
     /* The charge this checkout carried, from the transaction's own metadata (we set it at initialise; a
        checkout started before the family bore the charge has none). It may not exceed the invoice itself. */
@@ -941,7 +942,11 @@ function public_membership_pay_verify(array $p): array {
            a slow bank): the family had paid, saw "Total to pay", and paid twice or gave up. With this the page
            can tell "still confirming" (it waits, and checks again) from "failed" (it says so) from "paid". */
         $out = public_membership_invoice(['token' => $inv['payToken']]);
-        if (!empty($out['ok']) && (string)($v['status'] ?? '') !== 'paid') $out['paystackStatus'] = paystack_settle_word((string)($v['status'] ?? ''));
+        if (!empty($out['ok']) && (string)($v['status'] ?? '') !== 'paid') {
+            $out['paystackStatus'] = paystack_settle_word((string)($v['status'] ?? ''));
+            // Failed: what failed and what will work instead, from Paystack's own reason.
+            if ($out['paystackStatus'] === 'failed') $out['paystackFail'] = paystack_fail_advice(paystack_fail_kind((string)($v['reason'] ?? '')), $inv);
+        }
         return $out;
     }
     return public_membership_invoice(['token' => $inv['payToken']]);
@@ -980,6 +985,95 @@ function paystack_settle_word(string $status): string {
     return in_array($s, ['failed', 'reversed'], true) ? 'failed' : 'settling';
 }
 
+/**
+ * Why a Paystack payment failed, in five kinds a family can act on, from Paystack's own `gateway_response`
+ * ("Insufficient Funds", "Do Not Honor", "Incorrect PIN", "Timed out" …). One generic "it failed" sent
+ * every family back to press the same button with the same card; the reason usually says what will work
+ * instead. The kind drives the family's advice, the follow-up email and the label staff see.
+ */
+const PAYSTACK_FAIL_KINDS = [
+    'funds'     => ['Not enough funds',  'Your bank said there wasn’t enough money in the account.'],
+    'declined'  => ['Bank declined',     'Your bank declined the payment.'],
+    'card'      => ['Card details',      'The card details were not accepted (PIN, expiry date or number).'],
+    'technical' => ['Bank or Paystack timed out', 'Your bank or Paystack did not answer in time. Nothing was wrong on your side.'],
+    'other'     => ['Failed',            'The payment did not go through.'],
+];
+function paystack_fail_kind(string $reason): string {
+    $r = strtolower($reason);
+    if ($r === '') return 'other';
+    if (preg_match('/insufficient|not enough|exceeds? (?:withdrawal|limit)|limit exceeded/', $r)) return 'funds';
+    if (preg_match('/pin|expired|invalid card|card number|cvv|otp|incorrect|restricted card|lost|stolen/', $r)) return 'card';
+    if (preg_match('/time ?d? ?out|timeout|unavailable|issuer.*(?:inoperative|not available)|system|error|try again|network/', $r)) return 'technical';
+    if (preg_match('/declin|do not honou?r|not permitted|refer to|restricted|blocked|suspected|fraud/', $r)) return 'declined';
+    return 'other';
+}
+
+/**
+ * What to do next, for that kind — said to the family on the page and in the follow-up email. Each names
+ * a route that will actually work: another card or USSD for a decline, a smaller amount or a transfer
+ * for a short balance, simply again for a timeout. The transfer route is named only where NGG has bank
+ * details set, and an instalment only for an invoice that is not already one.
+ */
+function paystack_fail_advice(string $kind, array $inv, ?array $terms = null): array {
+    $terms = $terms ?? membership_fee_terms();
+    $bank = !empty($terms['bank']);
+    $part = in_array((string)($inv['purpose'] ?? ''), ['balance', 'joining'], true);
+    $steps = match ($kind) {
+        'funds'     => array_filter([$part ? 'Pay part of it now: open the family account and choose a smaller amount.' : null,
+                                     $bank ? 'Or pay by bank transfer to NGG’s account (no Paystack charge).' : 'Or try another card or account.']),
+        'declined'  => array_filter(['Try another card, or choose USSD or bank transfer on the Paystack page.',
+                                     $bank ? 'Or transfer straight to NGG’s account (no Paystack charge).' : null,
+                                     'If you want this card to work, your bank can lift the block.']),
+        'card'      => ['Check the PIN, expiry date and card number, then try again — or use another card.'],
+        'technical' => ['Try again in a few minutes. Nothing needs changing.'],
+        default     => array_filter(['Try again, or use another card.', $bank ? 'Or pay by bank transfer to NGG’s account (no Paystack charge).' : null]),
+    };
+    return ['kind' => $kind, 'label' => PAYSTACK_FAIL_KINDS[$kind][0] ?? 'Failed', 'why' => PAYSTACK_FAIL_KINDS[$kind][1] ?? '', 'steps' => array_values($steps)];
+}
+
+const PAYSTACK_RESCUE_AFTER = 1800;   // seconds after a failure before the family is emailed, unless they have paid
+
+/**
+ * A failed payment the family did not recover from: ONE email per invoice, at least half an hour after
+ * the failure, only while the invoice is still open with nothing waiting to be checked, saying what
+ * failed, what will work instead, and the link. Most families who meet a decline simply stop; the ones
+ * who meant to pay are a message away from paying. Run from the sweep. Returns how many were sent.
+ */
+function paystack_rescue_failed(): int {
+    $from = gmdate('Y-m-d\TH:i:s\Z', time() - PAYSTACK_SWEEP_HOURS * 3600);
+    $to = gmdate('Y-m-d\TH:i:s\Z', time() - PAYSTACK_RESCUE_AFTER);
+    $sent = 0; $seen = [];
+    foreach (db_all("SELECT meta FROM audit_log WHERE event = 'membership.paystack.failed' AND at >= ? AND at <= ? ORDER BY id DESC LIMIT 100", [$from, $to]) as $a) {
+        $m = json_decode((string)$a['meta'], true); $iid = (string)($m['invoiceId'] ?? '');
+        if ($iid === '' || isset($seen[$iid])) continue;
+        $seen[$iid] = true;
+        $inv = membership_invoice_by('invoiceId', $iid);
+        if (!$inv || (string)$inv['status'] !== 'open') continue;
+        if (db_row("SELECT id FROM offline_payments WHERE invoiceId = ? AND status = 'pending' LIMIT 1", [$iid])) continue;
+        if (db_row("SELECT id FROM audit_log WHERE event = 'membership.paystack.rescue' AND meta LIKE ? LIMIT 1", ['%"' . $iid . '"%'])) continue;
+        $mem = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$inv['memberId']]);
+        $email = $mem ? membership_contact($mem) : '';
+        if ($email === '') continue;
+        $terms = membership_fee_terms();
+        $adv = paystack_fail_advice((string)($m['kind'] ?? paystack_fail_kind((string)($m['reason'] ?? ''))), $inv, $terms);
+        $first = explode(' ', trim((string)$mem['fullName']))[0] ?: 'your child';
+        $body = '<ul>' . implode('', array_map(static fn($t) => '<li>' . esc_html($t) . '</li>', $adv['steps'])) . '</ul>';
+        if (!empty($terms['bank'])) $body .= '<p><b>NGG’s account</b><br>' . esc_html($terms['bank']['bankName']) . ' · ' . esc_html($terms['bank']['accountNumber']) . ' · ' . esc_html($terms['bank']['accountName']) . '<br>Narration: ' . esc_html($iid) . '</p>';
+        $body .= '<p>If your bank took the money anyway, it returns it, usually within 24 hours.</p>';
+        $ok = @send_mail($email, 'Your payment for ' . $first . ' didn’t go through', email_template([
+            'title' => 'Your payment didn’t go through',
+            'intro' => $adv['why'] . ' ' . fees_money_text((int)$inv['total']) . ' is still to pay on invoice ' . $iid . '.',
+            'bodyHtml' => $body,
+            'ctaLabel' => 'Try again', 'ctaUrl' => membership_pay_url($inv),
+            'footNote' => 'One reminder only. Ignore it if you have paid another way since.',
+        ]));
+        // Claimed whether or not the mail went: a broken mailer must not turn one reminder into one a run.
+        audit('membership.paystack.rescue', 'system', (string)$inv['memberId'], ['invoiceId' => $iid, 'kind' => $adv['kind'], 'sent' => (bool)$ok, 'to' => mask_email($email)]);
+        if ($ok) $sent++;
+    }
+    return $sent;
+}
+
 /* ── The sweep: a payment nobody came back for ───────────────────────────── */
 
 const PAYSTACK_SWEEP_HOURS = 48;   // a checkout older than this was abandoned, not settling
@@ -999,7 +1093,7 @@ const PAYSTACK_SWEEP_MIN_AGE = 120; // seconds: leave a live return trip to the 
  * Newest first, PAYSTACK_SWEEP_MAX calls a run; one audit event per run that settled anything.
  */
 function paystack_sweep(): array {
-    if (paystack_secret() === '') return ['ok' => true, 'checked' => 0, 'settled' => 0];
+    if (paystack_secret() === '') return ['ok' => true, 'checked' => 0, 'settled' => 0, 'rescued' => 0];
     $from = gmdate('Y-m-d\TH:i:s\Z', time() - PAYSTACK_SWEEP_HOURS * 3600);
     $to = gmdate('Y-m-d\TH:i:s\Z', time() - PAYSTACK_SWEEP_MIN_AGE);
     $todo = [];
@@ -1028,7 +1122,8 @@ function paystack_sweep(): array {
         if (!empty($v['ok']) && (string)($v['status'] ?? '') === 'paid' && empty($v['already'])) $settled[] = $kind . ':' . $ref;
     }
     if ($settled) audit('paystack.sweep.settled', 'system', '', ['count' => count($settled), 'references' => $settled, 'checked' => $checked]);
-    return ['ok' => true, 'checked' => $checked, 'settled' => count($settled), 'more' => count($todo) > $checked];
+    $rescued = paystack_rescue_failed();
+    return ['ok' => true, 'checked' => $checked, 'settled' => count($settled), 'more' => count($todo) > $checked, 'rescued' => $rescued];
 }
 
 /* ── Staff ───────────────────────────────────────────────────────────────── */
@@ -1115,7 +1210,14 @@ function admin_membership_invoices(array $p): array {
         foreach (db_all("SELECT at, meta FROM audit_log WHERE event = 'membership.paystack.failed' AND subject IN (" . implode(',', array_fill(0, count($ids), '?')) . ') ORDER BY id', $ids) as $a) {
             $m = json_decode((string)$a['meta'], true); $k = (string)($m['invoiceId'] ?? '');
             if (!isset($openIds[$k])) continue;
-            $failed[$k] = ['at' => (string)$a['at'], 'reason' => (string)($m['reason'] ?? ''), 'reference' => (string)($m['reference'] ?? ''), 'count' => ($failed[$k]['count'] ?? 0) + 1];
+            $kind = (string)($m['kind'] ?? paystack_fail_kind((string)($m['reason'] ?? '')));
+            $failed[$k] = ['at' => (string)$a['at'], 'reason' => (string)($m['reason'] ?? ''), 'reference' => (string)($m['reference'] ?? ''),
+                'kind' => $kind, 'label' => PAYSTACK_FAIL_KINDS[$kind][0] ?? 'Failed', 'count' => ($failed[$k]['count'] ?? 0) + 1, 'emailed' => ''];
+        }
+        // Whether the family has had the one follow-up email (paystack_rescue_failed), in the same single pass.
+        if ($failed) foreach (db_all("SELECT at, meta FROM audit_log WHERE event = 'membership.paystack.rescue' AND subject IN (" . implode(',', array_fill(0, count($ids), '?')) . ')', $ids) as $a) {
+            $k = (string)(json_decode((string)$a['meta'], true)['invoiceId'] ?? '');
+            if (isset($failed[$k])) $failed[$k]['emailed'] = (string)$a['at'];
         }
         foreach ($out as &$o) $o['onlineFailed'] = $failed[$o['invoiceId']] ?? null; unset($o);
     }

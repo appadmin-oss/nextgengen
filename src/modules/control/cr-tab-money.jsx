@@ -1215,7 +1215,7 @@ function CrMembershipPayments({ ctx }) {
                     <td><CrPill tone={st[1]} t={st[0]}/>
                       {op && op.status === "pending" && <span className="cr-hint">{op.methodLabel} · {op.referenceHidden ? "reference hidden until checked" : "ref " + op.reference} · recorded by {op.recordedByName}{op.priorRejections ? " · this reference was rejected " + op.priorRejections + "× before" : ""}</span>}
                       {op && op.status === "rejected" && inv.status === "open" && <span className="cr-hint">Last claim rejected: {op.rejectReason}</span>}
-                      {inv.status === "open" && inv.onlineFailed && <span className="cr-hint">Online payment failed{inv.onlineFailed.count > 1 ? " " + inv.onlineFailed.count + "×" : ""} · {crDate(inv.onlineFailed.at)}{inv.onlineFailed.reason ? " · Paystack: " + inv.onlineFailed.reason : ""} · ref {inv.onlineFailed.reference}</span>}
+                      {inv.status === "open" && inv.onlineFailed && <span className="cr-hint">Online payment failed{inv.onlineFailed.count > 1 ? " " + inv.onlineFailed.count + "×" : ""}: {inv.onlineFailed.label} · {crDate(inv.onlineFailed.at)}{inv.onlineFailed.reason ? " · Paystack: “" + inv.onlineFailed.reason + "”" : ""} · ref {inv.onlineFailed.reference} · {inv.onlineFailed.emailed ? "family emailed " + crDate(inv.onlineFailed.emailed) : "follow-up email due 30 min after"}</span>}
                       {inv.status === "paid" && <span className="cr-hint">{inv.paidVia === "paystack" ? "Paystack" : (op && op.methodLabel) || inv.paidVia} · {crDate(inv.paidAt)}{op && op.verifiedByName ? " · checked by " + op.verifiedByName : ""}</span>}
                     </td>
                     <td className="cr-mp-acts">

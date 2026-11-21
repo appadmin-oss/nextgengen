@@ -7709,5 +7709,14 @@ The owner asked for this "only if you think it is cool". It is, for one concrete
    `gateway_response`). The staff invoice list shows the latest one on the open invoice, in one grouped
    query. The family's wording no longer claims "nothing was taken": a bank may debit and reverse.
 
-**Verified.** `run.php`: 17 new checks (settling, failed, overpaid, sweep), run in CI. `node build.js` is clean.
+5. *Smarter on a failure* (owner: "make it smarter"). `paystack_fail_kind()` sorts Paystack's
+   `gateway_response` into funds | declined | card | technical | other. `paystack_fail_advice()` turns
+   the kind into the family's next steps (a smaller amount or a transfer for funds; another card/USSD for
+   a decline; check details; just retry). It names a route only where it exists. `paystack_rescue_failed()`
+   (from the sweep) sends ONE email per invoice, at least 30 minutes after a failure, while the invoice is
+   still open with no transfer waiting. It is claimed in the audit whether or not the mail went, so a
+   broken mailer cannot send one a run. The staff row shows the kind and whether the family was emailed.
+
+**Verified.** `run.php`: 22 new checks (settling, failed and its kinds, follow-up email, overpaid, sweep),
+run in CI. `node build.js` is clean.
 

@@ -38845,14 +38845,14 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     // Three ways: Paystack still settling when the family came back (the page showed the Pay button again),
     // nobody coming back and no webhook (nothing else asked), and Paystack's own "pass charges" adding to the
     // amount (an exact check refused it). Each is held here.
-    $psState = 'success'; $psPaid = null; $sent = null;
-    $GLOBALS['__paystack_mock'] = function ($method, $path, $body) use (&$sent, &$psState, &$psPaid) {
+    $psState = 'success'; $psPaid = null; $sent = null; $psReason = '';
+    $GLOBALS['__paystack_mock'] = function ($method, $path, $body) use (&$sent, &$psState, &$psPaid, &$psReason) {
         if (strpos($path, '/transaction/initialize') === 0) { $sent = $body; return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/st1', 'reference' => $body['reference']]]; }
         $ref = rawurldecode(substr($path, strlen('/transaction/verify/')));
         $mine = $sent && ($sent['reference'] ?? '') === $ref;
         $amt = $psPaid ?? ($mine ? $sent['amount'] : 0);
         if (str_starts_with($ref, 'NGGD-')) { $d = db_row('SELECT amount FROM donations WHERE reference = ?', [$ref]); $amt = $psPaid ?? (int)($d['amount'] ?? 0) * 100; }
-        return ['status' => true, 'data' => ['status' => $psState, 'reference' => $ref, 'amount' => $amt, 'currency' => 'NGN', 'channel' => 'bank_transfer', 'metadata' => $mine ? $sent['metadata'] : ['processingFee' => 0]]];
+        return ['status' => true, 'data' => ['status' => $psState, 'reference' => $ref, 'amount' => $amt, 'currency' => 'NGN', 'channel' => 'card', 'gateway_response' => $psReason, 'metadata' => $mine ? $sent['metadata'] : ['processingFee' => 0]]];
     };
     $pfm = static fn() => db_row("SELECT * FROM members WHERE memberId = 'NGG-PF-1'");
     fees_post('NGG-PF-1', 'dues', 7000, ['periodKey' => '2026-11', 'note' => 'Monthly dues 2026-11', 'by' => 'accrual']);
@@ -38865,13 +38865,30 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $psState = 'abandoned';
     chk('settling: an unfinished checkout (or a transfer not seen yet) is waited for too; the family says if they did not finish',
         (backend_dispatch('public.membership.pay.verify', ['token' => $inv['payToken'], 'reference' => $in['reference']])['paystackStatus'] ?? '') === 'settling');
-    $psState = 'failed';
+    $psState = 'failed'; $psReason = 'Insufficient Funds';
     $f = backend_dispatch('public.membership.pay.verify', ['token' => $inv['payToken'], 'reference' => $in['reference']]);
+    chk('failed, smarter: Paystack’s own reason picks the advice; not enough funds offers a smaller amount, not the same button again',
+        ($f['paystackFail']['kind'] ?? '') === 'funds' && str_contains(implode(' ', $f['paystackFail']['steps'] ?? []), 'smaller amount'));
+    chk('failed, smarter: the reasons sort into kinds a family can act on',
+        paystack_fail_kind('Insufficient Funds') === 'funds' && paystack_fail_kind('Do Not Honor') === 'declined' && paystack_fail_kind('Declined') === 'declined'
+        && paystack_fail_kind('Incorrect PIN') === 'card' && paystack_fail_kind('Expired Card') === 'card' && paystack_fail_kind('Timed out') === 'technical'
+        && paystack_fail_kind('') === 'other' && paystack_fail_kind('Something new') === 'other');
     chk('settling: a FAILED payment is said as failed, and the invoice stays payable', ($f['paystackStatus'] ?? '') === 'failed' && ($f['invoice']['status'] ?? '') === 'open');
     backend_dispatch('public.membership.pay.verify', ['token' => $inv['payToken'], 'reference' => $in['reference']]);
     $fa = db_all("SELECT meta FROM audit_log WHERE event = 'membership.paystack.failed' AND meta LIKE ?", ['%' . $in['reference'] . '%']);
     chk('failed: a payment that did not go through is on the record ONCE per checkout, naming the invoice, so the desk can answer the parent who rings',
         count($fa) === 1 && str_contains((string)$fa[0]['meta'], (string)$bi['invoiceId']));
+    $GLOBALS['__mail_sink'] = [];
+    paystack_rescue_failed();
+    $rescueMails = static fn() => array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains($m['subject'], 'didn’t go through')));
+    chk('rescue: no email in the first half hour; the family may still be retrying', count($rescueMails()) === 0);
+    db_exec("UPDATE audit_log SET at = ? WHERE event = 'membership.paystack.failed' AND meta LIKE ?", [gmdate('Y-m-d\TH:i:s\Z', time() - 2400), '%' . $in['reference'] . '%']);
+    $n1 = paystack_rescue_failed();
+    $rm = $rescueMails();
+    chk('rescue: forty minutes on and still unpaid, the family gets ONE email: why it failed, what will work, and the link',
+        $n1 === 1 && count($rm) === 1 && str_contains($rm[0]['html'], 'enough money') && str_contains($rm[0]['html'], '/pay/' . $inv['payToken']));
+    chk('rescue: never a second one for the same invoice', paystack_rescue_failed() === 0 && count($rescueMails()) === 1);
+    $psReason = '';
     chk('settling: three words, and nothing but failed/reversed is a failure',
         paystack_settle_word('success') === 'paid' && paystack_settle_word('reversed') === 'failed' && paystack_settle_word('') === 'settling' && paystack_settle_word('queued') === 'settling');
 
