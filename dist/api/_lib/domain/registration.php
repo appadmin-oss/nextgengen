@@ -2316,6 +2316,8 @@ function reshoot_submit(array $p): array {
         ? photo_intake_url((string)($p['photoUrl'] ?? ''))
         : (string)($p['photoUrl'] ?? '');
     if ($url === '') return ['ok' => false, 'error' => 'bad_photo'];
+    // A retake that is itself blurred or tiny would only need another retake: refuse it, and say why.
+    if (($q = photo_qa_gate($url)) !== null) return $q;
     // The retake IS the new photo — apply it whether or not the governed
     // pipeline can run, or a guardian who did what they were asked would see
     // the old picture on the card indefinitely.

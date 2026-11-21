@@ -9,6 +9,8 @@ require_method('GET');
 rate_limit_check('membership.receipt');
 $inv = function_exists('membership_invoice_by') ? membership_invoice_by('receiptToken', (string)($_GET['t'] ?? '')) : null;
 $doc = $inv ? doc_for_receipt($inv) : null;
+// ?as=pdf|png: the receipt drawn on the server (domain/receipt-draw.php).
+if ($doc && in_array((string)($_GET['as'] ?? ''), ['pdf', 'png'], true)) receipt_send($doc, (string)$_GET['as']);
 header('X-Robots-Tag: noindex');
 header('Referrer-Policy: no-referrer');
 header('Cache-Control: private, no-store');

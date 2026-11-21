@@ -724,8 +724,8 @@ class Fp3Portal extends React.Component {
         const picked = open.filter(c => (S.fPick || []).indexOf(c.entryId) !== -1), pickSum = picked.reduce((t, c) => t + c.left, 0);
         const amt = Math.floor(Number(String(S.fAmt || "").replace(/[^\d]/g, "")) || 0);
         Object.assign(out, { shTitle: w.fees.joining ? "Pay " + first + "’s joining invoice" : "Pay for " + first,
-          shLead: "You’ll go to Paystack to pay by card, bank or USSD, then come straight back here." + (part ? " Paystack’s charge for this amount, if any, is shown on the next page before you pay. Paying by bank transfer to NGG has no charge." : fee ? " Paystack charges " + N(fee) + " for paying online; paying by bank transfer to NGG has no charge." : ""),
-          shGoL: S.busy ? "Opening Paystack…" : part && amt >= min && amt <= net ? "Continue to pay " + N(amt) : pick && pickSum ? "Continue to pay " + N(pickSum) : "Continue to Paystack", shGoBg: "#f5b026", shGoFg: "#2a1d00" });
+          shLead: "You’ll go to our payment provider to pay by card, bank or USSD, then come straight back here." + (part ? " The payment processing fee for this amount, if any, is shown on the next page before you pay; paying by bank transfer to NGG has none." : fee ? " Paying online adds a payment processing fee of " + N(fee) + "; paying by bank transfer to NGG has none." : ""),
+          shGoL: S.busy ? "Opening the payment page…" : part && amt >= min && amt <= net ? "Continue to pay " + N(amt) : pick && pickSum ? "Continue to pay " + N(pickSum) : "Continue to payment", shGoBg: "#f5b026", shGoFg: "#2a1d00" });
         out.payPartOn = partOn || pickOn; out.payIsPart = part; out.payIsPick = pick;
         out.payModes = [["all", "All of it, " + N(net)], partOn ? ["part", "Part of it"] : null, pickOn ? ["pick", "Choose what to pay"] : null].filter(Boolean).map(rr => { const on = mode === rr[0]; return { l: rr[1], sel: on ? "true" : "false", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c", bd: on ? "#0b0b0c" : "#d9d6cd", onClick: () => this.setState({ fMode: rr[0], fPart: rr[0] === "part", shErr: "" }) }; });
         const KIND_ICON = { fine: "ph ph-warning", dues: "ph ph-calendar-check", membership: "ph ph-identification-badge" };
@@ -741,7 +741,7 @@ class Fp3Portal extends React.Component {
           : part
           ? [{ k: "Owed today", v: N(net) }, { k: "This instalment", v: amt ? N(amt) : "—" }, { k: "Left after this", v: amt && amt <= net ? N(net - amt) : "—" }]
           : (w.fees.joining ? w.fees.joining.items : w.fees.lines).map(rr => ({ k: rr.label, v: N(rr.amount) }))
-            .concat(fee ? [{ k: "Paystack charge", v: N(fee) }] : []).concat([{ k: "Total", v: N(net + fee) }]);
+            .concat(fee ? [{ k: "Payment processing fee", v: N(fee) }] : []).concat([{ k: "Total", v: N(net + fee) }]);
         const PART_ERR = { part_too_small: "Pay at least " + N(min) + " at a time.", part_too_large: "That’s more than is owed. The most you can pay is " + N(net) + "." };
         out.shGo = () => {
           if (part) {
@@ -787,7 +787,7 @@ class Fp3Portal extends React.Component {
           if (S.plName.trim().length < 3) return this.setState({ shErr: "Write your full name to agree." });
           if (!S.plAgree) return this.setState({ shErr: "Tick the box to agree to the terms." });
           this.write(() => NGGApi.family.payplan.create(w.linkId, { instalments: S.plN, frequency: S.plF, firstDue: S.fFrom, agree: true, termsVersion: O.termsVersion, agreedName: S.plName.trim() }),
-            () => this.setState({ shDone: ["Plan set up", "The first instalment of " + N(Q.items[0].amount) + " is due on " + fp3PlanDay(Q.items[0].dueDate) + ". We’ll remind you a few days before each one."] }), () => this.loadWard(w.linkId));
+            () => this.setState({ shDone: ["Plan sent for approval", "NGG will look at it and tell you when it is approved. The first instalment of " + N(Q.items[0].amount) + " would be due on " + fp3PlanDay(Q.items[0].dueDate) + " — if NGG approves it after that day, every date moves along. We’ll remind you a few days before each one."] }), () => this.loadWard(w.linkId));
         };
       }
       if (sh === "leave") {
@@ -1055,6 +1055,7 @@ function Fp3TodayMore({ c, w }) {
           : !evs.length ? <p className="fp3x-empty">Nothing on the calendar yet. Events at {w.member.centre} show here as soon as they’re planned.</p>
           : <ul className="fp3x-evs">{evs.map(e => <li key={e.id}><span className="fp3x-date" aria-hidden="true"><b>{e.dd}</b>{e.mm}</span><span><b>{e.title}</b><small>{[e.date, e.time, e.where].filter(Boolean).join(" · ")}</small></span>{e.expected ? <em>{S.rsvp[e.id] === "yes" ? "Coming" : S.rsvp[e.id] ? "Replied" : "Families expected"}</em> : null}</li>)}</ul>}
       </section>
+      <Fp3Homework w={w} first={first}/>
       <section className="fp3x-card" aria-labelledby="fp3x-ln">
         <div className="fp3x-h-row"><h2 id="fp3x-ln" className="fp3x-h">What {first} is learning</h2><span className="fp3x-meta">{L.completed || 0} of {L.total || 0} lessons done</span></div>
         <div className="fp3x-bar" role="progressbar" aria-label={first + "’s lessons"} aria-valuemin="0" aria-valuemax="100" aria-valuenow={L.pct || 0}><span style={{ width: (L.pct || 0) + "%" }}/></div>
@@ -1065,6 +1066,31 @@ function Fp3TodayMore({ c, w }) {
   );
 }
 
+
+/* ── This week's homework ────────────────────────────────────────────────────
+   Read-only (family_homework): what the instructor set that is due this week
+   or still open past its date, and where it stands. A mark and its feedback
+   show once the work is marked; work sent back shows what to change and the
+   new date. The child's own answer is theirs and is not shown here. */
+const FP3_HW = { overdue: ["Overdue", "is-warn"], returned: ["Sent back to improve", "is-warn"], todo: ["To do", ""], handed_in: ["Handed in", ""], marked: ["Marked", ""] };
+function Fp3Homework({ w, first }) {
+  const H = w.homework || { items: [] };
+  return (
+    <section className="fp3x-card" aria-labelledby="fp3x-hw">
+      <div className="fp3x-h-row"><h2 id="fp3x-hw" className="fp3x-h">This week’s homework</h2>
+        <span className="fp3x-meta">{H.overdue ? H.overdue + " overdue" : H.open ? H.open + " still to do" : H.items.length ? "All handed in" : ""}</span></div>
+      {H.items.length ? <ul className="fp3x-evs">{H.items.map(h => {
+        const [label, tone] = FP3_HW[h.state] || [h.state, ""];
+        const when = h.state === "marked" || h.state === "handed_in" ? (h.handedIn ? "handed in " + h.handedIn + (h.late ? " (late)" : "") : "") : (h.due ? (h.returned ? "hand in again by " : "due ") + h.due : "");
+        return <li key={h.id}><span className="fp3x-ic" aria-hidden="true"><i className={h.state === "marked" ? "ph ph-seal-check" : "ph ph-pencil-simple-line"}/></span>
+          <span><b>{h.title}</b><small>{[h.course, when, h.mark !== null ? "mark " + h.mark + (h.outOf ? "/" + h.outOf : "") : ""].filter(Boolean).join(" · ")}</small>
+            {h.feedback ? <small>{(h.returned ? "What to change: " : "Feedback: ") + h.feedback}</small> : null}</span>
+          <em className={tone || undefined}>{label}</em></li>;
+      })}</ul>
+        : <p className="fp3x-empty">Nothing set for {first} this week. Homework from the instructors shows here, with the mark once it is marked.</p>}
+    </section>
+  );
+}
 
 /* ── Anchor, in the family account ──────────────────────────────────────────
    The child's week as their circle of adults sees it (family.anchor): the
@@ -1166,10 +1192,10 @@ function fp3PlanFirst(offer) {
 function fp3PlanView(F, first, T, N) {
   const P = F.plan;
   if (!P) return { planOn: false, planOfferOn: !!F.planOffer && F.payable > 0, planOfferL: "Agree a plan to clear " + first + "’s " + N(F.payable) + " in two to six instalments, weekly or monthly. We remind you before each one." };
-  const H = { on_track: ["On track", T.ok], behind: ["Behind", T.warn], broken: ["Lapsed", T.bad || T.warn], completed: ["Completed", T.ok], cancelled: ["Ended", T.neutral] }[P.health] || ["", T.neutral];
+  const H = { pending: ["Waiting for approval", T.warn], declined: ["Not approved", T.neutral], on_track: ["On track", T.ok], behind: ["Behind", T.warn], broken: ["Lapsed", T.bad || T.warn], completed: ["Completed", T.ok], cancelled: ["Ended", T.neutral] }[P.health] || ["", T.neutral];
   const done = P.items.filter(i => i.status === "paid").length;
   const pct = P.total ? Math.round(100 * P.paid / P.total) : 0;
-  const warn = P.health === "broken" ? "An instalment is more than " + (P.graceDays || 14) + " days late, so the plan has lapsed and " + N(P.remaining) + " is owed as normal. Pay what you can, or ask the centre about a new plan."
+  const warn = P.health === "pending" ? "NGG will look at the plan and tell you when it is approved. Nothing is due on it until then — if that is after the first date, every date moves along." : P.health === "broken" ? "An instalment is more than " + (P.graceDays || 14) + " days late, so the plan has lapsed and " + N(P.remaining) + " is owed as normal. Pay what you can, or ask the centre about a new plan."
     : P.health === "behind" ? N(P.overdue) + " is overdue (" + P.daysLate + (P.daysLate === 1 ? " day" : " days") + "). Pay it to keep the plan on track."
     : "";
   return {

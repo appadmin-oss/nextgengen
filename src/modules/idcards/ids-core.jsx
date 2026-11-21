@@ -55,12 +55,6 @@ const IDS_SCENARIOS = [
     hint: "Prints at 150 dpi with a PROOF watermark. Nobody is marked as printed." },
 ];
 
-/* Tones [bg, fg, dot] (§7). Mirrored in styles as --ids-* tokens; this copy is
-   for the print PDF, which reads no stylesheet. */
-const IDS_TONES = {
-  ok: ["#e8f5ec", "#17663a", "#22a05a"], warn: ["#fdf2d8", "#7a5600", "#e0a100"], bad: ["#fdeaea", "#a12a2a", "#d94141"],
-  neutral: ["#f0f0ef", "#48484e", "#9a9aa0"], info: ["#f4f4f3", "#3a3a40", "#9a9aa0"],
-};
 
 const idsClamp = (v, lo, hi, def) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
 

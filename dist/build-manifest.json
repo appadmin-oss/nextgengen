@@ -1,17 +1,17 @@
 {
-  "buildId": "f4f3b94e82",
-  "builtAt": "2026-11-21T08:42:51.093Z",
+  "buildId": "4c21e5784f",
+  "builtAt": "2026-11-21T08:56:37.613Z",
   "bundle": {
-    "file": "app.e139de4bde.min.js",
-    "bytes": 2381563,
-    "gzipBytes": 643735,
-    "files": 49
+    "file": "app.bccd9b6f88.min.js",
+    "bytes": 1678570,
+    "gzipBytes": 446103,
+    "files": 31
   },
   "more": {
-    "file": "app-more.6975a5e53f.min.js",
-    "bytes": 3885058,
-    "gzipBytes": 1103943,
-    "files": 63,
+    "file": "app-more.8b15300b6e.min.js",
+    "bytes": 3910955,
+    "gzipBytes": 1117102,
+    "files": 64,
     "list": [
       "src/modules/idcards/ids-core.jsx",
       "src/modules/idcards/ids-ui.jsx",
@@ -49,6 +49,7 @@
       "src/modules/control/cr-shell.jsx",
       "src/modules/control/cr-gate.jsx",
       "src/modules/control/cr-app.jsx",
+      "page-mou.jsx",
       "src/modules/mentor15/mp15-view.jsx",
       "src/modules/mentor15/mp15-registration.jsx",
       "src/modules/mentor15/mp15-class.jsx",
@@ -78,15 +79,45 @@
       "page-admin.jsx"
     ]
   },
+  "study": {
+    "file": "app-study.a1a565d914.min.js",
+    "bytes": 718701,
+    "gzipBytes": 203672,
+    "files": 19,
+    "list": [
+      "chess-engine.jsx",
+      "lesson-blocks.jsx",
+      "lesson-editor.jsx",
+      "src/modules/learn/assign-desk.jsx",
+      "src/modules/tools/tools-core.jsx",
+      "src/modules/tools/tools-more.jsx",
+      "src/modules/tools/tools-labs.jsx",
+      "src/modules/mathslab/phy-visuals.jsx",
+      "src/modules/mathslab/eng-speak.jsx",
+      "src/modules/mathslab/mlb-app.jsx",
+      "src/modules/timetable/tt-core.jsx",
+      "src/modules/timetable/tt-poster.jsx",
+      "src/modules/timetable/tt-ui.jsx",
+      "src/modules/timetable/tt-views.jsx",
+      "src/modules/timetable/tt-layers.jsx",
+      "src/modules/timetable/tt-myweek.jsx",
+      "src/modules/timetable/tt-app.jsx",
+      "src/modules/learn/lrn-exam.jsx",
+      "page-learn.jsx"
+    ]
+  },
   "assets": {
-    "app.min.js": "app.e139de4bde.min.js",
-    "app-more.min.js": "app-more.6975a5e53f.min.js",
-    "styles.css": "styles.b9f8fcc1fd.css",
-    "styles-app.css": "styles-app.3c1b4df635.css",
+    "app.min.js": "app.bccd9b6f88.min.js",
+    "app-more.min.js": "app-more.8b15300b6e.min.js",
+    "app-study.min.js": "app-study.a1a565d914.min.js",
+    "styles.css": "styles.c97b206628.css",
+    "styles-app.css": "styles-app.6cb97fe880.css",
     "data.js": "data.ec97c65376.js",
     "photos.js": "photos.36b0b4ea72.js",
-    "api-client.js": "api-client.b35462c245.js",
-    "outbox.js": "outbox.042a8c9122.js"
+    "api-client.js": "api-client.49fbc1bde9.js",
+    "outbox.js": "outbox.042a8c9122.js",
+    "styles-app-public.css": "styles-app-public.74238a9606.css",
+    "phosphor.css": "phosphor-used.b694d33560.css"
   },
   "node": "v22.23.4"
 }

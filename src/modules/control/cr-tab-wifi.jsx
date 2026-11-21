@@ -17,7 +17,6 @@
    guide's drawer, with the script already filled in. */
 
 const CR_WF_ACCESS = [["on", "On"], ["limited", "Limited"], ["off", "Off"]];
-const CR_WF_ACCESS_TONE = { on: "ok", limited: "warn", off: "neutral" };
 const CR_WF_PROFILE_WORDS = {
   "ngg-member": "Members", "ngg-staff": "Staff, mentors and instructors", "ngg-limited": "Limited access",
   "ngg-summer": "Summer School participants", "ngg-guest": "Visitors",

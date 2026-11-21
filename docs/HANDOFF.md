@@ -7521,6 +7521,233 @@ Everything needed to continue is in two places:
 - `HANDOFF-NEXT-AGENT.md`: every open thread, including online membership (the owner's new pricing:
   no yearly fee, $10 with a mentor, $5 a course with an instructor) and the Labs exam licence slot.
 
+## 18 Nov 2026 — Outstanding balances as images, PDF and CSV
+
+The owner asked to download fines and dues "like this" (three phone screenshots of an "Outstanding balances"
+sheet), as images, PDF and CSV.
+- **Money → Dues & arrears → Download balances** (`crMoBalances` in `cr-tab-money.jsx`): a form picks the format
+  (Images, PDF, CSV) and, with more than one centre owing, a centre. It fetches the whole arrears list
+  (`admin.fees.arrears`, limit 1000), not the drawn page.
+- One drawing, `crBalDraw`, on a canvas in the self-hosted Geist (its latin-ext file carries ₦), feeds both the
+  PNG parts (2×) and the PDF (jsPDF, A4, 3×), so the posted image and the printed page cannot differ. Fifteen
+  rows a part, largest payable first; "Days" is `daysOverdue`; Dues = payable − fines, split in the CSV.
+- `tests/balances-export.test.js` (`npm run test:balances`, in `test:all`): 32 members owing over two centres;
+  checks the three PNGs, the three-page A4 PDF, the CSV rows and sums, the centre filter, and that a centre
+  name is drawn whole (it failed with the first, too-narrow column, and the check was proven against it).
+
+## 2026-11-18 — Shop management upgrade (NGG)
+
+Owner, 17 Nov: *"Upgrade the shop massively … for better and effective management. Research!"* Built from
+`docs/SHOP-MANAGEMENT-PLAN.md` §2, all ten items. Server: `api/_lib/domain/shop-manage.php` (new, in the bootstrap
+list) and `shop.php`; migration **238**; Control Room: `cr-tab-shop.jsx` (eight tabs: Today, Orders, Sell, Stock,
+Products, Codes, Reports, Settings); public: `page-shop.jsx`.
+
+- **Stock ledger** (`shop_stock_moves`): every count change is a reason-coded row with who and when; the count is the
+  running result (tests assert sum of rows = count). The product form writes `correction`/`received`; hand
+  adjustments; stock-take validated whole. Counts may go below nought (table sales are never stalled); the public
+  shop clamps to nought (`shop_stock` vs `shop_stock_raw`). Column names avoid MySQL reserved words
+  (`variant`, `byId`, `openingFloat`).
+- **Low stock**: `lowStock` per product (-1 = the shop default), panel, daily digest (webcron job `shop`).
+- **Refunds** (`shop_refunds`): Paystack `POST /refund` in kobo; pending until Paystack's own `GET /refund/:id` says
+  processed/failed — from the signed `refund.*` webhook (`api/hooks/paystack.php`), "Check now", or the hourly
+  sweep. The body of a webhook is never trusted alone (as with charges). "Paid outside" refunds are processed at
+  once. Cap = what was charged (goods + delivery + the buyer-borne fee); suggestion = goods + delivery. Restock at
+  refund time. `refundState`: '' | due | pending | partial | full. Cancelling a paid order can refund in one step.
+- **Pickup code**: six digits at payment for collections; `Collected` needs it or a reason (override on the
+  timeline). Bulk "Mark completed" became "Mark delivered" (collections are refused per row, by design).
+- **Unpaid orders**: expire after `expireHours` (24) as `cancelKind = 'expired'`; one reminder after 2 h; pay later
+  from the order link (`public.shop.order.pay`, a fresh `NGGS-` reference each time — an older checkout still pays,
+  matched by metadata orderId). A payment arriving for an *expired* order revives it; a *staff*-cancelled one stays
+  cancelled and the money goes to unapplied_payments.
+- **Table sales** (`channel = 'pos'`, `payMethod` cash/transfer/pos) and **cash sessions** (`shop_cash_sessions`;
+  in `CENTRE_NAME_TABLES` and `CAC_CENTRE_NAMED_BY`). Cash needs an open session; closing keeps the difference and
+  needs a reason when not zero.
+- **Reports**: today's numbers; gross / buyer-borne fees / Paystack's fees **as reported** (`gatewayFee`, from
+  verify `fees`) / refunds / net; by product and size, method, channel, day; sell-through; stock value; CSV.
+- **Codes** (`shop_codes`) and **pre-orders** (`preorderUntil`). Order **timeline** (`shop_order_events`) replaces
+  appending to `note`; old notes still show. **Exchanges** split a line at the price charged. The orders list is
+  paged on the server with a date range and channel filter.
+- Buyer-facing label "Paystack's charge — not an NGG fee" renamed **"Payment processing fee — Charged by our payment
+  provider"** (shop, membership invoice page, receipt; provider-neutral, as more providers are coming), at the owner's request.
+
+Tests: PHP suite 7330/0 (baseline 7283) — 47 new `shop ledger/low stock/codes/pickup/refunds/unpaid/pre-order/
+table/exchange/order/lists/report/export/wiring` checks; `tests/shop.test.js` extended to refunds, the till,
+sessions, stock-take, codes and reports. HawkScan not run (no `HAWK_API_KEY` here).
+
+Not built (the plan's "do not build" list, and items outside §2): delivery zones, member price, bundles, VAT line.
+Unconfirmed with Paystack: whether bank-transfer/USSD payments refund automatically — a failed refund says so and
+staff pay it back another way.
+
+## 18 Nov 2026 — Photo quality gate; the Membership Agreement signed online
+
+Owner: "NGG registration and onboarding is flawed. Research. We do not take low quality images!", then "Go,
+build the photo gate … photos are also served by S3-compatible storage … add this MoU … parents must read and
+do a very short not-frustrating quiz … refine the MoU, make it standard and professional … merge it with the
+consent features … a copy would always be emailed … whatever clashes between the MoU and website, let the
+website win."
+
+- **Photo gate** (`domain/photo-quality.php`, `photoQa*` in components.jsx; `docs/PHOTO_QUALITY.md`). The apply
+  form used to warn about blur, measured on a 90 × 120 thumbnail, and enlarged a 320 px photo to 600 × 800. Now
+  every problem is a refusal, measured at full size, in the browser and again on the server wherever the photo
+  lives (inline, local store, S3-compatible bucket, Cloudinary). The PHP suite turns the gate off as a fixture
+  for the suites that post placeholder photos, and proves it in its own section. `tests/_photo.js` draws a
+  portrait-like test photo for the browser suites.
+- **Membership Agreement** (`domain/mou.php`, migration 239, `page-mou.jsx` in the signed-in bundle, Members →
+  Agreements in `cr-tab-registration.jsx`). The paper MoU rewritten in plain English (13 clauses; obvious
+  errors corrected; "Talent management" appeared twice and is once). Money is read from the fee settings and
+  frozen (`termsJson`); early termination follows the website's training-place write-down, with the handbook's
+  three months' notice and ₦30,000 inconvenience fee. The handbook's "₦300,000 per remaining year, inflation
+  adjusted" is NOT used: the website's training figure and basis win (owner's rule). Signatures are PNG data URLs
+  on the row; links are stored as hashes. `tests/mou-sign.test.js` (19 checks) and 25 PHP checks.
+- Migration numbering: a parallel session's shop management took 238 on the same branch; the MoU is 239.
+
+## 18 Nov 2026 — Receipts drawn on the server (PDF and PNG)
+
+Owner: "Make receipts downloadable as PDF and image with server drawing instead of browser."
+- `domain/receipt-draw.php`: ONE GD drawing of the frozen receipt (doc_data / doc_org_for — the same data as
+  doc_render_receipt) at 2× A4. The PNG is that drawing cropped to the receipt; the PDF is the same drawing on an
+  A4 page, written by a ~40-line PDF 1.4 writer (catalog, page, DCTDecode image, UTF-16 metadata, xref). No
+  library, no headless browser.
+- Font: Inter (OFL, the site's body font), in `api/_lib/fonts` (blocked from the web by api/.htaccess). The
+  vendored Liberation Sans had neither ₦ nor ẹ/ọ/ṣ. Text is NFC-normalised; a tone mark with no precomposed letter
+  (ọ̀) is placed over its letter, because GD does not shape text.
+- Routes: `document.php?t=…&as=pdf|png` and `receipt.php?t=…&as=pdf|png` (the email link). Buttons on the receipt
+  page, the payment page, the receipt email and Money → Membership payments.
+- Tests: 7 PHP checks; `tests/receipt-download.test.js` (7, through the routes).
+
+## 18 Nov 2026 — Low-end performance: three bundles, slim public CSS, lazy libraries
+
+Owner: "fix the NGG site constantly lagging … must work perfectly on low-end devices … too heavy … Research! How
+does Canva do? How do games do it?" Research and the numbers are in `docs/PERFORMANCE.md`.
+- A third bundle, `app-study` (Labs, tools, timetable, Learn, chess engine, lesson blocks): build.js STUDY,
+  app.jsx NGG_STUDY_ROUTES + nggNeedStudy; the signed-in bundle loads it too. bundle-split.test.js extended.
+- `tools/css-split.js`: public pages get the rules their sources use; the full styles-app.css is swapped in by
+  nggMoreCss() with the signed-in bundle. Phosphor CSS trimmed to the icons named in source.
+- TanStack Table and jsQR load on demand; the 1080 px logo is now 512 px (9.5 KB), `logo-1080.png` kept for print;
+  the service worker precaches the slim sheet; Lite mode adds content-visibility on sections.
+- Home page on an emulated low-end phone: 24.4 s → 16.4 s ready, 4.87 → 3.0 MB.
+
+## 2026-11-18 — Dead code removed, and kept out
+
+Owner: "Remove everything that is irrelevant", then "Please create a test for that".
+
+- `tools/dead-code.js` reads every shipped file's top-level declarations with the vendored Babel parser
+  and flags any name that appears nowhere else in the product (code, PHP, HTML, CSS, tests; docs do not
+  count). It also flags self-hosted font files that nothing names. `node tools/dead-code.js --prune`
+  removes what it finds, re-parsing each file before writing.
+- Removed: ~1,000 lines of retired Control Room panels in `page-admin.jsx` (AdminPhotos, AdminRequests,
+  AdminStaff, AdminApprovals, AdminBehaviour, AdminAttendanceDuty, AdminContact, AdminStatus,
+  AdminComments, AdminNewsletter, AdminEvents, CheckinDesks and their helpers), 22 smaller orphans in
+  other files, and 7 unused report fonts.
+- `tests/dead-code.test.js` (`npm run test:deadcode`, in `test:all`) fails the build when dead code or an
+  orphan font comes back.
+- Kept on purpose, because only a test still uses them: AdminAssessment, AdminTournaments,
+  idsCardsInRange, idsStock. Removing them means deleting their tests too, so that is the owner's call.
+
+## 2026-11-18 — NGG entry steps, the resumption day, follow-ups, the paper MoU
+
+Owner's paper card *NGG ENTRY STEPS* became the registration checklist's structure (docs/ENTRY-STEPS.md):
+
+- Items are grouped by step (`RCL_STEPS`: orientation, payment, documents, online, ID card). Migration 240 adds
+  `reg_checklist_items.step` and three default items: Orientation attended, File handed in, Latest school report card.
+- New automatic item **School timetable on the site** (member_timetables, lessons on ≥3 weekdays).
+- **Resumption = completion.** `reg_checklists.resumedOn` is written the day the last item is done, once; the family,
+  member and supervisor are told. Not the day the member was accepted.
+- **Follow-ups.** Family reminders on day 1/3/7 then weekly, phrased as what to bring and where; a follow-up log
+  (`reg_checklist_followups`) with a required next date; supervisor told when one falls due; centre staff told when a
+  registration stalls 14 days. List filter *Needs a follow-up*.
+- **The MoU is printed, signed in ink and brought to the centre.** `admin.mou.paper` records the checked copy and a
+  readable photograph of the signed page (≥1600 × 1000, read from the file); countersign is refused until then
+  (`paper_first`); the checklist item needs both. A paper-only family is supported (`signedVia = 'paper'`).
+  `NGGApi.uploadDocumentPhoto` keeps the photo at 2000px even without a cloud (the headshot fallback is 1000px).
+
+## 2026-11-19 — Personal timetable first ("My week"); the agreement as a standard document
+
+- Owner: "The timetable is also pretty complicated for kids … Personal timetable first!" New guided flow
+  `src/modules/timetable/tt-myweek.jsx` (STUDY bundle): school as one block, the child's own things by tapping,
+  their NGG sessions pre-ticked, a day-by-day check with overlaps in words. It writes the maker's own document
+  (member_timetables) and replaces only what it made (ids `mw…`) and the NGG sessions. `TimetableMakerPage` routes:
+  ?easy=1 → My week; ?full=1, links and a browser copy → the maker; a signed-in member with nothing saved → My week.
+  The first-visit check is read on the first render (the router rewrites /timetable/me before the maker mounts).
+  Tests: tests/timetable-myweek.test.js (`npm run test:myweek`, in test:all).
+- The registration item became **Personal timetable on the site**: school on ≥3 weekdays AND one thing of the
+  child's own (study/activity, not an NGG session) — `rcl_timetable_own`.
+- The Membership Agreement prints as a standard agreement (assets/report/mou.css; `mou_execution_html`).
+- Known, not caused here: six PHP checks (rulebook ×4, labs quick check, maths lab mini review) fail when the suite
+  runs after midnight Lagos time (UTC 23:00–24:00); they fail on the committed code too.
+
+## 2026-11-19 — WhatsApp replies that act (registration)
+
+Owner: "Make + Kapso for WhatsApp onboarding … people could also respond … instead of relying on humans". Built on
+the existing Kapso integration (domain/kapso.php), not through Make: the site already decides who to remind and when.
+- `kapso_send_buttons`: interactive reply buttons in the 24-hour window; outside it the optional `reply_template`
+  (quick replies carrying `rcl:<memberId>:sat|next|help`), else the plain template with "Reply 1, 2 or 3".
+- `rcl_wa_remind` sends each family reminder stage on WhatsApp too (claimed once per stage per number).
+- `rcl_wa_inbound` (called by `kapso_receive` before the inbox): dates → follow-up + next date; help → staff + helper;
+  photo → kept via `photo_store_put` and recorded as a `family_sent` submission; STOP/START → `whatsapp_optout`
+  (migration 241). A button for a child is honoured only from a number that child's reminder went to.
+- Tests: PHP "whatsapp ·" (13), each core rule proven to fail when removed.
+
+## 2026-11-19 — Homework that gets done: the marking prompt, returned work stays open, families see it
+
+Merged afv/brave-faraday-pdlh7o (it already carried this branch's 2 November audit as patch 92668895; every conflict
+took its version). Then three changes, migration **242** (`assignment_submissions.resubmitBy`, `.markMinutes`,
+index on status):
+- **Marking prompt.** `assignment_marking_queue($g)` — submitted hand-ins the marker may open, checked exactly as
+  `staff_assignment_submission_gate` does (can-mark + member centre in reach), one query. `instructor_today` adds
+  the `handins` row ("N hand-ins to mark — oldest X days"; danger at `ASG_MARK_URGENT_DAYS` = 7), so the duty
+  pop-up and the daily email carry it; `duty_tell_handins_lead` nudges the centre's lead mentor once per oldest
+  hand-in. Time-to-mark: `markMinutes` written on grade and return; `admin_assignment_time_to_mark()` on the
+  overview (median, p90 hours, 90 days). The ip6 duty button opens Assignments.
+- **Returned is open.** `assignment_sub_open()` is the one definition; `sub_ids_for()` excludes returned (the
+  first-publish notice passes `$withReturned`). Return takes `resubmitBy` (default `ASG_RESUBMIT_DAYS` = 3,
+  refused if past). member_today lists it ("Revise and hand in again"), `assignment_due_reminders` reminds it under
+  `rs_soon:`/`rs_over:` + date (assignment_notices.kind is VARCHAR(16)). `assign_due` is hourly now (claims make it
+  idempotent; needed so a family message held by quiet hours goes at 07:00, not 24 hours later).
+- **Families.** `family_homework()` inside `family_ward()` (so only through the guardian's own active link):
+  due this week or still owed, state, mark and feedback once marked, never the answer. `assignment_tell_family()`
+  at the overdue stage: claim `family` per assignment per child; guardians taking alerts get inbox + email,
+  `rcl_wa_phones()` via `sms_send` (WhatsApp first, SMS fallback); parentEmail only when no guardian took it;
+  never between 21:00 and 07:00 Lagos (no claim taken). The duties email's week-old copy to parentEmail skips
+  homework already sent this way.
+- Deliberately unchanged: the evidence fine (`policy_evidence_fines_run`) still counts a returned hand-in as
+  evidence uploaded — fining a child for work a marker sent back is a policy question, not a counting one.
+- Tests: PHP "homework 7/8/9" (29 checks); reach scoping, returned-is-open (sub_ids_for and Today), guardian
+  scoping, once-only and quiet hours each mutated and seen to fail.
+
+## 2026-11-19 — Instalment plans (schema 242, `domain/fee-plans.php`)
+
+Owner's brief: a parent sets up a plan in the family app (Fees → Set up a
+payment plan: 2–6 instalments, weekly / every two weeks / monthly, exact dates
+and amounts shown, terms read, name typed, box ticked); staff can set one up
+for a parent who agreed by phone, in person or in writing and must say which;
+**the plan must be approved**; the admin sets the longest time frame.
+
+- **Pending until approved.** Both doors write a `pending` plan through one
+  writer (`fee_plan_create`); `admin.fees.plan.decide` (cap `fees`,
+  compare-and-set) approves or declines with a reason, and the family is told
+  in their notices. A staff-created plan waits for approval too.
+- **The server works out the schedule** (`fee_plan_schedule`): equal parts,
+  the odd naira on the LAST instalment, monthly keeps the day of the month
+  clamped to the month's end. `planMaxDays` (fees settings, 14–365, default
+  120, Control Room → Money → Amounts → Instalment plans) is enforced on the
+  server, first instalment to last, whoever sets the plan up.
+- **What counts**: every live `payment` credit after the plan was set up,
+  oldest instalment first. There is no plan-specific payment — the desk records
+  money exactly as before. The plan's total is what was owed the day it was set
+  up; new dues during it are charged as normal and are not part of it. A plan
+  completes on its own when the payments reach the total (on read, no cron).
+- `fee_plans` is `BLOCK` in the merge policy (money).
+- Surfaces: family app Fees → "Payment plan" card (`Fp3Plan`); Control Room →
+  Money → Who owes ("Payment plans" table) and each account ("Payment plan",
+  with "Set up a plan"). Tests: the "plans:" group in `api/tests/run.php`.
+- Not done: reminders still run during a plan as before, and a missed
+  instalment does not end a plan by itself — staff end it with a reason.
+- **Fair for everyone (owner, 19 Nov):** instalments are equal to the naira —
+  the odd naira go one each to the last instalments, so none differs by more
+  than ₦1 — and a plan approved after its first date is re-dated from the
+  approval day, so nobody is overdue before NGG says yes. No interest or
+  charge for paying by plan; the terms say so.
 ## 19 Nov 2026 — Parents pay the balance in instalments, with follow-ups
 
 The owner asked whether parents can pay their fines and dues in instalments. They could pay, but only the
@@ -7643,6 +7870,34 @@ How it behaves:
     note, and offboarding with the class handed back.
   - No page errors in either.
 - PHP checks for both are in `run.php` and run in CI.
+
+## 2026-11-19 — one plan system: payment-plans, with approval and the fairness rules
+
+Two sessions built instalment plans the same afternoon (`domain/payment-plans.php`
+from the finme session, `domain/fee-plans.php` from this one). Merged into ONE:
+finme's (reminders, grace, the event record, paying an instalment online) is
+kept, and `fee-plans.php` and its table are gone (its migration number 242 now
+belongs to the assignments change). The owner's rules were moved into it:
+
+- **Every plan waits for approval** (`status = 'pending'`, health `pending`):
+  nothing is payable, late or reminded on it until `admin.payplans.decide`
+  (cap `fees`, compare-and-set) approves it; a decline needs a sentence the
+  family reads (`plan_approved` / `plan_declined` notices). Staff-made plans
+  wait too. Control Room → Money → Instalment plans → "Waiting for approval".
+- **Approved after its first date, a plan is re-dated** from the approval day
+  — same amounts, same gaps — so nobody is late before NGG says yes.
+- **The longest plan is the admin's** `planMaxDays` (fees settings, 14–365,
+  default 183), Money → Amounts → Instalment plans; enforced on the server.
+- **Fair to the naira:** no instalment differs from another by more than ₦1;
+  the odd naira go one each to the first instalments.
+- **No interest, no charge** for paying by plan — stated in the terms
+  (version `2026-11b`).
+
+Migrations after the three-way merge: 240–241 (registration steps, WhatsApp),
+242 (assignments), 243 (payment plans), 244 (instructor management). A
+database that ran the finme branch on its own has its plans tables already
+(243 creates IF NOT EXISTS) but 244's `ALTER TABLE volunteers` will refuse a
+duplicate column there — none is known to have been deployed.
 
 ## 19 Nov 2026 (latest) — Paying a chosen charge
 

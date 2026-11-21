@@ -36,7 +36,7 @@
    family says they were never told" has an answer in Money → Reminders.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const DUES_NOTICE_KINDS = ['upcoming', 'arrears', 'claim_ack', 'claim_decided', 'claim_staff', 'plan_due', 'plan_late', 'plan_broken', 'plan_ended'];
+const DUES_NOTICE_KINDS = ['upcoming', 'arrears', 'claim_ack', 'claim_decided', 'claim_staff', 'plan_due', 'plan_late', 'plan_broken', 'plan_ended', 'plan_approved', 'plan_declined'];
 /** Members looked at per pass for upcoming notices. A pass that fills it does
  *  not mark the day done, so the next tick carries on where it stopped. */
 const DUES_UPCOMING_BATCH = 400;

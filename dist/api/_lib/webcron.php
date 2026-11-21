@@ -87,7 +87,7 @@ function web_cron_jobs(): array {
     $add('mentorship',   21600,  $has('ms_rules_run'), false);
     $add('mentor_jobs',  600,    $has('mpa_tick'), true);
     $add('assign_auto',  21600,  $has('assignment_auto_issue'), false);
-    $add('assign_due',   86400,  $has('assignment_due_reminders'), false);                    // due tomorrow / overdue: once per member per kind
+    $add('assign_due',   3600,   $has('assignment_due_reminders'), true);                     // due tomorrow / overdue / resubmit-by: once per member per kind; the family once per piece of work, outside 21:00–07:00
     $add('wifi_silent',  900,    $has('wifi_silent_digest'), true);
     $add('club_ann',     600,    $has('cp_ann_due_tick'), true);
     $add('media_sweep',  86400,  $has('media_obj_sweep'), true);
@@ -100,6 +100,7 @@ function web_cron_jobs(): array {
     $add('volpay',       3600,   $has('volpay_tick'), false);
     $add('dirpush',      3600,   $has('dirpush_tick'), true);
     $add('photos_bucket', 3600,  $has('photo_store_to_bucket_tick'), true);   // held photos into the bucket, a batch an hour until none are left
+    $add('shop',         3600,   $has('shop_cron_tick'), true);           // shop-manage.php: expire unpaid orders, one reminder, refunds Paystack has not reported, the low-stock digest
     $add('regcheck',     3600,   $has('rcl_tick'), true);                     // registration checklist: recount, remind supervisors and families weekly
     $add('photo_sizes',  600,    $has('photo_variants_tick'), true);          // each bucket photo's sizes, made once by Cloudinary, stored beside it
     // Once: tracks that name courses exactly become chosen courses (curriculum.php).

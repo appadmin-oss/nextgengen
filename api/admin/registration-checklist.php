@@ -12,7 +12,8 @@ const REGCHECK_ACTIONS = [
     'assign'      => ['admin.regcheck.assign', ['memberIds', 'supervisorId', 'reason']],
     'start'       => ['admin.regcheck.start', ['memberIds', 'missing']],
     'reject'      => ['admin.regcheck.reject', ['memberId', 'itemKey', 'reason']],
-    'item.save'   => ['admin.regcheck.item.save', ['itemId', 'title', 'help', 'evidence', 'presence', 'maxAgeDays']],
+    'followup'    => ['admin.regcheck.followup', ['memberId', 'channel', 'outcome', 'note', 'nextOn']],
+    'item.save'   => ['admin.regcheck.item.save', ['itemId', 'title', 'help', 'evidence', 'presence', 'maxAgeDays', 'step']],
     'item.move'   => ['admin.regcheck.item.move', ['itemId', 'dir']],
     'item.retire' => ['admin.regcheck.item.retire', ['itemId', 'retire']],
 ];

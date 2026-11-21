@@ -2353,6 +2353,7 @@ function photo_change_request_create(array $p): array {
     $reason = trim(mb_substr((string)($p['reason'] ?? ''), 0, 300));
     $url = photo_intake_url((string)($p['photoUrl'] ?? ''));
     if ($url === '') return ['ok' => false, 'error' => 'bad_photo'];
+    if (($q = photo_qa_gate($url)) !== null) return $q;   // NGG does not take low-quality photos
     $old = (string)($m['photoUrl'] ?? '');
     if ($old !== '' && photo_store_relativise($old) === photo_store_relativise($url)) return ['ok' => false, 'error' => 'same_photo'];
     $now = now_iso();

@@ -229,7 +229,7 @@ function doc_lines(array $inv): array {
         $out[] = ['label' => (string)$it['label'], 'detail' => (string)($it['detail'] ?? ''), 'period' => doc_period($it), 'qty' => $qty,
                   'unit' => intdiv($amt * 100, $qty), 'kobo' => $amt * 100];
     }
-    if ((int)($inv['processingFee'] ?? 0) > 0) $out[] = ['label' => 'Paystack charge', 'detail' => 'paid to Paystack for the online payment, not an NGG fee',
+    if ((int)($inv['processingFee'] ?? 0) > 0) $out[] = ['label' => 'Payment processing fee', 'detail' => 'charged by our payment provider',
         'period' => '', 'qty' => 1, 'unit' => (int)$inv['processingFee'] * 100, 'kobo' => (int)$inv['processingFee'] * 100, 'gateway' => true];
     return $out;
 }
@@ -480,7 +480,7 @@ function doc_icon(string $k): string {
 /* ── The pages ─────────────────────────────────────────────────────────── */
 
 /** The page every document sits on: the screen desk, the print rules, the fonts. */
-function doc_page(string $title, string $body, bool $landscape = false): string {
+function doc_page(string $title, string $body, bool $landscape = false, string $tools = ''): string {
     $w = $landscape ? 1123 : 794; $h = $landscape ? 794 : 1123;
     return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">'
         . '<title>' . doc_e($title) . '</title><link rel="stylesheet" href="/assets/fonts/fonts.css"><style>'
@@ -488,7 +488,8 @@ function doc_page(string $title, string $body, bool $landscape = false): string 
         . 'body{margin:0;background:#e9ebf1;font-family:"Geist",system-ui,sans-serif;color:#0e1630;-webkit-font-smoothing:antialiased}'
         . 'a{color:#1f3263;text-decoration:underline;text-underline-offset:2px}a:hover{color:#0e1630}'
         . '.desk{min-height:100vh;display:flex;flex-direction:column;align-items:safe center;padding:48px 20px;box-sizing:border-box;gap:16px}'
-        . '.tools{width:' . $w . 'px;max-width:100%;display:flex;gap:10px;justify-content:flex-end;align-items:center}.tools button{font:600 14px/1 "Geist",sans-serif;padding:11px 18px;border-radius:999px;border:0;background:#1f3263;color:#fff;cursor:pointer;min-height:44px}'
+        . '.tools{width:' . $w . 'px;max-width:100%;display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;align-items:center}.tools a.dl{font:600 14px/1 "Geist",sans-serif;padding:14px 18px;border-radius:999px;border:1.5px solid #1f3263;color:#1f3263;background:#fff;text-decoration:none;min-height:44px;box-sizing:border-box;display:inline-flex;align-items:center}'
+        . '.tools button{font:600 14px/1 "Geist",sans-serif;padding:11px 18px;border-radius:999px;border:0;background:#1f3263;color:#fff;cursor:pointer;min-height:44px}'
         . '.tools .over{margin-right:auto;color:#8a1c10;font-size:13.5px}'
         . '.sheet{width:' . $w . 'px;' . ($landscape ? 'height' : 'min-height') . ':' . $h . 'px;flex:none;background:#fff;box-shadow:0 30px 80px -40px rgba(14,22,48,.35);display:flex;flex-direction:column;box-sizing:border-box;position:relative;overflow:hidden}'
         . '.mono{font-family:"Geist Mono",monospace}.ic{width:1.1em;height:1.1em;flex:none}.qr{display:block}'
@@ -519,7 +520,7 @@ function doc_page(string $title, string $body, bool $landscape = false): string 
         . '.sign{display:flex;flex-direction:column;gap:4px}.sign .line{height:28px;border-bottom:1px solid #0e1630}.sign b{font-size:13px;font-weight:600}.sign span{font-size:12px;color:#6a7190}'
         . '.legal{margin-top:18px;padding-top:12px;border-top:1px solid #e4e6ec;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:24px;font-size:11px;line-height:1.6;color:#6a7190}.legal .mono{white-space:nowrap}'
         . '@media print{body{background:#fff}.desk{padding:0;display:block}.tools{display:none}.sheet{box-shadow:none}}'
-        . '</style></head><body><div class="desk"><div class="tools"><span class="over" id="docOver" hidden>This document runs past one page. Tell the Fees desk.</span><button type="button" id="docPrint">Print or save as PDF</button></div>'
+        . '</style></head><body><div class="desk"><div class="tools"><span class="over" id="docOver" hidden>This document runs past one page. Tell the Fees desk.</span>' . $tools . '<button type="button" id="docPrint">Print or save as PDF</button></div>'
         . $body . '</div><script>'
         . '(function(){var s=document.querySelector(".sheet"),b=document.getElementById("docPrint");b.addEventListener("click",function(){window.print();});'
         . 'function chk(){var o=s.scrollHeight>' . $h . '+1;document.getElementById("docOver").hidden=!o;b.disabled=o;}'
@@ -576,7 +577,10 @@ function doc_render_receipt(array $doc): string {
         . doc_sign($s, $s['feesOfficer'], 'Fees Officer, for ' . $s['legalName']) . '</section>'
         . doc_legal($s, 'Computer-generated receipt, valid without signature or stamp. Fees are governed by the NGG fees policy accepted at enrolment. Keep for your records.')
         . '</div></article>';
-    return doc_page('Receipt ' . $doc['docNo'], $body);
+    /* Drawn on the server (receipt-draw.php): a PDF and an image that need nothing from the browser. */
+    $dl = trim((string)($doc['token'] ?? '')) !== '' ? '/api/public/document.php?t=' . rawurlencode((string)$doc['token']) . '&as=' : '';
+    $tools = $dl !== '' ? '<a class="dl" href="' . doc_e($dl . 'pdf') . '" download>Download PDF</a><a class="dl" href="' . doc_e($dl . 'png') . '" download>Download image</a>' : '';
+    return doc_page('Receipt ' . $doc['docNo'], $body, false, $tools);
 }
 
 /** An acknowledgement: a transfer the family reported, still being checked. Not a receipt and carries no receipt number. */

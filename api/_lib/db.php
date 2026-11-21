@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 240;
+const NGG_SCHEMA_TARGET = 246;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6583,12 +6583,151 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_shop_orders_status ON shop_orders(status, id);
             CREATE INDEX IF NOT EXISTS idx_shop_orders_ref ON shop_orders(paystackRef);
         ",
-        /* 238 — instalment plans (domain/payment-plans.php): an agreed schedule for clearing a balance.
+        /* 238 — managing the shop (domain/shop-manage.php; docs/SHOP-MANAGEMENT-PLAN.md §2). Every stock change is a
+           reason-coded row with who and when (shop_stock_moves), and a product's stock is the running sum of them. An
+           order keeps its own timeline (shop_order_events) instead of a growing note. Refunds are records with a
+           status that only Paystack's own answer moves to processed (shop_refunds). Sales at a table are orders of
+           channel 'pos' inside a cash session (shop_cash_sessions). Discount codes are shop_codes. The column names
+           avoid MySQL's reserved words (option, by, float). */
+        238 => "
+            ALTER TABLE shop_products ADD COLUMN lowStock INTEGER NOT NULL DEFAULT -1;
+            ALTER TABLE shop_products ADD COLUMN preorderUntil TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN channel TEXT NOT NULL DEFAULT 'online';
+            ALTER TABLE shop_orders ADD COLUMN payMethod TEXT NOT NULL DEFAULT 'paystack';
+            ALTER TABLE shop_orders ADD COLUMN sessionId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN pickupCode TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN gatewayFee INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE shop_orders ADD COLUMN refunded INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE shop_orders ADD COLUMN refundState TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN cancelKind TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN cancelledAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN remindedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN tracking TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN discountCode TEXT NOT NULL DEFAULT '';
+            ALTER TABLE shop_orders ADD COLUMN discount INTEGER NOT NULL DEFAULT 0;
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_paid ON shop_orders(paidAt);
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_created ON shop_orders(createdAt);
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_session ON shop_orders(sessionId);
+            CREATE TABLE IF NOT EXISTS shop_stock_moves (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              productId TEXT NOT NULL, variant TEXT NOT NULL DEFAULT '', delta INTEGER NOT NULL DEFAULT 0, balance INTEGER NOT NULL DEFAULT 0,
+              reason TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', orderId TEXT NOT NULL DEFAULT '', byId TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_shop_moves_product ON shop_stock_moves(productId, id);
+            CREATE TABLE IF NOT EXISTS shop_order_events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              orderId TEXT NOT NULL, kind TEXT NOT NULL DEFAULT '', text TEXT NOT NULL DEFAULT '', byId TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_shop_events_order ON shop_order_events(orderId, id);
+            CREATE TABLE IF NOT EXISTS shop_refunds (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              refundId TEXT NOT NULL UNIQUE, orderId TEXT NOT NULL, amount INTEGER NOT NULL DEFAULT 0, method TEXT NOT NULL DEFAULT 'paystack',
+              status TEXT NOT NULL DEFAULT 'pending', gatewayId TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', restock TEXT NOT NULL DEFAULT '[]',
+              byId TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '', processedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_shop_refunds_order ON shop_refunds(orderId);
+            CREATE INDEX IF NOT EXISTS idx_shop_refunds_status ON shop_refunds(status);
+            CREATE TABLE IF NOT EXISTS shop_cash_sessions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sessionId TEXT NOT NULL UNIQUE, label TEXT NOT NULL DEFAULT '', centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '', openingFloat INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'open', openedBy TEXT NOT NULL DEFAULT '', openedAt TEXT NOT NULL DEFAULT '',
+              closedBy TEXT NOT NULL DEFAULT '', closedAt TEXT NOT NULL DEFAULT '', expected INTEGER NOT NULL DEFAULT 0, counted INTEGER NOT NULL DEFAULT 0,
+              difference INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS shop_codes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              code TEXT NOT NULL UNIQUE, kind TEXT NOT NULL DEFAULT 'percent', amount INTEGER NOT NULL DEFAULT 0, maxUses INTEGER NOT NULL DEFAULT 0,
+              perBuyer INTEGER NOT NULL DEFAULT 1, minSpend INTEGER NOT NULL DEFAULT 0, startsAt TEXT NOT NULL DEFAULT '', endsAt TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'active', used INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '',
+              byId TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+        ",
+        /* 239 — the Membership Agreement (domain/mou.php): the MoU, signed online by the family, a witness and
+           NGG's representative. One row per agreement; a voided one is kept and a new one starts. The figures the
+           family agreed to (termsJson) and a digest of the text they signed (docHash) are frozen on it. Links are
+           stored as hashes only. Signatures are small PNG data URLs. */
+        239 => "
+            CREATE TABLE IF NOT EXISTS mou_agreements (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              mouId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL, version TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'awaiting_family',
+              tokenHash TEXT NOT NULL DEFAULT '', tokenExp TEXT NOT NULL DEFAULT '', docTokenHash TEXT NOT NULL DEFAULT '',
+              termsJson TEXT NOT NULL DEFAULT '', prefillJson TEXT NOT NULL DEFAULT '', familyJson TEXT NOT NULL DEFAULT '', memberJson TEXT NOT NULL DEFAULT '',
+              tripsChoice TEXT NOT NULL DEFAULT '', quizPassedAt TEXT NOT NULL DEFAULT '', quizAttempts INTEGER NOT NULL DEFAULT 0,
+              sentAt TEXT NOT NULL DEFAULT '', sentTo TEXT NOT NULL DEFAULT '', viewedAt TEXT NOT NULL DEFAULT '',
+              clientName TEXT NOT NULL DEFAULT '', clientRel TEXT NOT NULL DEFAULT '', clientSignature TEXT NOT NULL DEFAULT '', clientSignedAt TEXT NOT NULL DEFAULT '', clientIp TEXT NOT NULL DEFAULT '',
+              witnessName TEXT NOT NULL DEFAULT '', witnessPhone TEXT NOT NULL DEFAULT '', witnessSignature TEXT NOT NULL DEFAULT '', witnessSignedAt TEXT NOT NULL DEFAULT '', witnessBy TEXT NOT NULL DEFAULT '',
+              nggName TEXT NOT NULL DEFAULT '', nggRole TEXT NOT NULL DEFAULT '', nggById TEXT NOT NULL DEFAULT '', nggSignature TEXT NOT NULL DEFAULT '', nggSignedAt TEXT NOT NULL DEFAULT '',
+              docHash TEXT NOT NULL DEFAULT '', familyMailedAt TEXT NOT NULL DEFAULT '', finalMailedAt TEXT NOT NULL DEFAULT '',
+              voidReason TEXT NOT NULL DEFAULT '', voidedAt TEXT NOT NULL DEFAULT '', voidedBy TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mou_member ON mou_agreements(memberId, status);
+            CREATE INDEX IF NOT EXISTS idx_mou_status ON mou_agreements(status);
+            CREATE INDEX IF NOT EXISTS idx_mou_token ON mou_agreements(tokenHash);
+            CREATE INDEX IF NOT EXISTS idx_mou_doc ON mou_agreements(docTokenHash);
+        ",
+        /* 240 — NGG ENTRY STEPS (owner, 18 Nov 2026: the paper card "Enquiry · Orientation · Payment ·
+           Submit documents · Online registration · ID card · Attend lectures"). The registration checklist
+           groups its items by those steps (`step` on an admin item; the automatic ones carry theirs in code),
+           and three of the card's items become default admin items, kept retirable like any other.
+           The day the checklist is complete is the day the member RESUMES (`resumedOn`, written once) — not
+           the day they were accepted. Follow-ups are logged (reg_checklist_followups) with the next date, so a
+           stalled registration is somebody's call to make, on a day. The Membership Agreement is printed,
+           signed in ink and brought to the centre: staff check it and photograph the signed page (paper*). */
+        240 => "
+            ALTER TABLE reg_checklist_items ADD COLUMN step TEXT NOT NULL DEFAULT 'documents';
+            ALTER TABLE reg_checklists ADD COLUMN resumedOn TEXT NOT NULL DEFAULT '';
+            ALTER TABLE reg_checklists ADD COLUMN lastProgressAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE reg_checklists ADD COLUMN nextFollowUpOn TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS reg_checklist_followups (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL, channel TEXT NOT NULL DEFAULT 'call', outcome TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+              nextOn TEXT NOT NULL DEFAULT '', byId TEXT NOT NULL DEFAULT '', byName TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_rcl_fu ON reg_checklist_followups(memberId, id);
+            CREATE INDEX IF NOT EXISTS idx_rcl_next ON reg_checklists(status, nextFollowUpOn);
+            ALTER TABLE mou_agreements ADD COLUMN signedVia TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperUrl TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperChecks TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperReceivedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperReceivedBy TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperByName TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mou_agreements ADD COLUMN paperCentre TEXT NOT NULL DEFAULT '';
+            INSERT OR IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+              VALUES ('RCI-ORIENTATION', 'Orientation attended', 'The child and a parent or guardian came to orientation at the centre, and it covered the policies, the membership fee, the monthly commitment fee and the NGG T-shirt. Note who came and any question they asked.', 'none', 1, 0, 10, 'active', 'orientation', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+            INSERT OR IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+              VALUES ('RCI-FILE', 'File handed in', 'The member’s file (folder) has been handed in at the centre, with their name on it.', 'none', 1, 0, 20, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+            INSERT OR IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+              VALUES ('RCI-REPORTCARD', 'Latest school report card', 'Photograph or scan the member’s most recent school report card: every page, readable. Give the date on it.', 'document', 0, 400, 30, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+        ",
+        /* 241 — WhatsApp replies (owner, 19 Nov 2026: "people could also respond"). A family that answers STOP
+           gets no more registration reminders on WhatsApp until it answers START: one row per number. */
+        241 => "
+            CREATE TABLE IF NOT EXISTS whatsapp_optout (phone TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT '', via TEXT NOT NULL DEFAULT '');
+        ",
+
+        /*
+         * Hand-ins that get marked and returned work that comes back
+         * (assignments.php). `resubmitBy` is the date a RETURNED hand-in is
+         * due again (set when it is returned, default three days), so it is
+         * reminded and counted open like overdue work instead of reading as
+         * handed in. `markMinutes` is how long a hand-in waited, from its
+         * (latest) submission to being marked or returned — time-to-mark, so
+         * "are instructors marking?" has a measured answer.
+         */
+        242 => "
+            ALTER TABLE assignment_submissions ADD COLUMN resubmitBy TEXT DEFAULT '';
+            ALTER TABLE assignment_submissions ADD COLUMN markMinutes INTEGER;
+            CREATE INDEX IF NOT EXISTS idx_sub_status ON assignment_submissions(status);
+        ",
+        /* 243 — instalment plans (domain/payment-plans.php): an agreed schedule for clearing a balance.
            A plan records who agreed it, when, to which terms and from what starting point (`startPaid`,
            the payments on the account when it began); its instalments are dated amounts; its events are
            the accountability record — created, reminded, missed, paid, completed, cancelled, notes —
            each with who and when. Progress is never stored: it is read from the ledger every time. */
-        238 => "
+        243 => "
             CREATE TABLE IF NOT EXISTS payment_plans (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               planId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL,
@@ -6615,12 +6754,12 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_payment_plan_events_plan ON payment_plan_events(planId, id);
         ",
-        /* 239 — instructor management (domain/instructor-admin.php). A volunteer record gains its working
+        /* 244 — instructor management (domain/instructor-admin.php). A volunteer record gains its working
            life: leave (from, until, why), offboarding (when, by whom, why — the record is kept, the
            access is not), the safeguarding check's date and expiry, and the next review. people_notes is
            the record of what was said and decided about a person — notes, reviews, warnings,
            commendations, every lifecycle change — with who and when. */
-        239 => "
+        244 => "
             ALTER TABLE volunteers ADD COLUMN leaveFrom TEXT NOT NULL DEFAULT '';
             ALTER TABLE volunteers ADD COLUMN leaveUntil TEXT NOT NULL DEFAULT '';
             ALTER TABLE volunteers ADD COLUMN leaveReason TEXT NOT NULL DEFAULT '';
@@ -6637,11 +6776,20 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_people_notes_subject ON people_notes(subjectType, subjectId, id);
         ",
-        /* 240 — a payment that names what it pays (fees_allocate): a JSON list of the charges' entryIds.
+        /* 245 — a payment that names what it pays (fees_allocate): a JSON list of the charges' entryIds.
            Those charges are covered first; the rest of the money goes to the oldest charges, as before.
-           Totals never change — only which charge is still owed. Empty for every existing row. */
-        240 => "ALTER TABLE member_ledger ADD COLUMN appliesTo TEXT NOT NULL DEFAULT '';",
+           Totals never change — only which charge is still owed. Empty for every existing row.
+           (Written as 240 on the finme line; renumbered when the lines were merged, 21 Nov 2026.) */
+        245 => "ALTER TABLE member_ledger ADD COLUMN appliesTo TEXT NOT NULL DEFAULT '';",
     ];
+    /* 246 — TWO LINES, ONE LADDER (21 Nov 2026). The finme line shipped 238 = instalment plans,
+       239 = instructor management, 240 = appliesTo; the brave-faraday line numbered those 243, 244 and 245,
+       and used 238–242 for the shop, the Membership Agreement, entry steps, WhatsApp opt-outs and hand-ins.
+       A database built from a finme zip therefore stands at 240 and would SKIP 238–240 of this ladder for
+       ever — the shop, agreement and entry-step tables simply missing. 246 replays 238–244: every statement
+       there is CREATE … IF NOT EXISTS, INSERT OR IGNORE, or an ADD COLUMN that the runner tolerates when it
+       is already applied (db_ddl_already_applied), so on a database that has them all it changes nothing. */
+    $migrations[246] = implode("\n", array_map(static fn($v) => $migrations[$v], [238, 239, 240, 241, 242, 243, 244]));
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
     db_assert_migration_ladder($migrations);

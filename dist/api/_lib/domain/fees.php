@@ -105,6 +105,9 @@ const FEES_DEFAULTS = [
     /* Three years, split. Training accrues the fee; service earns it off. */
     'trainingMonths' => 18,
     'serviceMonths'  => 18,
+    /* What an NGG place is worth: the scholarship the Membership Agreement awards (owner, 18 Nov 2026:
+       "the MoU should project that it is a scholarship of 1.5 million"). Stated, never charged. */
+    'scholarshipValue' => 1500000,
     /* The ceiling on what a single member's account may reach. Reached, it stops
        accruing and says so, rather than growing into a number nobody will ever
        pay. Zero means no ceiling — available, but not the default. */
@@ -114,6 +117,9 @@ const FEES_DEFAULTS = [
        anything it sends. */
     'remindEnabled' => false,
     'remindEveryDays' => 14,
+    /* The longest an instalment plan may run, first instalment to last
+       (domain/payment-plans.php). Admin-set; the server refuses a longer one. */
+    'planMaxDays' => 183,
     'remindMinBalance' => 1,
     /* Notices BEFORE a charge falls due (domain/dues-notices.php): the month's
        dues and a membership renewal, `noticeDaysBefore` days ahead, to every
@@ -264,6 +270,7 @@ function fees_bounds(): array {
         'accrueBatch'    => FEES_ACCRUE_BATCH,
         'remindBatch'    => FEES_REMIND_BATCH_MAX,
         'arrearsPage'    => FEES_ARREARS_PAGE,
+        'planMaxDaysMin' => 14, 'planMaxDaysMax' => 365,
     ];
 }
 
@@ -368,12 +375,14 @@ function fees_settings_save(array $in, string $by): array {
             ? (string)$in['trainingBasis'] : (string)$cur['trainingBasis'],
         'trainingMonths' => $phase($in['trainingMonths'] ?? null, (int)$cur['trainingMonths']),
         'serviceMonths'  => $phase($in['serviceMonths'] ?? null, (int)$cur['serviceMonths']),
+        'scholarshipValue' => fees_money($in['scholarshipValue'] ?? null, (int)($cur['scholarshipValue'] ?? FEES_DEFAULTS['scholarshipValue'])),
         'balanceCap'     => fees_money($in['balanceCap'] ?? null, (int)$cur['balanceCap']),
         'remindEnabled'  => $bool('remindEnabled'),
         /* Floored, not just validated. An admin who types 1 gets the floor and is
            told, rather than getting a daily chase that nobody asked to defend. */
         'remindEveryDays' => max(FEES_REMIND_MIN_DAYS, min(FEES_REMIND_MAX_DAYS, (int)($in['remindEveryDays'] ?? $cur['remindEveryDays']) ?: (int)$cur['remindEveryDays'])),
         'remindMinBalance' => fees_money($in['remindMinBalance'] ?? null, (int)$cur['remindMinBalance']),
+        'planMaxDays'    => max(14, min(365, (int)($in['planMaxDays'] ?? ($cur['planMaxDays'] ?? 183)) ?: 183)),
         'noticeEnabled'  => $bool('noticeEnabled'),
         'noticeDaysBefore' => max(FEES_NOTICE_DAYS_MIN, min(FEES_NOTICE_DAYS_MAX, (int)($in['noticeDaysBefore'] ?? $cur['noticeDaysBefore']) ?: (int)$cur['noticeDaysBefore'])),
         'noticeApp'      => $bool('noticeApp'),

@@ -728,6 +728,8 @@ function membership_send_receipt(array $inv): array {
         'intro' => 'We have received your payment of ' . fees_money_text((int)$inv['total']) . '. Your support keeps the programme running.',
         'bodyHtml' => membership_items_html($inv, true)
             . '<p style="margin:16px 0 0;font-size:14px"><b>Receipt</b> ' . esc_html($inv['receiptNo']) . ' · <b>Invoice</b> ' . esc_html($inv['invoiceId']) . '</p>'
+            // Files drawn on the server (receipt-draw.php): keep it, or forward it on WhatsApp.
+            . '<p style="margin:8px 0 0;font-size:14px">Download the receipt: <a href="' . esc_html(membership_receipt_url($inv) . '&as=pdf') . '">PDF</a> · <a href="' . esc_html(membership_receipt_url($inv) . '&as=png') . '">image</a></p>'
             . ((string)($inv['purpose'] ?? '') === 'part'
                 ? '<p style="margin:12px 0 0;font-size:14px">' . (($left = (int)(fees_balance($m)['payable'] ?? 0)) > 0
                     ? esc_html(fees_money_text($left)) . ' is still owed on ' . esc_html($first) . '’s account. Pay it, all at once or in more instalments, from the family account whenever you can.'
@@ -995,7 +997,7 @@ const PAYSTACK_FAIL_KINDS = [
     'funds'     => ['Not enough funds',  'Your bank said there wasn’t enough money in the account.'],
     'declined'  => ['Bank declined',     'Your bank declined the payment.'],
     'card'      => ['Card details',      'The card details were not accepted (PIN, expiry date or number).'],
-    'technical' => ['Bank or Paystack timed out', 'Your bank or Paystack did not answer in time. Nothing was wrong on your side.'],
+    'technical' => ['Bank or Paystack timed out', 'Your bank or our payment provider did not answer in time. Nothing was wrong on your side.'],
     'other'     => ['Failed',            'The payment did not go through.'],
 ];
 function paystack_fail_kind(string $reason): string {
@@ -1020,13 +1022,13 @@ function paystack_fail_advice(string $kind, array $inv, ?array $terms = null): a
     $part = in_array((string)($inv['purpose'] ?? ''), ['balance', 'joining'], true);
     $steps = match ($kind) {
         'funds'     => array_filter([$part ? 'Pay part of it now: open the family account and choose a smaller amount.' : null,
-                                     $bank ? 'Or pay by bank transfer to NGG’s account (no Paystack charge).' : 'Or try another card or account.']),
-        'declined'  => array_filter(['Try another card, or choose USSD or bank transfer on the Paystack page.',
-                                     $bank ? 'Or transfer straight to NGG’s account (no Paystack charge).' : null,
+                                     $bank ? 'Or pay by bank transfer to NGG’s account (no processing fee).' : 'Or try another card or account.']),
+        'declined'  => array_filter(['Try another card, or choose USSD or bank transfer on the payment page.',
+                                     $bank ? 'Or transfer straight to NGG’s account (no processing fee).' : null,
                                      'If you want this card to work, your bank can lift the block.']),
         'card'      => ['Check the PIN, expiry date and card number, then try again — or use another card.'],
         'technical' => ['Try again in a few minutes. Nothing needs changing.'],
-        default     => array_filter(['Try again, or use another card.', $bank ? 'Or pay by bank transfer to NGG’s account (no Paystack charge).' : null]),
+        default     => array_filter(['Try again, or use another card.', $bank ? 'Or pay by bank transfer to NGG’s account (no processing fee).' : null]),
     };
     return ['kind' => $kind, 'label' => PAYSTACK_FAIL_KINDS[$kind][0] ?? 'Failed', 'why' => PAYSTACK_FAIL_KINDS[$kind][1] ?? '', 'steps' => array_values($steps)];
 }

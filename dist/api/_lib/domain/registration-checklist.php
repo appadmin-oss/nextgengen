@@ -75,30 +75,62 @@ const RCL_MIME = [
 const RCL_EXT_WORDS = ['pdf' => 'a PDF', 'doc' => 'a Word document', 'docx' => 'a Word document', 'odt' => 'a text document', 'rtf' => 'a text document', 'txt' => 'a text file'];
 
 /**
+ * THE ENTRY STEPS — the paper card NGG hands a family (owner, 18 Nov 2026):
+ * Enquiry · Orientation · Payment · Submit documents · Online registration ·
+ * ID card · Attend lectures. Every item sits in one of them, so the checklist
+ * reads in the order a family walks it.
+ *  · ENQUIRY is behind the family before a checklist exists: the application
+ *    at /join is the enquiry, and the checklist starts when it is accepted.
+ *  · ATTEND LECTURES is not a box anyone ticks. It is what the checklist is
+ *    FOR: the day the last item is done is the day the member resumes
+ *    (reg_checklists.resumedOn, written once) — not the day they were added.
+ */
+const RCL_STEPS = [
+    'orientation' => 'Orientation',
+    'payment'     => 'Payment',
+    'documents'   => 'Submit documents',
+    'online'      => 'Online registration',
+    'idcard'      => 'ID card',
+];
+
+/**
  * THE automatic items — the one registry. Each names the verifier that reads
  * the record (rcl_verify_<key>), what the family can do about it (`family`),
- * and where staff fix it. `when` gates an item that only applies sometimes.
+ * where staff fix it, and its entry step. `when` gates an item that only
+ * applies sometimes. `bring` is said to the family word for word: what to
+ * bring and that it comes to the centre (families stall when they are not
+ * sure what to bring or where — see docs/ENTRY-STEPS.md).
  */
 const RCL_AUTO = [
-    'guardian'  => ['title' => 'Guardian linked', 'help' => 'A parent or guardian has a family account connected to this member.',
+    'fee'       => ['step' => 'payment', 'title' => 'Joining fees paid', 'help' => 'The joining invoice is paid: the membership fee and the first month’s commitment fee.', 'when' => 'fees',
+                    'fix' => 'The family pays from the invoice link; an offline payment is recorded under Money → Membership payments.', 'family' => true,
+                    'bring' => 'pay the joining invoice (the link is in your email, or pay at the centre)'],
+    'photo'     => ['step' => 'documents', 'title' => 'Passport photograph', 'help' => 'A clear passport-style photo of the member is on their record, for the ID card.',
+                    'fix' => 'Take the photo at the centre and add it to the member’s record.', 'family' => true,
+                    'bring' => 'a clear passport photograph (or we take one at the centre)'],
+    'mou'       => ['step' => 'documents', 'not' => 'online', 'title' => 'Membership Agreement (MoU) handed in', 'help' => 'The family read the agreement online and signed it; the printed copy was signed in ink, brought to the centre, checked, photographed, and countersigned by NGG.',
+                    'fix' => 'Members → Agreements: when the family brings the signed paper copy, “Receive the signed copy” (check it and photograph the signed page), then countersign.', 'family' => true,
+                    'bring' => 'the printed Membership Agreement, signed by a parent and a witness'],
+    'timetable' => ['step' => 'documents', 'title' => 'Personal timetable on the site', 'help' => 'The member has made their own week on the site (My week at /timetable, signed in as them): school on at least three weekdays, and at least one thing of their own — homework, study, a club, chores.',
+                    'fix' => 'Sit with the member, sign in as them and open /timetable?easy=1: four short steps, all by tapping.', 'family' => true,
+                    'bring' => 'your child’s personal timetable: they make it at /timetable?easy=1, signed in as themselves, in a few minutes'],
+    'guardian'  => ['step' => 'online', 'title' => 'Guardian linked', 'help' => 'A parent or guardian has a family account connected to this member.',
                     'fix' => 'Ask the family to sign in at /family and connect; staff approve the request under Inbox → Approvals.', 'family' => false],
-    'consents'  => ['title' => 'Consents recorded', 'help' => 'The five consents of membership are answered: taking part, emergency medical care and records granted; photos and the website answered either way.',
-                    'fix' => 'Record the family’s answers on the member’s record (Consents), or ask the guardian to answer them in the family account.', 'family' => true],
-    'photo'     => ['title' => 'Photo on file', 'help' => 'A clear photo of the member is on their record, for the ID card.',
-                    'fix' => 'Take the photo at the centre and add it to the member’s record.', 'family' => true],
-    'dob'       => ['title' => 'Date of birth', 'help' => 'The member’s date of birth is on their record.',
-                    'fix' => 'Add it on the member’s record (People → Members).', 'family' => true],
-    'school'    => ['title' => 'School', 'help' => 'The school the member attends is on their record.',
-                    'fix' => 'Add it on the member’s record (People → Members).', 'family' => true],
-    'emergency' => ['title' => 'Emergency contact', 'help' => 'A phone number to call in an emergency: a parent’s phone, or somebody listed to collect them.',
-                    'fix' => 'Add the parent’s phone or a collector on the member’s record.', 'family' => true],
-    'courses'   => ['title' => 'Courses placed', 'help' => 'The member’s courses are confirmed, so lessons, the timetable and class lists include them.',
+    'consents'  => ['step' => 'online', 'title' => 'Consents recorded', 'help' => 'The five consents of membership are answered: taking part, emergency medical care and records granted; photos and the website answered either way.',
+                    'fix' => 'Record the family’s answers on the member’s record (Consents), or ask the guardian to answer them in the family account.', 'family' => true,
+                    'bring' => 'answer the consents in the family account'],
+    'dob'       => ['step' => 'online', 'title' => 'Date of birth', 'help' => 'The member’s date of birth is on their record.',
+                    'fix' => 'Add it on the member’s record (People → Members).', 'family' => true, 'bring' => 'the child’s date of birth'],
+    'school'    => ['step' => 'online', 'title' => 'School', 'help' => 'The school the member attends is on their record.',
+                    'fix' => 'Add it on the member’s record (People → Members).', 'family' => true, 'bring' => 'the name of the child’s school'],
+    'emergency' => ['step' => 'online', 'title' => 'Emergency contact', 'help' => 'A phone number to call in an emergency: a parent’s phone, or somebody listed to collect them.',
+                    'fix' => 'Add the parent’s phone or a collector on the member’s record.', 'family' => true, 'bring' => 'a phone number to call in an emergency'],
+    'courses'   => ['step' => 'online', 'title' => 'Courses placed', 'help' => 'The member’s courses are confirmed, so lessons, the timetable and class lists include them.',
                     'fix' => 'Confirm or choose them under People → Members → Courses.', 'family' => false],
-    'fee'       => ['title' => 'Membership fee paid', 'help' => 'The joining invoice is paid.', 'when' => 'fees',
-                    'fix' => 'The family pays from the invoice link; an offline payment is recorded under Money → Membership payments.', 'family' => true],
-    'idcard'    => ['title' => 'ID card printed', 'help' => 'The member has a printed ID number and a card printed in the ID Card Studio.',
+    'idcard'    => ['step' => 'idcard', 'title' => 'ID card printed', 'help' => 'The member has a printed ID number and a card printed in the ID Card Studio.',
                     'fix' => 'Print it from the ID Card Studio (People → Members → ID cards). A proof does not count.', 'family' => false],
 ];
+const RCL_TIMETABLE_DAYS = 3;   // school days with lessons: a real school week, not one test entry
 
 /* ── The automatic verifiers ─────────────────────────────────────────────
    Each takes the member row and the facts read in bulk for the whole page
@@ -123,6 +155,28 @@ function rcl_verify_courses(array $m, array $f): bool { return !in_array(trim((s
 function rcl_verify_fee(array $m, array $f): bool {
     return !empty($f['paid'][(string)$m['memberId']]) || trim((string)($m['feesSettledThrough'] ?? '')) !== '';
 }
+function rcl_verify_mou(array $m, array $f): bool { return !empty($f['mou'][(string)$m['memberId']]); }
+function rcl_verify_timetable(array $m, array $f): bool {
+    $t = $f['timetable'][(string)$m['memberId']] ?? ['days' => 0, 'own' => false];
+    return $t['days'] >= RCL_TIMETABLE_DAYS && $t['own'];
+}
+/** Does a personal timetable hold something of the child's own beyond school: homework, study, a club, chores? */
+function rcl_timetable_own(string $doc): bool {
+    $d = json_decode($doc, true);
+    foreach ((is_array($d) && is_array($d['entries'] ?? null)) ? $d['entries'] : [] as $e)
+        if (is_array($e) && empty($e['official']) && in_array((string)($e['kind'] ?? ''), ['study', 'activity'], true)) return true;
+    return false;
+}
+/** How many school days (Mon–Fri) carry a lesson in a personal timetable document. */
+function rcl_timetable_days(string $doc): int {
+    $d = json_decode($doc, true);
+    $days = [];
+    foreach ((is_array($d) && is_array($d['entries'] ?? null)) ? $d['entries'] : [] as $e) {
+        if (!is_array($e) || (string)($e['kind'] ?? 'class') !== 'class' || !empty($e['official'])) continue;   // a copied NGG session is not school
+        foreach ((array)($e['days'] ?? []) as $dy) if ((int)$dy >= 1 && (int)$dy <= 5) $days[(int)$dy] = true;
+    }
+    return count($days);
+}
 function rcl_verify_idcard(array $m, array $f): bool {
     return trim((string)($m['displayId'] ?? '')) !== '' && !empty($f['card'][(string)$m['memberId']]);
 }
@@ -142,9 +196,15 @@ function rcl_auto_applies(string $key): bool {
     return true;
 }
 
+/** Does this automatic item apply to THIS member? (`not` => 'online': the MoU is not an online member's agreement.) */
+function rcl_auto_applies_to(string $key, array $m): bool {
+    if ((RCL_AUTO[$key]['not'] ?? '') === 'online' && function_exists('member_is_online') && member_is_online($m)) return false;
+    return true;
+}
+
 /** Everything the verifiers need for many members, in grouped reads. */
 function rcl_facts(array $ids): array {
-    $f = ['guardian' => [], 'consents' => [], 'collector' => [], 'paid' => [], 'card' => []];
+    $f = ['guardian' => [], 'consents' => [], 'collector' => [], 'paid' => [], 'card' => [], 'timetable' => [], 'mou' => function_exists('mou_signed_ids') ? mou_signed_ids($ids) : []];
     $ids = array_values(array_unique(array_filter(array_map('strval', $ids))));
     foreach (array_chunk($ids, 400) as $chunk) {
         $ph = implode(',', array_fill(0, count($chunk), '?'));
@@ -156,6 +216,8 @@ function rcl_facts(array $ids): array {
             $f['consents'][(string)$r['studentId']][(string)$r['type']] = strtolower((string)$r['status']);
         foreach (db_all("SELECT DISTINCT memberId FROM member_collectors WHERE COALESCE(phone,'') <> '' AND memberId IN ($ph)", $chunk) as $r) $f['collector'][(string)$r['memberId']] = true;
         foreach (db_all("SELECT DISTINCT memberId FROM membership_invoices WHERE status = 'paid' AND purpose = 'joining' AND memberId IN ($ph)", $chunk) as $r) $f['paid'][(string)$r['memberId']] = true;
+        foreach (db_all("SELECT memberId, doc FROM member_timetables WHERE memberId IN ($ph)", $chunk) as $r)
+            $f['timetable'][(string)$r['memberId']] = ['days' => rcl_timetable_days((string)$r['doc']), 'own' => rcl_timetable_own((string)$r['doc'])];
         // A proof is nobody's card, and neither is one that failed at the cutter (domain/id-studio.php).
         foreach (db_all("SELECT DISTINCT ci.subjectId FROM card_issues ci JOIN card_runs cr ON cr.runId = ci.runId
                          WHERE ci.subjectType = 'member' AND ci.ok = 1 AND cr.mode != 'proof' AND ci.subjectId IN ($ph)", $chunk) as $r) $f['card'][(string)$r['subjectId']] = true;
@@ -163,10 +225,35 @@ function rcl_facts(array $ids): array {
     return $f;
 }
 
+/** A step key, or `documents` for anything unknown (an item saved before steps existed). */
+function rcl_step(string $k): string { return isset(RCL_STEPS[$k]) ? $k : 'documents'; }
+
+/** Items in entry-step order; within a step, the order they came in (stable). */
+function rcl_in_step_order(array $items): array {
+    $rank = array_flip(array_keys(RCL_STEPS));
+    $i = 0;
+    foreach ($items as &$x) $x['_n'] = $i++;
+    unset($x);
+    usort($items, static fn($a, $b) => [$rank[$a['step']] ?? 99, $a['_n']] <=> [$rank[$b['step']] ?? 99, $b['_n']]);
+    return array_map(static function ($x) { unset($x['_n']); $x['stepLabel'] = RCL_STEPS[$x['step']] ?? ''; return $x; }, $items);
+}
+
+/** The steps with each one's progress, for a member, a family or a supervisor. */
+function rcl_steps_public(array $items): array {
+    $out = [];
+    foreach (RCL_STEPS as $k => $label) {
+        $in = array_values(array_filter($items, static fn($i) => $i['step'] === $k));
+        if (!$in) continue;
+        $done = count(array_filter($in, static fn($i) => $i['done']));
+        $out[] = ['step' => $k, 'label' => $label, 'done' => $done, 'total' => count($in), 'complete' => $done === count($in)];
+    }
+    return $out;
+}
+
 /* ── Admin items ───────────────────────────────────────────────────────── */
 
 function rcl_item_public(array $r): array {
-    return ['itemId' => (string)$r['itemId'], 'title' => (string)$r['title'], 'help' => (string)$r['help'],
+    return ['itemId' => (string)$r['itemId'], 'step' => rcl_step((string)($r['step'] ?? '')), 'title' => (string)$r['title'], 'help' => (string)$r['help'],
             'evidence' => (string)$r['evidence'], 'evidenceLabel' => RCL_EVIDENCE[(string)$r['evidence']] ?? '',
             'presence' => (int)$r['presence'] === 1, 'maxAgeDays' => (int)$r['maxAgeDays'], 'sort' => (int)$r['sort'],
             'status' => (string)$r['status'], 'retiredAt' => (string)$r['retiredAt'], 'updatedAt' => (string)$r['updatedAt']];
@@ -182,11 +269,11 @@ function admin_regcheck_items(array $p): array {
     $use = [];
     foreach (db_all("SELECT itemId, COUNT(*) c FROM reg_checklist_state WHERE status = 'verified' GROUP BY itemId") as $r) $use[(string)$r['itemId']] = (int)$r['c'];
     return ['ok' => true, 'items' => array_map(static fn($r) => rcl_item_public($r) + ['verified' => $use[(string)$r['itemId']] ?? 0], $rows),
-            'auto' => rcl_auto_public(), 'evidence' => RCL_EVIDENCE, 'max' => RCL_ITEMS_MAX, 'ageMax' => RCL_AGE_MAX_DAYS];
+            'auto' => rcl_auto_public(), 'evidence' => RCL_EVIDENCE, 'steps' => RCL_STEPS, 'max' => RCL_ITEMS_MAX, 'ageMax' => RCL_AGE_MAX_DAYS];
 }
 function rcl_auto_public(): array {
     $out = [];
-    foreach (RCL_AUTO as $k => $a) $out[] = ['key' => 'auto:' . $k, 'title' => $a['title'], 'help' => $a['help'], 'fix' => $a['fix'], 'applies' => rcl_auto_applies($k)];
+    foreach (RCL_AUTO as $k => $a) $out[] = ['key' => 'auto:' . $k, 'step' => $a['step'], 'title' => $a['title'], 'help' => $a['help'], 'fix' => $a['fix'], 'applies' => rcl_auto_applies($k)];
     return $out;
 }
 
@@ -206,7 +293,9 @@ function admin_regcheck_item_save(array $p): array {
     if (!is_numeric($age) || (int)$age != $age || (int)$age < 0 || (int)$age > RCL_AGE_MAX_DAYS)
         return ['ok' => false, 'error' => 'bad_age', 'message' => 'The age limit is a whole number of days, 0 for none, at most ' . RCL_AGE_MAX_DAYS . '.'];
     if ((int)$age > 0 && $ev === 'none') return ['ok' => false, 'error' => 'age_needs_file', 'message' => 'An age limit needs a photo or a document to date.'];
-    $row = ['title' => $title, 'help' => $help, 'evidence' => $ev, 'presence' => !empty($p['presence']) ? 1 : 0, 'maxAgeDays' => (int)$age,
+    $step = (string)($p['step'] ?? 'documents');
+    if (!isset(RCL_STEPS[$step])) return ['ok' => false, 'error' => 'bad_step', 'message' => 'Choose one of the entry steps: ' . implode(', ', RCL_STEPS) . '.'];
+    $row = ['title' => $title, 'help' => $help, 'evidence' => $ev, 'step' => $step, 'presence' => !empty($p['presence']) ? 1 : 0, 'maxAgeDays' => (int)$age,
             'updatedAt' => now_iso(), 'updatedBy' => $by];
     if ($id === '') {
         if ((int)db_row("SELECT COUNT(*) c FROM reg_checklist_items WHERE status = 'active'")['c'] >= RCL_ITEMS_MAX)
@@ -280,19 +369,21 @@ function rcl_build(array $members): array {
     foreach ($members as $m) {
         $mid = (string)$m['memberId']; $items = [];
         foreach ($auto as $k) {
+            if (!rcl_auto_applies_to($k, $m)) continue;
             $ok = (bool)call_user_func('rcl_verify_' . $k, $m, $facts);
-            $items[] = ['key' => 'auto:' . $k, 'kind' => 'auto', 'title' => RCL_AUTO[$k]['title'], 'help' => RCL_AUTO[$k]['help'], 'fix' => RCL_AUTO[$k]['fix'],
+            $items[] = ['key' => 'auto:' . $k, 'kind' => 'auto', 'step' => RCL_AUTO[$k]['step'], 'title' => RCL_AUTO[$k]['title'], 'help' => RCL_AUTO[$k]['help'], 'fix' => RCL_AUTO[$k]['fix'],
                         'family' => !empty(RCL_AUTO[$k]['family']), 'evidence' => 'record', 'presence' => false, 'maxAgeDays' => 0,
                         'status' => $ok ? 'done' : 'open', 'done' => $ok];
         }
         foreach ($admin as $a) {
             $st = $state[$mid][(string)$a['itemId']] ?? null;
             $ok = $st && (string)$st['status'] === 'verified';
-            $items[] = ['key' => (string)$a['itemId'], 'kind' => 'admin', 'title' => (string)$a['title'], 'help' => (string)$a['help'], 'fix' => '', 'family' => false,
+            $items[] = ['key' => (string)$a['itemId'], 'kind' => 'admin', 'step' => rcl_step((string)($a['step'] ?? '')), 'title' => (string)$a['title'], 'help' => (string)$a['help'], 'fix' => '', 'family' => true,
                         'evidence' => (string)$a['evidence'], 'presence' => (int)$a['presence'] === 1, 'maxAgeDays' => (int)$a['maxAgeDays'],
                         'status' => $ok ? 'done' : ($st && (string)$st['status'] === 'rejected' ? 'rejected' : 'open'), 'done' => $ok,
                         'verifiedAt' => $ok ? (string)$st['at'] : '', 'rejectReason' => $st && (string)$st['status'] === 'rejected' ? (string)$st['reason'] : ''];
         }
+        $items = rcl_in_step_order($items);
         $done = count(array_filter($items, static fn($i) => $i['done']));
         $out[$mid] = ['items' => $items, 'done' => $done, 'total' => count($items),
                       'left' => array_values(array_map(static fn($i) => $i['title'], array_filter($items, static fn($i) => !$i['done'])))];
@@ -319,11 +410,44 @@ function rcl_refresh(array $memberIds): array {
         $r = $rows[$mid] ?? null; if (!$r) continue;
         $status = $b['total'] > 0 && $b['done'] >= $b['total'] ? 'done' : 'open';
         if ((int)$r['done'] === $b['done'] && (int)$r['total'] === $b['total'] && (string)$r['status'] === $status) continue;
-        db_update('reg_checklists', ['done' => $b['done'], 'total' => $b['total'], 'status' => $status, 'updatedAt' => now_iso(),
-                                     'completedAt' => $status === 'done' ? ((string)$r['completedAt'] ?: now_iso()) : ''], ['memberId' => $mid]);
-        if ($status === 'done' && (string)$r['status'] !== 'done') audit('regcheck.complete', 'system', $mid, ['done' => $b['done']]);
+        $up = ['done' => $b['done'], 'total' => $b['total'], 'status' => $status, 'updatedAt' => now_iso(),
+               'completedAt' => $status === 'done' ? ((string)$r['completedAt'] ?: now_iso()) : ''];
+        // Progress is a done count that went UP; a new item added to everyone's list is not the family going backwards.
+        if ($b['done'] > (int)$r['done']) $up['lastProgressAt'] = now_iso();
+        /* The day the checklist is complete is the day the member RESUMES — written once, never moved:
+           an item reopened later (a rejected photo) does not un-start a child who has been coming. */
+        $resumes = $status === 'done' && (string)($r['resumedOn'] ?? '') === '';
+        if ($resumes) $up += ['resumedOn' => attendance_today(), 'nextFollowUpOn' => ''];
+        db_update('reg_checklists', $up, ['memberId' => $mid]);
+        if ($status === 'done' && (string)$r['status'] !== 'done') audit('regcheck.complete', 'system', $mid, ['done' => $b['done'], 'resumedOn' => $up['resumedOn'] ?? (string)$r['resumedOn']]);
+        if ($resumes) rcl_tell_resumed($mid, $up['resumedOn'], (string)$r['supervisorId']);
     }
     return $built;
+}
+
+/** The checklist is complete: the member resumes today. The family, the member and their supervisor are told, once. */
+function rcl_tell_resumed(string $memberId, string $on, string $sup): void {
+    try {
+        $m = db_row('SELECT memberId, fullName, centre FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+        if (!$m) return;
+        $first = rcl_first((string)$m['fullName']) ?: 'Your child';
+        $day = gmdate('l j F Y', (int)strtotime($on . 'T12:00:00Z'));
+        $title = $first . ' is fully registered and resumes ' . $day;
+        $body = 'Every entry step is done. ' . $first . ' starts lectures at ' . ((string)$m['centre'] ?: 'the centre') . ' from ' . $day . '. Welcome to Next Generation Genius.';
+        if (rcl_claim('resumed:' . $memberId, 'app', $memberId, $memberId))
+            push_notification($memberId, ['kind' => 'system', 'title' => 'You are registered — lectures start ' . $day, 'body' => 'Every entry step is done. See you at ' . ((string)$m['centre'] ?: 'the centre') . '.']);
+        if ($sup !== '' && rcl_claim('resumed-sup:' . $memberId, 'app', $sup, $memberId))
+            push_notification($sup, ['kind' => 'system', 'groupKey' => 'regcheck:' . $sup, 'title' => $first . ' has finished registering', 'body' => 'Resumes ' . $day . '. Thank you for helping.']);
+        foreach (db_all("SELECT g.guardianId, g.email, w.notify FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId
+                         WHERE w.memberId = ? AND w.status = 'active' AND g.status = 'active'", [$memberId]) as $gr) {
+            if (!rcl_claim('resumed:' . $memberId . ':' . (string)$gr['guardianId'], 'email', (string)$gr['email'], $memberId)) continue;
+            if (function_exists('family_notice_add')) family_notice_add((string)$gr['guardianId'], 'registration', $memberId . ':resumed', $title, $body, 'NGG');
+            if (function_exists('family_mail')) family_mail((string)$gr['email'], $title, ['title' => $title, 'intro' => $body,
+                'bodyHtml' => '<p>Please make sure ' . esc_html($first) . ' comes on the meeting days, in the NGG T-shirt, with their ID card.</p>',
+                'ctaLabel' => 'Open the family account', 'ctaUrl' => (function_exists('family_origin') ? family_origin() : '') . '/family',
+                'footNote' => 'You get this because you look after ' . $first . ' in your NGG family account.']);
+        }
+    } catch (\Throwable $e) { error_log('[rcl_tell_resumed] ' . $e->getMessage()); }
 }
 
 /** Start a member's checklist. True when it is new. Only active NGG members (members.type), never staff. */
@@ -333,7 +457,8 @@ function rcl_start(array $m, string $by): bool {
     $mid = (string)$m['memberId'];
     if (db_row('SELECT 1 FROM reg_checklists WHERE memberId = ? LIMIT 1', [$mid])) return false;
     try {
-        db_insert('reg_checklists', ['memberId' => $mid, 'status' => 'open', 'startedAt' => now_iso(), 'startedBy' => substr($by, 0, 64), 'updatedAt' => now_iso()]);
+        db_insert('reg_checklists', ['memberId' => $mid, 'status' => 'open', 'startedAt' => now_iso(), 'startedBy' => substr($by, 0, 64), 'updatedAt' => now_iso(), 'lastProgressAt' => now_iso(),
+                                     'nextFollowUpOn' => gmdate('Y-m-d', (int)strtotime(attendance_today() . 'T12:00:00Z') + RCL_FIRST_FOLLOWUP * 86400)]);
     } catch (\Throwable $e) { return false; }   // started at the same moment elsewhere
     rcl_refresh([$mid]);
     return true;
@@ -659,76 +784,403 @@ function rcl_tell_assigned(string $sup, array $members, string $at): void {
 }
 
 /**
- * The web-cron's part (webcron.php): recount open checklists, then remind —
- * each supervisor once a week while their members have items open, and each
- * guardian once a week when something is needed from the family. Every send
- * is claimed in reg_checklist_sends first, so a tick that runs twice sends
- * nothing twice. At most RCL_TICK_MAX sends a tick; the rest wait.
+ * THE FOLLOW-UPS (owner, 18 Nov 2026: "ensure there's massive follow-ups").
+ * The evidence (docs/ENTRY-STEPS.md): reminders raise how many families finish
+ * an enrolment, and families who stall mostly were not sure WHAT to bring or
+ * WHERE. So every reminder names the things, and the centre.
+ *
+ *  · THE FAMILY, on a cadence that front-loads: day 1, day 3, day 7, then
+ *    weekly — only while something is needed from them, only the items they
+ *    can act on, and never twice for one stage (the sends ledger).
+ *  · THE SUPERVISOR, weekly while their members are open, and on the day a
+ *    logged follow-up falls due ("call Ada's mother — due today").
+ *  · THE CENTRE'S STAFF (holding `people`, scoped to the centre), when a
+ *    registration has made no progress in RCL_STALL_DAYS: one notice per
+ *    person a day, naming who has stalled. A stalled registration is
+ *    somebody's call to make, on a day — not a number on a dashboard.
+ * Every checklist starts with a follow-up due RCL_FIRST_FOLLOWUP days on; each
+ * logged follow-up sets the next one (reg_checklist_followups).
+ */
+const RCL_FAMILY_STAGES = [1, 3, 7];   // days after the start; weekly after the last
+const RCL_STALL_DAYS = 14;
+const RCL_FIRST_FOLLOWUP = 3;
+const RCL_FOLLOWUP_CHANNELS = ['call' => 'Phone call', 'whatsapp' => 'WhatsApp or text', 'visit' => 'At the centre', 'email' => 'Email', 'note' => 'Note'];
+const RCL_FOLLOWUP_OUTCOMES = ['reached' => 'Spoke to the family', 'promised' => 'They promised a date', 'no_answer' => 'No answer', 'wrong_number' => 'Wrong number',
+                               'needs_help' => 'They need help (money, documents, transport)', 'withdrawing' => 'They may not continue', 'other' => 'Other'];
+const RCL_FOLLOWUP_NEXT_MAX = 60;      // days ahead a next follow-up may be set
+
+/**
+ * The web-cron's part (webcron.php): recount open checklists, then follow up
+ * as above. Every send is claimed in reg_checklist_sends first, so a tick that
+ * runs twice sends nothing twice. At most RCL_TICK_MAX sends a tick; the rest
+ * wait for the next.
  */
 function rcl_tick(?int $now = null): array {
     $now = $now ?? time();
     $week = gmdate('o', $now) . '-W' . gmdate('W', $now);
+    $today = attendance_today($now);
     $open = array_column(db_all("SELECT memberId FROM reg_checklists WHERE status = 'open' ORDER BY updatedAt, id LIMIT " . RCL_REFRESH_MAX), 'memberId');
     $built = rcl_refresh($open);
     $sent = 0;
-    // Supervisors.
-    $bySup = [];
-    foreach (db_all("SELECT c.memberId, c.supervisorId, m.fullName FROM reg_checklists c JOIN members m ON m.memberId = c.memberId
-                     WHERE c.status = 'open' AND c.supervisorId <> '' ORDER BY c.id") as $r) $bySup[(string)$r['supervisorId']][] = $r;
-    foreach ($bySup as $sup => $rows) {
+    $rows = db_all("SELECT c.memberId, c.supervisorId, c.startedAt, c.lastProgressAt, c.nextFollowUpOn, m.fullName, m.centre
+                    FROM reg_checklists c JOIN members m ON m.memberId = c.memberId WHERE c.status = 'open' AND m.status = 'active' ORDER BY c.id");
+    // Supervisors: the weekly round-up, then follow-ups due today.
+    $bySup = []; $due = [];
+    foreach ($rows as $r) {
+        if ((string)$r['supervisorId'] !== '') $bySup[(string)$r['supervisorId']][] = $r;
+        if ((string)$r['nextFollowUpOn'] !== '' && (string)$r['nextFollowUpOn'] <= $today) $due[(string)$r['supervisorId']][] = $r;
+    }
+    foreach ($bySup as $sup => $list) {
         if ($sent >= RCL_TICK_MAX) break;
         if (!rcl_claim('week:' . $sup . ':' . $week, 'app', $sup)) continue;
-        $n = count($rows);
+        $n = count($list);
         push_notification($sup, ['kind' => 'system', 'groupKey' => 'regcheck:' . $sup,
-            'title' => $n === 1 ? rcl_first((string)$rows[0]['fullName']) . ' has not finished registering' : $n . ' members have not finished registering',
-            'body' => 'Open My registrations: ' . implode(', ', array_map(static fn($r) => rcl_first((string)$r['fullName']), array_slice($rows, 0, 5))) . ($n > 5 ? ' and ' . ($n - 5) . ' more' : '') . '.']);
+            'title' => $n === 1 ? rcl_first((string)$list[0]['fullName']) . ' has not finished registering' : $n . ' members have not finished registering',
+            'body' => 'Open My registrations: ' . rcl_names($list) . '.']);
         $sent++;
     }
-    // Families: only the items a family can act on.
-    foreach (db_all("SELECT c.memberId FROM reg_checklists c WHERE c.status = 'open' ORDER BY c.id LIMIT 400") as $r) {
+    foreach ($due as $sup => $list) {
+        if ($sent >= RCL_TICK_MAX) break;
+        if ($sup === '') continue;   // nobody assigned: the centre's staff hear about it below
+        if (!rcl_claim('fu-due:' . $sup . ':' . $today, 'app', $sup)) continue;
+        $n = count($list);
+        push_notification($sup, ['kind' => 'system', 'groupKey' => 'regcheck-fu:' . $sup,
+            'title' => $n === 1 ? 'Follow up with ' . rcl_first((string)$list[0]['fullName']) . '’s family today' : $n . ' registration follow-ups are due',
+            'body' => 'Call or message the family, then log what they said and when to try next: ' . rcl_names($list) . '.']);
+        $sent++;
+    }
+    // The centre's staff: registrations that have stalled, or are due with nobody assigned.
+    $stallCut = gmdate('Y-m-d\TH:i:s\Z', $now - RCL_STALL_DAYS * 86400);
+    $byCentre = [];
+    foreach ($rows as $r) {
+        $since = (string)($r['lastProgressAt'] ?: $r['startedAt']);
+        $stalled = $since !== '' && $since < $stallCut;
+        $orphan = (string)$r['supervisorId'] === '' && (string)$r['nextFollowUpOn'] !== '' && (string)$r['nextFollowUpOn'] <= $today;
+        if ($stalled || $orphan) $byCentre[(string)$r['centre']][] = $r;
+    }
+    if ($byCentre) {
+        foreach (staff_with_cap('people') as $st) {
+            if ($sent >= RCL_TICK_MAX) break;
+            $mine = [];
+            foreach ($byCentre as $centre => $list) if (admin_centre_allowed($st, (string)$centre)) $mine = array_merge($mine, $list);
+            if (!$mine || !rcl_claim('stalled:' . (string)$st['memberId'] . ':' . $today, 'app', (string)$st['memberId'])) continue;
+            $n = count($mine);
+            push_notification((string)$st['memberId'], ['kind' => 'system', 'groupKey' => 'regcheck-stalled', 'linkPage' => 'admin', 'surface' => 'admin',
+                'title' => $n === 1 ? rcl_first((string)$mine[0]['fullName']) . '’s registration needs a follow-up' : $n . ' registrations need a follow-up',
+                'body' => 'No progress in ' . RCL_STALL_DAYS . ' days, or a follow-up due with nobody helping: ' . rcl_names($mine) . '. Members → Registration → “Needs follow-up”.']);
+            $sent++;
+        }
+    }
+    // Families: the items they can act on, on the cadence.
+    foreach ($rows as $r) {
         if ($sent >= RCL_TICK_MAX) break;
         $mid = (string)$r['memberId'];
+        $stage = rcl_family_stage((string)$r['startedAt'], $now, $week);
+        if ($stage === '') continue;
         $b = $built[$mid] ?? (rcl_refresh([$mid])[$mid] ?? null);
         if (!$b) continue;
-        $need = array_values(array_map(static fn($i) => $i['title'], array_filter($b['items'], static fn($i) => !$i['done'] && $i['family'])));
+        $need = rcl_family_needs($b['items']);
         if (!$need) continue;
-        $sent += rcl_tell_family($mid, $need, $week);
+        $sent += rcl_tell_family($mid, $need, $stage);
     }
     return ['refreshed' => count($built), 'sent' => $sent];
 }
 
-/** Tell a member's guardians what the family can do, once a week. Returns how many were sent. */
-function rcl_tell_family(string $memberId, array $need, string $week): int {
-    $m = db_row('SELECT memberId, fullName FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+/** "Ada, Tunde, Bisi and 4 more". */
+function rcl_names(array $rows, int $show = 5): string {
+    $n = count($rows);
+    return implode(', ', array_map(static fn($r) => rcl_first((string)$r['fullName']), array_slice($rows, 0, $show))) . ($n > $show ? ' and ' . ($n - $show) . ' more' : '');
+}
+
+/** Which reminder a family is due: 'd1', 'd3', 'd7', the ISO week after that, or '' before day 1. */
+function rcl_family_stage(string $startedAt, int $now, string $week): string {
+    $t = $startedAt !== '' ? strtotime($startedAt) : false;
+    if ($t === false) return $week;
+    $days = (int)floor(($now - $t) / 86400);
+    if ($days < RCL_FAMILY_STAGES[0]) return '';
+    $last = RCL_FAMILY_STAGES[count(RCL_FAMILY_STAGES) - 1];
+    if ($days >= $last + 7) return $week;
+    $at = '';
+    foreach (RCL_FAMILY_STAGES as $d) if ($days >= $d) $at = 'd' . $d;
+    return $at;
+}
+
+/** What to ask the family for, in words a parent acts on: what to bring or do. Admin items all happen at the centre. */
+function rcl_family_needs(array $items): array {
+    $out = [];
+    foreach ($items as $i) {
+        if ($i['done']) continue;
+        if ($i['kind'] === 'auto') { $k = substr((string)$i['key'], 5); if (!empty(RCL_AUTO[$k]['family'])) $out[] = (string)(RCL_AUTO[$k]['bring'] ?? $i['title']); }
+        else $out[] = rcl_lc_first((string)$i['title']) . ' (at the centre)';
+    }
+    return $out;
+}
+function rcl_lc_first(string $s): string { return $s === '' ? '' : mb_strtolower(mb_substr($s, 0, 1)) . mb_substr($s, 1); }
+
+/** Tell a member's guardians exactly what is left, once per stage. Returns how many were sent. */
+function rcl_tell_family(string $memberId, array $need, string $stage): int {
+    $m = db_row('SELECT memberId, fullName, centre FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     if (!$m) return 0;
     $first = rcl_first((string)$m['fullName']) ?: 'your child';
     $c = db_row('SELECT supervisorName FROM reg_checklists WHERE memberId = ? LIMIT 1', [$memberId]);
     $helper = rcl_first((string)($c['supervisorName'] ?? ''));
+    $centre = (string)($m['centre'] ?? '') ?: 'the centre';
     $n = 0;
-    $title = 'Helping ' . $first . ' finish registering';
-    $body = 'To finish ' . $first . '’s registration, we still need: ' . implode(', ', $need) . '.'
+    $title = 'What is left before ' . $first . ' starts lectures';
+    $body = $first . ' starts lectures on the day every entry step is done. Still needed: ' . implode('; ', $need) . '. Bring things to ' . $centre . ' on a meeting day.'
           . ($helper !== '' ? ' ' . $helper . ' at the centre is helping and can answer questions.' : '');
+    $list = '<ul style="margin:8px 0 0;padding-left:20px">' . implode('', array_map(static fn($x) => '<li style="margin:4px 0">' . esc_html(rcl_uc_first($x)) . '</li>', $need)) . '</ul>';
     foreach (db_all("SELECT g.guardianId, g.email, w.notify FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId
                      WHERE w.memberId = ? AND w.status = 'active' AND g.status = 'active'", [$memberId]) as $gr) {
         // family_notify_prefs decides (every family alert is on); respected, not assumed.
         $prefs = function_exists('family_notify_prefs') ? family_notify_prefs((string)($gr['notify'] ?? '')) : ['alerts' => true];
         if (empty($prefs['alerts'])) continue;
-        if (!rcl_claim('family:' . $memberId . ':' . (string)$gr['guardianId'] . ':' . $week, 'email', (string)$gr['email'], $memberId)) continue;
-        if (function_exists('family_notice_add')) family_notice_add((string)$gr['guardianId'], 'registration', $memberId . ':' . $week, $title, $body, 'NGG');
+        if (!rcl_claim('family:' . $memberId . ':' . (string)$gr['guardianId'] . ':' . $stage, 'email', (string)$gr['email'], $memberId)) continue;
+        if (function_exists('family_notice_add')) family_notice_add((string)$gr['guardianId'], 'registration', $memberId . ':' . $stage, $title, $body, 'NGG');
         if (function_exists('family_mail')) family_mail((string)$gr['email'], $title, [
-            'title' => $title, 'intro' => $body,
-            'bodyHtml' => '<p>You can see what is left, and who is helping, in your family account.</p>',
-            'ctaLabel' => 'Open the family account', 'ctaUrl' => (function_exists('family_origin') ? family_origin() : '') . '/family',
-            'footNote' => 'You get this because you look after ' . $first . ' in your NGG family account.',
+            'title' => $title, 'intro' => $first . ' starts lectures on the day every entry step is done. This is what is still needed:',
+            'bodyHtml' => $list . '<p style="margin:14px 0 0">Bring what is needed to <strong>' . esc_html($centre) . '</strong> on a meeting day.'
+                . ($helper !== '' ? ' ' . esc_html($helper) . ' at the centre is helping and can answer questions.' : '') . '</p>',
+            'ctaLabel' => 'See the steps in the family account', 'ctaUrl' => (function_exists('family_origin') ? family_origin() : '') . '/family',
+            'footNote' => 'You get this because you look after ' . $first . ' in your NGG family account. It stops when registration is complete.',
         ]);
         $n++;
+    }
+    $n += rcl_wa_remind($memberId, $first, $need, $centre, $helper, $stage);
+    return $n;
+}
+function rcl_uc_first(string $s): string { return $s === '' ? '' : mb_strtoupper(mb_substr($s, 0, 1)) . mb_substr($s, 1); }
+
+/* ── WhatsApp: reminders a family can ANSWER ──────────────────────────────
+ * Owner, 19 Nov 2026: "people could also respond … instead of relying on
+ * humans, which can make the process slow". Each family reminder also goes on
+ * WhatsApp (domain/kapso.php) with three answers to tap — This Saturday · Next
+ * week · I need help — and the answer does the work a helper used to do by
+ * phone:
+ *   · a date      → a follow-up is logged (by the family, on WhatsApp) and the
+ *                   next one is set for the day after it;
+ *   · I need help → logged, the centre's staff are alerted, and the helper too;
+ *   · a photo     → kept on this site and put on the child's registration for
+ *                   the helper to check and submit (a photo never ticks an item
+ *                   by itself: the supervisor still verifies it);
+ *   · STOP/START  → no more reminders on WhatsApp / reminders again.
+ * Anything else goes to the Control Room inbox, as every WhatsApp message did.
+ * An answer is tied to its child by the button's id, or else by the last
+ * reminder sent to that number within RCL_WA_ANSWER_DAYS.
+ */
+const RCL_WA_ANSWER_DAYS = 14;
+const RCL_WA_PHONES_MAX = 2;          // numbers reminded per child: the guardians on the account, else the parent on the record
+const RCL_WA_CHOICES = ['sat' => 'This Saturday', 'next' => 'Next week', 'help' => 'I need help'];
+
+/** The WhatsApp numbers for a child's family: linked guardians who take alerts, else the parent phone on the record. */
+function rcl_wa_phones(string $memberId): array
+{
+    $out = [];
+    foreach (db_all("SELECT g.phone, w.notify FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId
+                     WHERE w.memberId = ? AND w.status = 'active' AND g.status = 'active'", [$memberId]) as $g) {
+        $prefs = function_exists('family_notify_prefs') ? family_notify_prefs((string)($g['notify'] ?? '')) : ['alerts' => true];
+        if (!empty($prefs['alerts']) && ($e = sms_normalize((string)$g['phone'])) !== '') $out[] = $e;
+    }
+    if (!$out) { $m = db_row('SELECT parentPhone FROM members WHERE memberId = ? LIMIT 1', [$memberId]); if ($m && ($e = sms_normalize((string)$m['parentPhone'])) !== '') $out[] = $e; }
+    $out = array_values(array_filter(array_unique($out), static fn($e) => !kapso_opted_out($e)));
+    return array_slice($out, 0, RCL_WA_PHONES_MAX);
+}
+
+/** The reminder on WhatsApp, once per stage per number. Returns how many went. */
+function rcl_wa_remind(string $memberId, string $first, array $need, string $centre, string $helper, string $stage): int
+{
+    if (!function_exists('kapso_on') || !kapso_on() || !$need) return 0;
+    $text = 'NGG: ' . $first . ' starts lectures on the day every entry step is done. Still needed: ' . implode('; ', $need) . '. Bring them to ' . $centre . ' on a meeting day'
+          . ($helper !== '' ? ' (' . $helper . ' is helping)' : '') . '. When can you come?';
+    $buttons = array_map(static fn($k, $t) => ['rcl:' . $memberId . ':' . $k, $t], array_keys(RCL_WA_CHOICES), RCL_WA_CHOICES);
+    $n = 0;
+    foreach (rcl_wa_phones($memberId) as $e164) {
+        if (!rcl_claim('wa:' . $memberId . ':' . $e164 . ':' . $stage, 'whatsapp', $e164, $memberId)) continue;
+        $r = kapso_send_buttons($e164, $text, $buttons, 'regcheck:' . $memberId);
+        if (!empty($r['ok'])) $n++;
     }
     return $n;
 }
 
+/** The next Saturday after today (Lagos), as YYYY-MM-DD. */
+function rcl_next_saturday(?string $today = null): string
+{
+    $t = strtotime(($today ?? attendance_today()) . 'T12:00:00Z');
+    $dow = (int)gmdate('N', $t);
+    return gmdate('Y-m-d', $t + (($dow < 6 ? 6 - $dow : 13 - $dow) * 86400));
+}
+
+/** Which answer a reply is: a button's id, or the words a parent types. '' when it is not one. */
+function rcl_wa_choice(string $btnId, string $text): array
+{
+    if (preg_match('/^rcl:([A-Za-z0-9_-]{3,64}):(sat|next|help)$/', $btnId, $m)) return [$m[1], $m[2]];
+    $t = mb_strtolower(trim($text));
+    $t = trim(preg_replace('/[^\p{L}\p{N} ]+/u', ' ', $t));
+    if (in_array($t, ['1', 'one', 'saturday', 'this saturday', 'sat'], true)) return ['', 'sat'];
+    if (in_array($t, ['2', 'two', 'next week'], true)) return ['', 'next'];
+    if (in_array($t, ['3', 'three', 'help', 'i need help', 'need help'], true)) return ['', 'help'];
+    return ['', ''];
+}
+
+/**
+ * kapso_receive calls this for every WhatsApp message before the inbox. Returns
+ * ['handled' => true, …] when it acted; anything else leaves it for the inbox.
+ */
+function rcl_wa_inbound(string $e164, array $msg, string $text): array
+{
+    $word = mb_strtoupper(trim($text));
+    if (in_array($word, ['STOP', 'UNSUBSCRIBE', 'STOP REMINDERS'], true)) {
+        if (!kapso_opted_out($e164)) { try { db_insert('whatsapp_optout', ['phone' => $e164, 'at' => now_iso(), 'via' => 'reply']); } catch (Throwable $e) { /* said STOP twice at once */ } }
+        kapso_send_text($e164, 'Done: no more registration reminders on WhatsApp. Reply START to have them again. You will still get them by email.');
+        audit('whatsapp.optout', null, $e164, [], '');
+        return ['handled' => true, 'did' => 'optout'];
+    }
+    if ($word === 'START') {
+        db_exec('DELETE FROM whatsapp_optout WHERE phone = ?', [$e164]);
+        kapso_send_text($e164, 'Welcome back: registration reminders are on again.');
+        return ['handled' => true, 'did' => 'optin'];
+    }
+    [$btnId] = kapso_button_of($msg);
+    [$mid, $choice] = rcl_wa_choice($btnId, $text);
+    $type = (string)($msg['type'] ?? '');
+    $isFile = in_array($type, ['image', 'document'], true);
+    if ($choice === '' && !$isFile) return ['handled' => false];
+    if ($mid === '') {
+        // Not a button: the child is the one the last reminder to this number was about.
+        $last = db_row("SELECT kind FROM whatsapp_messages WHERE direction = 'out' AND phone = ? AND kind LIKE 'regcheck:%' AND createdAt >= ? ORDER BY createdAt DESC LIMIT 1",
+            [$e164, gmdate('Y-m-d\TH:i:s\Z', time() - RCL_WA_ANSWER_DAYS * 86400)]);
+        if (!$last) return ['handled' => false];
+        $mid = substr((string)$last['kind'], strlen('regcheck:'));
+    } elseif (!db_row("SELECT 1 x FROM whatsapp_messages WHERE direction = 'out' AND phone = ? AND kind = ? LIMIT 1", [$e164, 'regcheck:' . $mid])) {
+        // A button names a child: only a number that child's reminder went to may answer for them.
+        return ['handled' => false];
+    }
+    $c = db_row('SELECT * FROM reg_checklists WHERE memberId = ? LIMIT 1', [$mid]);
+    $m = $c ? db_row('SELECT memberId, fullName, centre FROM members WHERE memberId = ? LIMIT 1', [$mid]) : null;
+    if (!$c || !$m) return ['handled' => false];
+    $first = rcl_first((string)$m['fullName']) ?: 'your child';
+    $by = ['memberId' => 'whatsapp', 'fullName' => 'The family, on WhatsApp'];
+    $sup = (string)$c['supervisorId'];
+    if ((string)$c['status'] === 'done') {
+        kapso_send_text($e164, 'Thank you! ' . $first . ' is already fully registered' . ((string)$c['resumedOn'] !== '' ? ' and started lectures on ' . gmdate('j F', (int)strtotime($c['resumedOn'] . 'T12:00:00Z')) : '') . '.');
+        return ['handled' => true, 'did' => 'already_done'];
+    }
+
+    if ($isFile) {
+        $url = rcl_wa_keep_media($msg);
+        db_insert('reg_checklist_submissions', ['submissionId' => 'RCS-' . strtoupper(rand_hex(6)), 'memberId' => $mid, 'itemKey' => 'family', 'supervisorId' => '',
+            'url' => mb_substr($url, 0, 600), 'ext' => $type === 'image' ? 'jpg' : 'pdf', 'mime' => mb_substr((string)($msg[$type]['mime_type'] ?? ''), 0, 120), 'bytes' => 0,
+            'capturedOn' => '', 'note' => mb_substr(trim((string)($msg[$type]['caption'] ?? '')), 0, RCL_NOTE_MAX), 'verdict' => 'family_sent',
+            'reason' => 'Sent by the family on WhatsApp — check it and submit it against the right item.', 'centreId' => '', 'createdAt' => now_iso()]);
+        if ($sup !== '') push_notification($sup, ['kind' => 'system', 'groupKey' => 'regcheck-wa:' . $mid, 'title' => $first . '’s family sent a ' . ($type === 'image' ? 'photo' : 'document') . ' on WhatsApp',
+            'body' => 'Open My registrations, check it, and submit it against the right item.']);
+        audit('regcheck.whatsapp_file', null, $mid, ['type' => $type, 'kept' => $url !== '' && !str_contains($url, 'kapso')], '');
+        kapso_send_text($e164, 'Thank you — we have it. ' . ((string)$c['supervisorName'] !== '' ? rcl_first((string)$c['supervisorName']) : 'Someone at the centre') . ' will check it.');
+        return ['handled' => true, 'did' => 'file', 'memberId' => $mid];
+    }
+
+    $today = attendance_today();
+    if ($choice === 'help') {
+        $w = rcl_followup_write($mid, $by, ['channel' => 'whatsapp', 'outcome' => 'needs_help', 'note' => 'Tapped “I need help” on WhatsApp — please call the family.',
+            'nextOn' => gmdate('Y-m-d', (int)strtotime($today . 'T12:00:00Z') + 86400)]);
+        if (function_exists('staff_inbox_alert')) staff_inbox_alert('requests', ['who' => (string)$m['fullName'], 'centre' => (string)$m['centre'],
+            'what' => 'The family asked for help with registration on WhatsApp (' . $e164 . '). Please call them.']);
+        if ($sup !== '') push_notification($sup, ['kind' => 'system', 'groupKey' => 'regcheck-wa:' . $mid, 'title' => $first . '’s family asked for help', 'body' => 'They tapped “I need help” on WhatsApp. Please call ' . $e164 . '.']);
+        kapso_send_text($e164, 'Thank you. Someone from NGG will call you soon to help with ' . $first . '’s registration.');
+        return ['handled' => true, 'did' => 'help', 'memberId' => $mid, 'ok' => !empty($w['ok'])];
+    }
+    $day = $choice === 'sat' ? rcl_next_saturday($today) : gmdate('Y-m-d', (int)strtotime($today . 'T12:00:00Z') + 7 * 86400);
+    // The next follow-up is the day after they said they would come: if they came, it is done by then.
+    $next = gmdate('Y-m-d', (int)strtotime($day . 'T12:00:00Z') + 86400);
+    $w = rcl_followup_write($mid, $by, ['channel' => 'whatsapp', 'outcome' => 'promised',
+        'note' => 'Tapped “' . RCL_WA_CHOICES[$choice] . '” on WhatsApp: coming on ' . gmdate('l j F', (int)strtotime($day . 'T12:00:00Z')) . '.', 'nextOn' => $next]);
+    $b = rcl_refresh([$mid])[$mid] ?? null;
+    $need = $b ? rcl_family_needs($b['items']) : [];
+    kapso_send_text($e164, 'Thank you! We will expect you at ' . ((string)$m['centre'] ?: 'the centre') . ' on ' . gmdate('l j F', (int)strtotime($day . 'T12:00:00Z')) . '.'
+        . ($need ? ' Please bring: ' . implode('; ', $need) . '.' : ''));
+    return ['handled' => true, 'did' => $choice, 'memberId' => $mid, 'on' => $day, 'ok' => !empty($w['ok'])];
+}
+
+/** A photo a family sent: kept on this site (Kapso's link may not last); a document, or a photo that cannot be fetched, keeps Kapso's link. */
+function rcl_wa_keep_media(array $msg): string
+{
+    $type = (string)($msg['type'] ?? '');
+    $src = (string)($msg['kapso']['media_url'] ?? ($msg['kapso']['media_data']['url'] ?? ''));
+    if ($src === '' || !preg_match('#^https://#', $src)) return '';
+    if ($type !== 'image' || !function_exists('photo_store_put')) return $src;
+    $r = sms_http($src, [CURLOPT_HTTPHEADER => str_contains((string)parse_url($src, PHP_URL_HOST), 'kapso.ai') ? ['X-API-Key: ' . kapso_cfg()['api_key']] : []]);
+    $bin = (string)($r['body'] ?? '');
+    $info = $bin !== '' ? @getimagesizefromstring($bin) : false;
+    if (empty($r['ok']) || !$info) return $src;
+    $put = photo_store_put('data:' . $info['mime'] . ';base64,' . base64_encode($bin));
+    return !empty($put['ok']) && !empty($put['url']) ? (string)$put['url'] : $src;
+}
+
+/* ── The follow-up log ─────────────────────────────────────────────────── */
+
+function rcl_followup_public(array $r): array {
+    return ['id' => (int)$r['id'], 'channel' => (string)$r['channel'], 'channelLabel' => RCL_FOLLOWUP_CHANNELS[(string)$r['channel']] ?? '',
+            'outcome' => (string)$r['outcome'], 'outcomeLabel' => RCL_FOLLOWUP_OUTCOMES[(string)$r['outcome']] ?? '', 'note' => (string)$r['note'],
+            'nextOn' => (string)$r['nextOn'], 'byName' => (string)$r['byName'], 'at' => (string)$r['createdAt']];
+}
+
+/**
+ * Log one follow-up — {memberId, channel, outcome, note, nextOn} — and set
+ * the checklist's next one. Validated whole before the write. `nextOn` is
+ * required while the checklist is open (a follow-up that ends nowhere is how
+ * a family is forgotten), and must be after today and within
+ * RCL_FOLLOWUP_NEXT_MAX days. The caller has already been gated.
+ */
+function rcl_followup_write(string $memberId, array $by, array $p): array {
+    $c = db_row('SELECT * FROM reg_checklists WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$c) return ['ok' => false, 'error' => 'not_started', 'message' => 'Their checklist has not started.'];
+    $ch = (string)($p['channel'] ?? '');
+    if (!isset(RCL_FOLLOWUP_CHANNELS[$ch])) return ['ok' => false, 'error' => 'bad_channel', 'field' => 'channel', 'message' => 'Say how you followed up.'];
+    $oc = (string)($p['outcome'] ?? '');
+    if (!isset(RCL_FOLLOWUP_OUTCOMES[$oc])) return ['ok' => false, 'error' => 'bad_outcome', 'field' => 'outcome', 'message' => 'Say what happened.'];
+    $note = mb_substr(trim(preg_replace('/\s+/', ' ', (string)($p['note'] ?? ''))), 0, RCL_NOTE_MAX);
+    if (in_array($oc, ['other', 'needs_help', 'withdrawing'], true) && mb_strlen($note) < 5) return ['ok' => false, 'error' => 'note_required', 'field' => 'note', 'message' => 'Add a short note: what they said.'];
+    $today = attendance_today();
+    $next = substr(trim((string)($p['nextOn'] ?? '')), 0, 10);
+    $open = (string)$c['status'] === 'open';
+    if ($next !== '' || $open) {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $next) || !strtotime($next . 'T12:00:00Z')) return ['ok' => false, 'error' => 'next_required', 'field' => 'nextOn', 'message' => 'Set the day to follow up next.'];
+        if ($next <= $today) return ['ok' => false, 'error' => 'next_past', 'field' => 'nextOn', 'message' => 'The next follow-up is after today.'];
+        if ($next > gmdate('Y-m-d', (int)strtotime($today . 'T12:00:00Z') + RCL_FOLLOWUP_NEXT_MAX * 86400)) return ['ok' => false, 'error' => 'next_far', 'field' => 'nextOn', 'message' => 'Follow up within ' . RCL_FOLLOWUP_NEXT_MAX . ' days.'];
+    }
+    db_insert('reg_checklist_followups', ['memberId' => $memberId, 'channel' => $ch, 'outcome' => $oc, 'note' => $note, 'nextOn' => $next,
+        'byId' => (string)$by['memberId'], 'byName' => mb_substr((string)($by['fullName'] ?? ''), 0, 160), 'createdAt' => now_iso()]);
+    db_update('reg_checklists', ['nextFollowUpOn' => $open ? $next : '', 'updatedAt' => now_iso()], ['memberId' => $memberId]);
+    audit('regcheck.followup', (string)$by['memberId'], $memberId, ['channel' => $ch, 'outcome' => $oc, 'nextOn' => $next], (string)($p['ip'] ?? ''));
+    // "They may not continue" is a decision for staff, not a supervisor's to carry alone.
+    if ($oc === 'withdrawing' && function_exists('staff_inbox_alert')) {
+        $m = db_row('SELECT fullName, centre FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+        staff_inbox_alert('requests', ['who' => (string)($m['fullName'] ?? ''), 'centre' => (string)($m['centre'] ?? ''), 'exclude' => [(string)$by['memberId']],
+            'what' => 'The family may not continue registering: ' . $note]);
+    }
+    return ['ok' => true, 'nextOn' => $next, 'followups' => array_map('rcl_followup_public', db_all('SELECT * FROM reg_checklist_followups WHERE memberId = ? ORDER BY id DESC LIMIT 30', [$memberId]))];
+}
+
+/** admin.regcheck.followup — staff with `people`, for a member in their centres. */
+function admin_regcheck_followup(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $sg = admin_member_scope_gate($g['requester'], (string)($p['memberId'] ?? '')); if (!$sg['ok']) return $sg;
+    return rcl_followup_write((string)$sg['member']['memberId'], $g['requester'], $p);
+}
+
+/** member.regcheck.followup — the member's assigned supervisor (a mentor or a volunteer). */
+function member_regcheck_followup(array $p): array {
+    $person = rcl_person((string)($p['requesterId'] ?? ''));
+    if (!$person) return ['ok' => false, 'error' => 'no_requester'];
+    $mid = (string)($p['memberId'] ?? '');
+    $c = db_row('SELECT supervisorId FROM reg_checklists WHERE memberId = ? LIMIT 1', [$mid]);
+    if (!$c || !in_array((string)$c['supervisorId'], $person['ids'], true)) return ['ok' => false, 'error' => 'not_assigned', 'message' => 'You are not the supervisor for this member’s registration.'];
+    return rcl_followup_write($mid, ['memberId' => (string)($p['requesterId'] ?? ''), 'fullName' => (string)($person['name'] ?? '')], $p);
+}
+
 /* ── Lists and one member's checklist, for staff ─────────────────────── */
 
-const RCL_FILTERS = ['open', 'unassigned', 'mine', 'done', 'all'];
+const RCL_FILTERS = ['open', 'followup', 'unassigned', 'mine', 'done', 'all'];
 const RCL_SORTS = ['progress' => 'c.done * 1.0 / (CASE WHEN c.total > 0 THEN c.total ELSE 1 END), m.fullName', 'name' => 'm.fullName', 'started' => 'c.startedAt DESC, m.fullName'];
 
 /** The WHERE for a list: active NGG members with a checklist, in the requester's centres. Names only reach SQL text. */
@@ -742,9 +1194,12 @@ function rcl_list_where(array $g, array $p, string $filter): array {
     if ($q !== '') { $w[] = "(lower(m.fullName) LIKE ? OR lower(m.memberId) LIKE ? OR lower(COALESCE(m.displayId,'')) LIKE ? OR lower(c.supervisorName) LIKE ?)"; array_push($a, "%$q%", "%$q%", "%$q%", "%$q%"); }
     $f = match ($filter) {
         'open' => "c.status = 'open'", 'unassigned' => "c.status = 'open' AND c.supervisorId = ''", 'done' => "c.status = 'done'",
+        // Needs a follow-up: one is due, or nothing has moved in RCL_STALL_DAYS. The dates are bound, never spliced.
+        'followup' => "c.status = 'open' AND ((c.nextFollowUpOn <> '' AND c.nextFollowUpOn <= ?) OR (CASE WHEN c.lastProgressAt <> '' THEN c.lastProgressAt ELSE c.startedAt END) < ?)",
         'mine' => 'c.supervisorId = ?', default => '1 = 1',
     };
     $w[] = $f; if ($filter === 'mine') $a[] = (string)$g['requester']['memberId'];
+    if ($filter === 'followup') { $a[] = attendance_today(); $a[] = gmdate('Y-m-d\TH:i:s\Z', time() - RCL_STALL_DAYS * 86400); }
     return [implode(' AND ', $w), $a];
 }
 
@@ -753,7 +1208,10 @@ function rcl_row_public(array $m, array $c, ?array $b): array {
             'centre' => (string)$m['centre'], 'photoUrl' => (string)($m['photoUrl'] ?? ''),
             'status' => (string)$c['status'], 'done' => $b ? $b['done'] : (int)$c['done'], 'total' => $b ? $b['total'] : (int)$c['total'],
             'left' => $b ? $b['left'] : [], 'supervisorId' => (string)$c['supervisorId'], 'supervisorName' => (string)$c['supervisorName'],
-            'supervisorKind' => (string)$c['supervisorKind'], 'assignedAt' => (string)$c['assignedAt'], 'startedAt' => (string)$c['startedAt'], 'completedAt' => (string)$c['completedAt']];
+            'supervisorKind' => (string)$c['supervisorKind'], 'assignedAt' => (string)$c['assignedAt'], 'startedAt' => (string)$c['startedAt'], 'completedAt' => (string)$c['completedAt'],
+            'resumedOn' => (string)($c['resumedOn'] ?? ''), 'lastProgressAt' => (string)($c['lastProgressAt'] ?? ''), 'nextFollowUpOn' => (string)($c['nextFollowUpOn'] ?? ''),
+            'stalled' => (string)$c['status'] === 'open' && (string)(($c['lastProgressAt'] ?? '') ?: $c['startedAt']) < gmdate('Y-m-d\TH:i:s\Z', time() - RCL_STALL_DAYS * 86400),
+            'steps' => $b ? rcl_steps_public($b['items']) : []];
 }
 
 /**
@@ -841,7 +1299,24 @@ function admin_regcheck_member(array $p): array {
     return ['ok' => true, 'started' => true, 'member' => ['memberId' => $mid, 'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),
                 'centre' => (string)$m['centre'], 'photoUrl' => (string)($m['photoUrl'] ?? '')],
             'checklist' => rcl_row_public($m, $c, $b) + ['items' => $b['items']], 'supervisorPresentToday' => $present,
-            'submissions' => array_map('rcl_submission_public', $subs), 'me' => (string)$g['requester']['memberId']];
+            'submissions' => array_map('rcl_submission_public', $subs), 'me' => (string)$g['requester']['memberId'],
+            'followups' => array_map('rcl_followup_public', db_all('SELECT * FROM reg_checklist_followups WHERE memberId = ? ORDER BY id DESC LIMIT 30', [$mid])),
+            'channels' => RCL_FOLLOWUP_CHANNELS, 'outcomes' => RCL_FOLLOWUP_OUTCOMES, 'today' => attendance_today(),
+            'whatsapp' => rcl_wa_thread($mid)];
+}
+
+/** The WhatsApp messages with this child's family: reminders sent and what came back (newest first, at most 20). */
+function rcl_wa_thread(string $memberId): array
+{
+    try {
+        $phones = [];
+        foreach (db_all("SELECT DISTINCT phone FROM whatsapp_messages WHERE direction = 'out' AND kind = ?", ['regcheck:' . $memberId]) as $r) $phones[] = (string)$r['phone'];
+        if (!$phones) return [];
+        $ph = implode(',', array_fill(0, count($phones), '?'));
+        return array_map(static fn($r) => ['dir' => (string)$r['direction'], 'body' => (string)$r['body'], 'status' => (string)$r['status'], 'at' => (string)$r['createdAt']],
+            db_all("SELECT direction, body, status, createdAt FROM whatsapp_messages WHERE phone IN ($ph) AND (direction = 'in' OR kind = ?) ORDER BY createdAt DESC LIMIT 20",
+                array_merge($phones, ['regcheck:' . $memberId])));
+    } catch (Throwable $e) { return []; }
 }
 
 function rcl_submission_public(array $s): array {
@@ -884,7 +1359,7 @@ function member_regcheck_mine(array $p): array {
     if (!$person) return ['ok' => false, 'error' => 'no_requester'];
     // Any id the person signs in with: a volunteer who is also a member is one supervisor.
     $iph = implode(',', array_fill(0, count($person['ids']), '?'));
-    $rows = db_all("SELECT c.memberId, m.fullName, m.displayId, m.centre FROM reg_checklists c JOIN members m ON m.memberId = c.memberId
+    $rows = db_all("SELECT c.memberId, c.nextFollowUpOn, c.resumedOn, m.fullName, m.displayId, m.centre FROM reg_checklists c JOIN members m ON m.memberId = c.memberId
                     WHERE c.supervisorId IN ($iph) AND m.status = 'active' ORDER BY (c.status = 'open') DESC, m.fullName LIMIT " . RCL_MINE_MAX, $person['ids']);
     $built = rcl_refresh(array_column($rows, 'memberId'));
     $today = attendance_today();
@@ -905,9 +1380,10 @@ function member_regcheck_mine(array $p): array {
         $items = array_map(static fn($i) => $i + ['lastRefusal' => $refusals[$mid][$i['key']] ?? ''], $b['items']);
         $out[] = ['memberId' => $mid, 'fullName' => (string)$r['fullName'], 'first' => rcl_first((string)$r['fullName']), 'displayId' => (string)($r['displayId'] ?? ''),
                   'centre' => $centre, 'presentToday' => $present[$centre], 'done' => $b['done'], 'total' => $b['total'], 'status' => $b['done'] >= $b['total'] ? 'done' : 'open',
-                  'items' => $items];
+                  'items' => $items, 'steps' => rcl_steps_public($b['items']), 'nextFollowUpOn' => (string)($r['nextFollowUpOn'] ?? ''), 'resumedOn' => (string)($r['resumedOn'] ?? '')];
     }
-    return ['ok' => true, 'members' => $out, 'today' => $today, 'maxBytes' => RCL_EVIDENCE_MAX_BYTES, 'evidence' => RCL_EVIDENCE];
+    return ['ok' => true, 'members' => $out, 'today' => $today, 'maxBytes' => RCL_EVIDENCE_MAX_BYTES, 'evidence' => RCL_EVIDENCE,
+            'channels' => RCL_FOLLOWUP_CHANNELS, 'outcomes' => RCL_FOLLOWUP_OUTCOMES];
 }
 
 /** Is this file one of ours: the bucket, Cloudinary, or this site's own photo store? */
@@ -952,7 +1428,7 @@ function member_regcheck_submit(array $p): array {
 
     if (strncmp($key, 'auto:', 5) === 0) {
         $k = substr($key, 5);
-        if (!isset(RCL_AUTO[$k]) || !rcl_auto_applies($k)) return ['ok' => false, 'error' => 'not_found'];
+        if (!isset(RCL_AUTO[$k]) || !rcl_auto_applies($k) || !rcl_auto_applies_to($k, $m)) return ['ok' => false, 'error' => 'not_found'];
         $ok = (bool)call_user_func('rcl_verify_' . $k, $m, rcl_facts([$mid]));
         $why = $ok ? RCL_AUTO[$k]['title'] . ': the record shows it.' : 'The record does not show it yet. ' . RCL_AUTO[$k]['fix'];
         $record($ok ? 'record_passes' : 'record_fails', $why);
@@ -1034,8 +1510,12 @@ function rcl_progress_public(array $m): array {
     if (!$c || !member_is_ngg($m)) return ['started' => false];
     $b = rcl_refresh([(string)$m['memberId']])[(string)$m['memberId']] ?? null;
     if (!$b) return ['started' => false];
+    $c = db_row('SELECT * FROM reg_checklists WHERE memberId = ? LIMIT 1', [(string)$m['memberId']]) ?: $c;
     return ['started' => true, 'done' => $b['done'], 'total' => $b['total'], 'complete' => $b['total'] > 0 && $b['done'] >= $b['total'],
-            'left' => $b['left'], 'helper' => rcl_first((string)$c['supervisorName'])];
+            'left' => $b['left'], 'helper' => rcl_first((string)$c['supervisorName']),
+            // The steps, and what to bring: the family sees the card they were handed, not a database's list.
+            'steps' => rcl_steps_public($b['items']), 'bring' => rcl_family_needs($b['items']),
+            'resumedOn' => (string)($c['resumedOn'] ?? ''), 'centre' => (string)($m['centre'] ?? '')];
 }
 
 /** member.regcheck.progress — the signed-in member's own. */

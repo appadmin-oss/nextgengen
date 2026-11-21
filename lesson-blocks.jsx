@@ -89,11 +89,6 @@ function lbPlay(midi, when, dur) {
   } catch (e) { /* a device that will not play is not a broken lesson */ }
 }
 
-/** Does this learner want motion? Respected, not assumed (CLAUDE.md §9). */
-function lbStill() {
-  try { return typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
-  catch (e) { return false; }
-}
 
 /**
  * Step through a list of {midi} one at a time, lighting each as it sounds.

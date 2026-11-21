@@ -50,17 +50,26 @@ const PLAN_MAX_COUNT = 6;
 /** Days between instalments; 'monthly' steps by calendar month. */
 const PLAN_FREQUENCIES = ['weekly' => 7, 'fortnightly' => 14, 'monthly' => 0];
 const PLAN_FREQ_LABEL = ['weekly' => 'every week', 'fortnightly' => 'every two weeks', 'monthly' => 'every month'];
-/** The last instalment falls at most this many days after the first. */
+/** The last instalment falls at most this many days after the first — the ADMIN's
+ *  setting `planMaxDays` (fees settings), within these bounds; 183 if unset. */
 const PLAN_MAX_SPAN_DAYS = 183;
+const PLAN_MAX_SPAN_MIN = 14;
+const PLAN_MAX_SPAN_MAX = 365;
+function plan_max_span_days(): int {
+    $d = (int)(fees_settings()['planMaxDays'] ?? PLAN_MAX_SPAN_DAYS);
+    return max(PLAN_MAX_SPAN_MIN, min(PLAN_MAX_SPAN_MAX, $d ?: PLAN_MAX_SPAN_DAYS));
+}
 /** The first instalment falls within this many days of agreeing. */
 const PLAN_FIRST_DUE_MAX_DAYS = 31;
 const PLAN_GRACE_DAYS = 14;
 const PLAN_REMIND_BEFORE_DAYS = 3;
 const PLAN_LIST_MAX = 100;
-const PLAN_TERMS_VERSION = '2026-11';
+const PLAN_TERMS_VERSION = '2026-11b';
 const PLAN_TERMS = 'I agree to pay the balance shown in the instalments shown, on or before each date. '
     . 'Any payment to the account counts towards the plan, however it is made. New dues that fall due while the plan runs are '
-    . 'charged as usual and are not part of it. If an instalment is more than ' . PLAN_GRACE_DAYS . ' days late the plan ends, '
+    . 'charged as usual and are not part of it. The plan starts once NGG approves it; if that is after the first date, every date moves '
+    . 'to start on the day it is approved. Every instalment is the same amount, give or take one naira, with no interest or charge for paying this way. '
+    . 'If an instalment is more than ' . PLAN_GRACE_DAYS . ' days late the plan ends, '
     . 'and the whole balance is owed as normal. NGG staff can see this plan and its record.';
 
 /* ── Reading ───────────────────────────────────────────────────────────── */
@@ -77,6 +86,11 @@ function plan_payments_total(string $mid): int {
 
 function plan_active_for(string $mid): ?array {
     return db_row("SELECT * FROM payment_plans WHERE memberId = ? AND status = 'active' ORDER BY id DESC LIMIT 1", [$mid]) ?: null;
+}
+
+/** A plan still in play: waiting for approval, or running. One at a time per child. */
+function plan_open_for(string $mid): ?array {
+    return db_row("SELECT * FROM payment_plans WHERE memberId = ? AND status IN ('pending','active') ORDER BY id DESC LIMIT 1", [$mid]) ?: null;
 }
 
 function plan_items(string $planId): array {
@@ -100,9 +114,10 @@ function plan_dates(string $first, int $count, string $freq): array {
 }
 
 /**
- * The schedule for a balance, or the reason it cannot be one. Equal amounts in
- * whole naira; the remainder goes on the FIRST, so the family is never surprised
- * by a larger last payment.
+ * The schedule for a balance, or the reason it cannot be one. Fair to the
+ * naira: no instalment differs from another by more than ₦1. The odd naira go
+ * one each to the FIRST instalments, so the family is never surprised by a
+ * larger last payment and nobody's first payment carries the whole remainder.
  */
 function plan_schedule(int $total, int $count, string $freq, string $first, ?string $today = null): array {
     $today = $today ?? plan_today();
@@ -115,10 +130,11 @@ function plan_schedule(int $total, int $count, string $freq, string $first, ?str
     $min = defined('MPAY_PART_MIN') ? MPAY_PART_MIN : 1000;
     if ($total < $count * $min) return ['ok' => false, 'error' => 'too_small', 'detail' => 'Each instalment must be at least ' . fees_money_text($min) . '. Choose fewer instalments.'];
     $dates = plan_dates($first, $count, $freq);
-    if (plan_days_between($dates[0], end($dates)) > PLAN_MAX_SPAN_DAYS) return ['ok' => false, 'error' => 'too_long', 'detail' => 'A plan can run for at most six months. Choose fewer or more frequent instalments.'];
-    $each = intdiv($total, $count);
+    $span = plan_max_span_days();
+    if (plan_days_between($dates[0], end($dates)) > $span) return ['ok' => false, 'error' => 'too_long', 'detail' => 'A plan can run for at most ' . $span . ' days. Choose fewer or more frequent instalments.'];
+    $each = intdiv($total, $count); $odd = $total - $each * $count;
     $items = [];
-    foreach ($dates as $i => $dt) $items[] = ['seq' => $i + 1, 'dueDate' => $dt, 'amount' => $each + ($i === 0 ? $total - $each * $count : 0)];
+    foreach ($dates as $i => $dt) $items[] = ['seq' => $i + 1, 'dueDate' => $dt, 'amount' => $each + ($i < $odd ? 1 : 0)];
     return ['ok' => true, 'total' => $total, 'instalments' => $count, 'frequency' => $freq, 'items' => $items];
 }
 
@@ -142,15 +158,16 @@ function plan_state(array $plan, ?array $m = null, ?string $today = null, ?int $
         $amt = (int)$it['amount'];
         $got = max(0, min($amt, $covered - $cum)); $cum += $amt;
         $left = $amt - $got;
-        $daysLate = $left > 0 && (string)$it['dueDate'] < $today ? plan_days_between((string)$it['dueDate'], $today) : 0;
+        // A plan nobody has approved has nothing late on it: its dates move to the approval day if it is approved late.
+        $daysLate = $left > 0 && (string)$plan['status'] !== 'pending' && (string)$it['dueDate'] < $today ? plan_days_between((string)$it['dueDate'], $today) : 0;
         $st = $left === 0 ? 'paid' : ($daysLate > 0 ? 'late' : ($got > 0 ? 'part' : 'due'));
         if ($st === 'late') { $late++; $worst = max($worst, $daysLate); $overdue += $left; }
         if ($left > 0 && $next === null) $next = ['seq' => (int)$it['seq'], 'dueDate' => (string)$it['dueDate'], 'left' => $left];
         $out[] = ['seq' => (int)$it['seq'], 'dueDate' => (string)$it['dueDate'], 'amount' => $amt, 'paid' => $got, 'left' => $left, 'status' => $st, 'daysLate' => $daysLate];
     }
     $status = (string)$plan['status'];
-    $health = $status === 'cancelled' ? 'cancelled' : ($status === 'completed' || $remaining === 0 ? 'completed'
-        : ($worst > PLAN_GRACE_DAYS ? 'broken' : ($late > 0 ? 'behind' : 'on_track')));
+    $health = $status === 'pending' ? 'pending' : ($status === 'declined' ? 'declined' : ($status === 'cancelled' ? 'cancelled' : ($status === 'completed' || $remaining === 0 ? 'completed'
+        : ($worst > PLAN_GRACE_DAYS ? 'broken' : ($late > 0 ? 'behind' : 'on_track')))));
     $payNow = $remaining > 0 ? min($remaining, $overdue > 0 ? $overdue : (int)($next['left'] ?? 0)) : 0;
     return ['planId' => (string)$plan['planId'], 'memberId' => $mid, 'status' => $status, 'health' => $health,
         'total' => $total, 'paid' => $covered, 'remaining' => $remaining, 'overdue' => $overdue, 'lateCount' => $late, 'daysLate' => $worst,
@@ -242,7 +259,7 @@ function plan_create(array $m, int $count, string $freq, string $first, array $a
     $mid = (string)$m['memberId'];
     if (db_row("SELECT 1 FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose = 'joining' LIMIT 1", [$mid]))
         return ['ok' => false, 'error' => 'joining_open', 'detail' => 'Pay the joining invoice first. A plan is for the balance after it.'];
-    if ($cur = plan_active_for($mid)) return ['ok' => false, 'error' => 'plan_exists', 'detail' => 'There is already a plan for this child.', 'planId' => (string)$cur['planId']];
+    if ($cur = plan_open_for($mid)) return ['ok' => false, 'error' => 'plan_exists', 'detail' => 'There is already a plan for this child.', 'planId' => (string)$cur['planId']];
     $due = (int)(fees_balance($m)['payable'] ?? 0);
     if ($due <= 0) return ['ok' => false, 'error' => 'nothing_to_pay'];
     $q = plan_schedule($due, $count, $freq, $first);
@@ -254,7 +271,9 @@ function plan_create(array $m, int $count, string $freq, string $first, array $a
     $how = trim((string)($agreed['how'] ?? ''));
     db_tx(static function () use ($pid, $mid, $q, $due, $agreed, $by, $now, $how, $first, $freq, $count) {
         db_insert('payment_plans', ['planId' => $pid, 'memberId' => $mid, 'total' => $due, 'instalments' => $count, 'frequency' => $freq,
-            'firstDue' => $first, 'startPaid' => plan_payments_total($mid), 'status' => 'active', 'source' => (string)($agreed['source'] ?? 'family'),
+            /* PENDING until someone with `fees` approves it (admin.payplans.decide):
+               nothing is reminded, late or payable on a plan nobody has said yes to. */
+            'firstDue' => $first, 'startPaid' => plan_payments_total($mid), 'status' => 'pending', 'source' => (string)($agreed['source'] ?? 'family'),
             'createdBy' => mb_substr((string)($agreed['actor'] ?? ''), 0, 80), 'agreedBy' => mb_substr($by, 0, 160), 'agreedAt' => $now, 'termsVersion' => PLAN_TERMS_VERSION,
             'note' => mb_substr(trim((string)($agreed['note'] ?? '')), 0, 600), 'createdAt' => $now, 'updatedAt' => $now]);
         foreach ($q['items'] as $it) db_insert('payment_plan_items', ['planId' => $pid, 'seq' => $it['seq'], 'dueDate' => $it['dueDate'], 'amount' => $it['amount']]);
@@ -318,14 +337,14 @@ function family_plan_pay(array $p): array {
 
 /** For the family account (family_fees_view): the active plan, or whether one can be made. */
 function plan_family_view(array $m, int $payable, bool $joiningOpen): array {
-    $plan = plan_active_for((string)$m['memberId']);
+    $plan = plan_open_for((string)$m['memberId']);
     if ($plan) {
         $s = plan_state($plan, $m, null, $payable);
         return ['plan' => $s, 'planOffer' => null];
     }
     $can = !$joiningOpen && $payable >= PLAN_MIN_COUNT * (defined('MPAY_PART_MIN') ? MPAY_PART_MIN : 1000);
     return ['plan' => null, 'planOffer' => $can ? ['min' => PLAN_MIN_COUNT, 'max' => PLAN_MAX_COUNT, 'frequencies' => array_keys(PLAN_FREQUENCIES),
-        'firstDueMax' => gmdate('Y-m-d', strtotime(plan_today() . 'T00:00:00Z') + PLAN_FIRST_DUE_MAX_DAYS * 86400), 'today' => plan_today(),
+        'firstDueMax' => gmdate('Y-m-d', strtotime(plan_today() . 'T00:00:00Z') + PLAN_FIRST_DUE_MAX_DAYS * 86400), 'today' => plan_today(), 'maxSpanDays' => plan_max_span_days(),
         'graceDays' => PLAN_GRACE_DAYS, 'terms' => PLAN_TERMS, 'termsVersion' => PLAN_TERMS_VERSION] : null];
 }
 
@@ -340,7 +359,7 @@ function plan_admin_gate(array $p, string $planId = ''): array {
     return $g + ['plan' => $plan];
 }
 
-const PLAN_HEALTHS = ['on_track', 'behind', 'broken', 'completed', 'cancelled'];
+const PLAN_HEALTHS = ['pending', 'on_track', 'behind', 'broken', 'completed', 'cancelled', 'declined'];
 
 /**
  * admin.payplans.list — every plan in the reader's centres, with its health
@@ -377,7 +396,7 @@ function admin_plans_list(array $p): array {
     if (in_array($h, PLAN_HEALTHS, true)) $out = array_values(array_filter($out, static fn($x) => $x['health'] === $h));
     elseif ($h === 'open') $out = array_values(array_filter($out, static fn($x) => in_array($x['health'], ['on_track', 'behind', 'broken'], true)));
     // Most urgent first: broken, then behind by days late, then the next due day.
-    $rank = ['broken' => 0, 'behind' => 1, 'on_track' => 2, 'completed' => 3, 'cancelled' => 4];
+    $rank = ['pending' => 0, 'broken' => 1, 'behind' => 2, 'on_track' => 3, 'completed' => 4, 'cancelled' => 5, 'declined' => 6];
     usort($out, static fn($a, $b) => [$rank[$a['health']], -$a['daysLate'], (string)($a['next']['dueDate'] ?? '9999')] <=> [$rank[$b['health']], -$b['daysLate'], (string)($b['next']['dueDate'] ?? '9999')]);
     $total = count($out);
     $size = max(1, min(PLAN_LIST_MAX, (int)($p['pageSize'] ?? 50)));
@@ -419,15 +438,58 @@ function admin_plans_create(array $p): array {
         ['by' => (string)($p['agreedBy'] ?? ''), 'actor' => (string)$g['requester']['memberId'], 'source' => 'staff', 'how' => $how, 'note' => (string)($p['note'] ?? ''), 'ip' => (string)($p['ip'] ?? '')]);
 }
 
+/**
+ * admin.payplans.decide — approve a plan, or decline it with a reason the family
+ * reads. Compare-and-set, so two people pressing at once decide it once. A plan
+ * approved after its first date is RE-DATED from the approval day — same
+ * amounts, same gaps — so nobody is late on a plan NGG had not yet said yes to.
+ */
+function admin_plans_decide(array $p): array {
+    $g = plan_admin_gate($p, (string)($p['planId'] ?? '')); if (!$g['ok']) return $g;
+    $plan = $g['plan'];
+    if ((string)$plan['status'] !== 'pending') return ['ok' => false, 'error' => 'not_pending', 'detail' => 'This plan has already been decided.'];
+    $approve = ($p['decision'] ?? '') === 'approve';
+    $why = trim((string)($p['reason'] ?? ''));
+    if (!$approve && mb_strlen($why) < 8) return ['ok' => false, 'error' => 'reason_required', 'detail' => 'Say why it is not approved, in a sentence the family can read.'];
+    $by = (string)$g['requester']['memberId'];
+    $pid = (string)$plan['planId']; $mid = (string)$plan['memberId'];
+    $today = plan_today();
+    $moved = false;
+    $n = db_tx(static function () use ($approve, $why, $by, $pid, $plan, $today, &$moved) {
+        $n = db_exec("UPDATE payment_plans SET status = ?, cancelReason = ?, cancelledBy = ?, cancelledAt = ?, updatedAt = ? WHERE planId = ? AND status = 'pending'",
+            [$approve ? 'active' : 'declined', $approve ? '' : mb_substr($why, 0, 600), $approve ? '' : $by, $approve ? '' : now_iso(), now_iso(), $pid]);
+        if ($n && $approve && (string)$plan['firstDue'] < $today) {
+            $items = plan_items($pid);
+            foreach (plan_dates($today, count($items), (string)$plan['frequency']) as $i => $d)
+                db_exec('UPDATE payment_plan_items SET dueDate = ? WHERE planId = ? AND seq = ?', [$d, $pid, (int)$items[$i]['seq']]);
+            db_exec('UPDATE payment_plans SET firstDue = ? WHERE planId = ?', [$today, $pid]);
+            $moved = true;
+        }
+        return $n;
+    });
+    if (!$n) return ['ok' => false, 'error' => 'not_pending', 'detail' => 'This plan has already been decided.'];
+    plan_event($pid, $mid, $approve ? 'approved' : 'declined', 0, $by, $approve ? ($moved ? 'Approved; dates moved to start ' . $today : 'Approved') : $why);
+    audit($approve ? 'plan.approved' : 'plan.declined', $by, $mid, ['planId' => $pid, 'reason' => $why, 'redated' => $moved], (string)($p['ip'] ?? ''));
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if ($m && function_exists('dues_notice_send')) {
+        $first = explode(' ', trim((string)$m['fullName']))[0] ?: 'your child';
+        dues_notice_send($m, $approve ? 'plan_approved' : 'plan_declined', $pid, $approve
+            ? ['title' => $first . '’s payment plan is approved', 'text' => 'The plan is running. The dates and amounts are on Fees in the family account; we remind you before each one.']
+            : ['title' => $first . '’s payment plan was not approved', 'text' => $why . ' The balance is owed as normal. You can ask for a different plan from Fees.']);
+    }
+    $fresh = db_row('SELECT * FROM payment_plans WHERE planId = ?', [$pid]);
+    return ['ok' => true, 'plan' => plan_state($fresh, $m ?: null)];
+}
+
 /** admin.payplans.cancel — ends a plan. A reason is required, and the family is told. */
 function admin_plans_cancel(array $p): array {
     $g = plan_admin_gate($p, (string)($p['planId'] ?? '')); if (!$g['ok']) return $g;
     $plan = $g['plan'];
-    if ((string)$plan['status'] !== 'active') return ['ok' => false, 'error' => 'not_active', 'detail' => 'Only an active plan can be ended.'];
+    if (!in_array((string)$plan['status'], ['active', 'pending'], true)) return ['ok' => false, 'error' => 'not_active', 'detail' => 'Only a running or waiting plan can be ended.'];
     $why = trim((string)($p['reason'] ?? ''));
     if (mb_strlen($why) < 8) return ['ok' => false, 'error' => 'reason_required', 'detail' => 'Say why the plan is ending, in a sentence the family can read.'];
     $by = (string)$g['requester']['memberId'];
-    db_exec("UPDATE payment_plans SET status = 'cancelled', cancelledAt = ?, cancelledBy = ?, cancelReason = ?, updatedAt = ? WHERE planId = ? AND status = 'active'",
+    db_exec("UPDATE payment_plans SET status = 'cancelled', cancelledAt = ?, cancelledBy = ?, cancelReason = ?, updatedAt = ? WHERE planId = ? AND status IN ('active','pending')",
         [now_iso(), $by, mb_substr($why, 0, 600), now_iso(), (string)$plan['planId']]);
     plan_event((string)$plan['planId'], (string)$plan['memberId'], 'cancelled', 0, $by, $why);
     audit('plan.cancelled', $by, (string)$plan['memberId'], ['planId' => $plan['planId'], 'reason' => $why], (string)($p['ip'] ?? ''));

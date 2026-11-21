@@ -74,7 +74,7 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>route r
 <script src="/dist/photos.js"></script>
 <script src="/dist/api-client.js"></script>
 <script src="/dist/outbox.js"></script>
-<script src="/dist/app.min.js"></script><script src="/dist/app-more.min.js"></script>
+<script src="/dist/app.min.js"></script><script src="/dist/app-study.min.js"></script><script src="/dist/app-more.min.js"></script>
 <script src="/dist/vendor/tanstack-table.min.js"></script>
 <script>
   window.__reg = {

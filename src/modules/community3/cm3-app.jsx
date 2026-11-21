@@ -20,7 +20,6 @@ const CM3_REACT_LIST = Object.keys(CM3_REACT_NAMES);
 const CM3_TONES = ["#f2c98a", "#b9d5c0", "#c8d1f2", "#f2c4d3", "#d9c9f2", "#f2d8b5", "#bfe0e6", "#e6d7c3"];
 const CM3_KIND = { question: ["Question", "ph ph-question", "#fdf1d6", "#6b4b00"], work: ["Show my work", "ph ph-paint-brush-broad", "#e5efe7", "#1d4f2a"], poll: ["Poll", "ph ph-chart-bar", "#eceefb", "#2a3f9e"], announce: ["Announcement", "ph ph-megaphone", "#0b0b0c", "#ffffff"], homework: ["Homework", "ph ph-backpack", "#fbe7ee", "#7d2347"] };
 const CM3_FEED_FILTER = { all: "all", unread: "unread", mentions: "mentions", questions: "questions", saved: "bookmarks", mine: "mine" };
-const CM3_VIDEO_EXT = /\.(mp4|mov|webm|m4v)$/i;
 
 function cm3Tone(key) { let h = 0; for (const c of String(key || "")) h = (h * 31 + c.codePointAt(0)) >>> 0; return CM3_TONES[h % CM3_TONES.length]; }
 function cm3Ini(name) { return String(name || "?").split(/\s+/).filter(Boolean).map(x => x[0]).slice(0, 2).join("").toUpperCase() || "?"; }

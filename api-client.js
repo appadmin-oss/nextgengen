@@ -815,6 +815,28 @@
        hands back the image inline when there is not. Never fails because
        Cloudinary is unconfigured. */
     uploadOrInline: uploadOrInline,
+    /* A photo of a signed document that must stay READABLE (the inked Membership
+       Agreement): the cloud at the 'proof' size (2000px) when there is one; else
+       the same 2000px copy into this site's photo store — never the 1000px inline
+       size the headshot fallback uses, at which a signature page cannot be read. */
+    uploadDocumentPhoto: async (file, onProgress) => {
+      const cfg = await getConfig();
+      if (cfg && cfg.uploads && cfg.uploads.enabled) {
+        try { return Object.assign({ local: false }, await uploadFile(file, 'proof', onProgress)); } catch (_) { /* the photo store below */ }
+      }
+      let url = file;
+      try { const tools = await ensureImageTools(); const prep = await tools.prepare(file, SHRINK.proof); url = !prep.skipped && prep.blob ? prep.blob : file; } catch (_) {}
+      let data = typeSendable(url && url.type) ? await blobToDataUrl(url) : '';
+      for (const step of [{ maxPx: 2000, quality: 0.8 }, { maxPx: 1800, quality: 0.72 }]) {
+        if (data && data.length <= 4600000 && /^data:image\/(jpeg|png|webp);/.test(data)) break;
+        const shrunk = await canvasShrink(file, step.maxPx, step.quality, 320);
+        if (!shrunk) break;
+        data = await blobToDataUrl(shrunk);
+      }
+      const stored = await storeInPieces(data, onProgress);
+      if (!stored) throw new Error('The photograph couldn’t be stored. Check the connection and try again.');
+      return { url: stored, local: true };
+    },
     /* A photo of a document (a school report) as a data URL, at the size the
        'proof' preset uses: every score on it has to stay readable, which the
        1000px inline size does not promise. Never above 3.5MB of base64, the
@@ -1134,6 +1156,7 @@
         mine:     () => request('/member/registration-checklist.php' + qs({ view: 'mine' })),
         progress: () => request('/member/registration-checklist.php' + qs({ view: 'progress' })),
         submit:   (body) => request('/member/registration-checklist.php', { body: Object.assign({}, body || {}, { action: 'submit' }) }),
+        followup: (body) => request('/member/registration-checklist.php', { body: Object.assign({}, body || {}, { action: 'followup' }) }),
       },
       volunteerBank: (d) => request('/member/volunteer-pay.php', { body: { action: 'bank', bankName: d.bankName, accountNumber: d.accountNumber, accountName: d.accountName } }),
       /* Self-service. No memberId travels in any of these — the server reads it
@@ -1423,6 +1446,11 @@
       programme: (program) => request('/public/programme.php' + qs({ program: program === 'summer' ? 'summer' : 'anchor' })),
       testimonials: () => request('/public/testimonials.php'),
       // A family's joining invoice, by its private token (/pay/<token>).
+      // The Membership Agreement by its private link (domain/mou.php).
+      mou:               (token) => request('/public/mou.php' + qs({ token })),
+      mouSign:           (body) => request('/public/mou.php', { body }),
+      // The agreement to print and sign in ink (the family's own link).
+      mouPrintUrl:       (token) => '/api/public/mou.php' + qs({ print: token }),
       membershipInvoice: (token) => request('/public/membership-pay.php' + qs({ token })),
       photoFraming:      (urls) => request('/public/photo-framing.php' + qs({ u: JSON.stringify(urls) })),
       membershipPay:     (token) => request('/public/membership-pay.php', { body: { action: 'init', token } }),
@@ -1431,7 +1459,8 @@
          everything: a cart is product ids, options and quantities. */
       shop: {
         list:  () => request('/public/shop.php'),
-        quote: (items, fulfil) => request('/public/shop.php', { body: { items, fulfil } }),
+        quote: (items, fulfil, code, email) => request('/public/shop.php', { body: { items, fulfil, code: code || '', buyer: { email: email || '' } } }),
+        pay:   (token) => request('/public/shop.php', { body: { action: 'pay', token } }),
         order: (o) => request('/public/shop.php', { body: Object.assign({ action: 'order' }, o) }),
         // An order by its private link; with Paystack's reference the server confirms it first.
         get:   (token, reference) => request('/public/shop.php' + qs({ token, reference: reference || '' })),
@@ -1817,6 +1846,13 @@
         health:    (o) => request('/admin/courses.php' + qs(Object.assign({ view: 'health' }, o || {}))),
         set:       (action, memberIds, extra) => request('/admin/courses.php', { body: Object.assign({ action, memberIds }, extra || {}) }),
       },
+      /* Membership Agreements (domain/mou.php). Capability: people. */
+      mou: {
+        list:   (o) => request('/admin/mou.php' + qs(Object.assign({ view: 'list' }, o || {}))),
+        get:    (mouId) => request('/admin/mou.php' + qs({ view: 'get', mouId })),
+        docUrl: (mouId) => '/api/admin/mou.php' + qs({ view: 'doc', mouId }),
+        act:    (action, body) => request('/admin/mou.php', { body: Object.assign({}, body || {}, { action }) }),
+      },
       /* The registration checklist (domain/registration-checklist.php). Capability: people. */
       regcheck: {
         list:    (o) => request('/admin/registration-checklist.php' + qs(Object.assign({ view: 'list' }, o || {}))),
@@ -1912,8 +1948,27 @@
       shop: {
         products:    () => request('/admin/shop.php' + qs({ what: 'products' })),
         productSave: (data) => request('/admin/shop.php', { body: { action: 'product', data } }),
-        orders:      (f) => request('/admin/shop.php' + qs({ what: 'orders', status: (f && f.status) || '', q: (f && f.q) || '' })),
-        orderSet:    (orderId, status, reason) => request('/admin/shop.php', { body: { action: 'order', orderId, status, reason: reason || '' } }),
+        orders:      (f) => request('/admin/shop.php' + qs(Object.assign({ what: 'orders' }, f || {}))),
+        orderSet:    (orderId, status, reason, x) => request('/admin/shop.php', { body: Object.assign({ action: 'order', orderId, status, reason: reason || '' }, x || {}) }),
+        order:       (orderId) => request('/admin/shop.php' + qs({ what: 'order', orderId })),
+        note:        (orderId, text) => request('/admin/shop.php', { body: { action: 'note', orderId, text } }),
+        remind:      (orderId) => request('/admin/shop.php', { body: { action: 'remind', orderId } }),
+        exchange:    (orderId, line, to, qty) => request('/admin/shop.php', { body: { action: 'exchange', orderId, line, to, qty } }),
+        refund:      (r) => request('/admin/shop.php', { body: Object.assign({ action: 'refund' }, r) }),
+        refundCheck: (refundId) => request('/admin/shop.php', { body: { action: 'refundCheck', refundId } }),
+        stock:       () => request('/admin/shop.php' + qs({ what: 'stock' })),
+        history:     (productId, variant) => request('/admin/shop.php' + qs(variant == null ? { what: 'history', productId } : { what: 'history', productId, variant })),
+        adjust:      (a) => request('/admin/shop.php', { body: Object.assign({ action: 'adjust' }, a) }),
+        stocktake:   (counts, note) => request('/admin/shop.php', { body: { action: 'stocktake', counts, note: note || '' } }),
+        codes:       () => request('/admin/shop.php' + qs({ what: 'codes' })),
+        codeSave:    (data) => request('/admin/shop.php', { body: { action: 'code', data } }),
+        pos:         () => request('/admin/shop.php' + qs({ what: 'pos' })),
+        sale:        (s) => request('/admin/shop.php', { body: Object.assign({ action: 'sale' }, s) }),
+        sessionOpen: (s) => request('/admin/shop.php', { body: Object.assign({ action: 'sessionOpen' }, s) }),
+        sessionClose:(s) => request('/admin/shop.php', { body: Object.assign({ action: 'sessionClose' }, s) }),
+        sessions:    (sessionId) => request('/admin/shop.php' + qs({ what: 'sessions', sessionId: sessionId || '' })),
+        report:      (f) => request('/admin/shop.php' + qs(Object.assign({ what: 'report' }, f || {}))),
+        exportRows:  (f) => request('/admin/shop.php' + qs(Object.assign({ what: 'export' }, f || {}))),
         settings:    () => request('/admin/shop.php' + qs({ what: 'settings' })),
         settingsSet: (data) => request('/admin/shop.php', { body: { action: 'settings', data } }),
       },
@@ -2209,6 +2264,7 @@
         of:     (memberId) => request('/admin/payplans.php' + qs({ view: 'for', memberId })),
         create: (d) => request('/admin/payplans.php', { body: Object.assign({ action: 'create' }, d) }),
         cancel: (planId, reason) => request('/admin/payplans.php', { body: { action: 'cancel', planId, reason } }),
+        decide: (planId, decision, reason) => request('/admin/payplans.php', { body: { action: 'decide', planId, decision, reason } }),
         note:   (planId, text) => request('/admin/payplans.php', { body: { action: 'note', planId, text } }),
       },
       fees: {
@@ -2593,7 +2649,7 @@
       status:      (to, ids) => request(path, { body: { action: 'status', to, ids } }),
       remind:      (assignmentId, force) => request(path, { body: { action: 'remind', assignmentId, force: !!force } }),
       grade:       (submissionId, grade, feedback, email) => request(path, { body: { action: 'grade', submissionId, grade, feedback: feedback || '', email: !!email } }),
-      giveBack:    (submissionId, feedback) => request(path, { body: { action: 'return', submissionId, feedback } }),
+      giveBack:    (submissionId, feedback, resubmitBy) => request(path, { body: { action: 'return', submissionId, feedback, resubmitBy: resubmitBy || '' } }),
       suggest:     (submissionId) => request(path, { body: { action: 'suggest', submissionId }, timeout: 90000 }),
       draft:       (unitId, ai) => request(path, { body: { action: 'draft', unitId, ai: !!ai }, timeout: 90000 }),
       auto:        (on) => request(path, { body: { action: 'auto', on: !!on }, timeout: 60000 }),

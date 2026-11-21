@@ -289,6 +289,7 @@ function member_merge_policy(): array {
         'member_ledger'          => 'BLOCK',          // money: never combined silently
         'membership_invoices'    => 'BLOCK',          // a joining invoice and its receipt name one member
         'offline_payments'       => 'BLOCK',          // evidence of money paid for one member
+        'mou_agreements'         => 'BLOCK',          // a signed Membership Agreement names one child and their family; never re-addressed
         'documents'              => 'BLOCK',          // an issued invoice, receipt or certificate names one member; it is never re-addressed
         'unapplied_payments'     => 'BLOCK',          // money that arrived for one member, not yet decided
         'payment_plans'          => 'BLOCK',          // an instalment plan agreed for one member's balance (payment-plans.php)
@@ -342,6 +343,7 @@ function member_merge_policy(): array {
         'reg_checklist_state'    => 'MOVE_UNIQUE',
         'reg_checklist_submissions' => 'MOVE',
         'reg_checklist_sends'    => 'MOVE',
+        'reg_checklist_followups' => 'MOVE',         // the follow-up log is the survivor's history too
         'guardian_notices'       => 'MOVE',           // a report about the child stays about the child
         'mentor_slots'           => 'MOVE',           // a booked family meeting follows the child
         'member_collectors'      => 'MOVE',           // who may collect them is a fact about the child

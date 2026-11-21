@@ -1557,7 +1557,7 @@ function MembershipPayPage({ setPage }) {
                 {inv.items.map((it, i) => <tr key={i}><td><b>{it.label}</b>{it.detail ? <span>{it.detail}</span> : null}</td><td>{money(it.amount)}</td></tr>)}
               </tbody>
               <tfoot>
-                {inv.status === "paid" && inv.onlineFee > 0 && <tr className="mpay-charge"><td><b>Paystack charge</b><span>For paying online — not an NGG fee</span></td><td>{money(inv.onlineFee)}</td></tr>}
+                {inv.status === "paid" && inv.onlineFee > 0 && <tr className="mpay-charge"><td><b>Payment processing fee</b><span>Charged by our payment provider</span></td><td>{money(inv.onlineFee)}</td></tr>}
                 <tr><td>{inv.status === "paid" ? "Total paid" : "Total to pay"}</td><td>{money(inv.total + (inv.status === "paid" ? (inv.onlineFee || 0) : 0))}</td></tr>
               </tfoot>
             </table>
@@ -1574,15 +1574,18 @@ function MembershipPayPage({ setPage }) {
               <div className="mpay-done">
                 <p>Paid {inv.paidAt ? new Date(inv.paidAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : ""}. Receipt <b>{inv.receiptNo}</b> has been emailed to you.</p>
                 <a className="btn btn-primary" href={inv.receiptUrl} target="_blank" rel="noopener noreferrer">View and print the receipt</a>
+                {/* Drawn on the server (domain/receipt-draw.php): files a phone keeps or shares, with nothing to render. */}
+                <a className="btn btn-ghost" href={inv.receiptUrl + (inv.receiptUrl.indexOf("?") >= 0 ? "&" : "?") + "as=pdf"} download>Download PDF</a>
+                <a className="btn btn-ghost" href={inv.receiptUrl + (inv.receiptUrl.indexOf("?") >= 0 ? "&" : "?") + "as=png"} download>Download image</a>
                 {inv.invoiceUrl && <a className="btn btn-ghost" href={inv.invoiceUrl} target="_blank" rel="noopener noreferrer">View the invoice</a>}
               </div>
             ) : inv.status === "void" ? (
               <div className="mpay-msg"><p>{inv.purpose === "part" ? "This instalment was replaced: a new amount was asked for, or less is owed now. Open the family account to pay what is owed today." : inv.purpose === "balance" || inv.purpose === "advance" ? "This amount is out of date because the account changed. Open the account again and press Pay online for the current figure." : "This invoice was cancelled. Contact your centre if you think that is a mistake."}</p></div>
             ) : settle ? (
               <div className="mpay-note mpay-settle" role="status" aria-live="polite">
-                <b>{settle.long ? "Paystack still hasn’t confirmed this payment." : "Paystack is still confirming your payment."}</b>
+                <b>{settle.long ? "This payment still hasn’t been confirmed." : "Your payment is still being confirmed."}</b>
                 {settle.long
-                  ? " If money left your account it is applied as soon as Paystack confirms it, and your receipt is emailed then. You can close this page. If nothing arrives within the day, contact your centre with invoice " + inv.invoiceId + "."
+                  ? " If money left your account it is applied as soon as it is confirmed, and your receipt is emailed then. You can close this page. If nothing arrives within the day, contact your centre with invoice " + inv.invoiceId + "."
                   : " Transfers and some banks take a few minutes. This page checks again by itself. Please don’t pay again."}
                 <div className="mpay-settle-do">
                   {settle.long && <button type="button" className="btn btn-ghost" onClick={load}>Check again</button>}
@@ -4919,8 +4922,15 @@ function QRScanner({ onToken }) {
   const [facing, setFacing] = React.useState("environment");
   const [multiCam, setMultiCam] = React.useState(false);
 
+  const [qrReady, setQrReady] = React.useState(0);   // bumped when jsQR arrives, to start the reader
   React.useEffect(() => {
-    if (typeof window === "undefined" || typeof window.jsQR !== "function") { setState("nolib"); return; }
+    /* jsQR (128 KB) is fetched when a camera reader opens, not by every page. */
+    if (typeof window === "undefined") { setState("nolib"); return; }
+    if (typeof window.jsQR !== "function") {
+      let gone = false;
+      loadVendorAsset("/vendor/jsQR.min.js", "js").then(() => { if (!gone) setQrReady(r => r + 1); }, () => { if (!gone) setState("nolib"); });
+      return () => { gone = true; };
+    }
     let cancelled = false;
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -4964,7 +4974,7 @@ function QRScanner({ onToken }) {
     // Re-runs on `facing`; the cleanup stops the old stream first, because a
     // phone will not hand out both lenses at once.
     return () => { cancelled = true; if (rafRef.current) cancelAnimationFrame(rafRef.current); if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } };
-  }, [facing]);
+  }, [facing, qrReady]);
 
   const flashing = hit && (Date.now() - hit < 700);
   if (state === "nolib" || state === "denied") {

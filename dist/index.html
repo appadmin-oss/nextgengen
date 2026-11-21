@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="ngg-build" content="f4f3b94e82"/>
+<meta name="ngg-build" content="4c21e5784f"/>
 <meta charset="utf-8"/>
 <!-- Resolve every relative asset from the site root so deep clean-URL paths
      (e.g. /q/<token>, /s/<handle>) still load app.jsx / styles.css correctly. -->
@@ -73,7 +73,7 @@
      did not whitelist either pays for them or waits for a timeout.
      See docs/ZERO-RATING.md for the inventory an operator is handed. -->
 <!-- Phosphor icons (self-hosted, CSP-safe, offline) — used by the transparency status boards. -->
-<link rel="stylesheet" href="/vendor/phosphor/phosphor.css"/>
+<link rel="stylesheet" href="/phosphor-used.b694d33560.css"/>
 <!-- Self-hosted Space Grotesk / Space Mono (+ Bricolage) for the Anchor Circle portal — CSP-safe, works offline. -->
 <link rel="stylesheet" href="/assets/fonts/fonts.css"/>
 
@@ -81,8 +81,8 @@
 <link rel="preload" as="image" href="assets/logo.png"/>
 <link rel="preload" as="font" type="font/woff2" href="/assets/fonts/sora-latin-variable.woff2" crossorigin/>
 
-<link rel="stylesheet" href="styles.b9f8fcc1fd.css"/>
-<link rel="stylesheet" href="styles-app.3c1b4df635.css"/>
+<link rel="stylesheet" href="styles.c97b206628.css"/>
+<link rel="stylesheet" href="styles-app-public.74238a9606.css" id="ngg-app-css"/>
 
 <style>
   /* Pre-React loading shim — avoids blank-flash on first paint over slow shared hosting */
@@ -128,18 +128,15 @@
 
 <script src="vendor/react.production.min.js"></script>
 <script src="vendor/react-dom.production.min.js"></script>
-<link rel="preload" as="script" href="app.e139de4bde.min.js"/>
-<meta name="ngg-more" content="/app-more.6975a5e53f.min.js"/>
+<link rel="preload" as="script" href="app.bccd9b6f88.min.js"/>
+<meta name="ngg-more" content="/app-more.8b15300b6e.min.js"/>
+<meta name="ngg-more-css" content="/styles-app.6cb97fe880.css"/>
+<meta name="ngg-study" content="/app-study.a1a565d914.min.js"/>
 <script defer src="data.ec97c65376.js"></script>
 <script defer src="photos.36b0b4ea72.js"></script>
-<script defer src="api-client.b35462c245.js"></script>
+<script defer src="api-client.49fbc1bde9.js"></script>
 <script defer src="outbox.042a8c9122.js"></script>
-<script defer src="app.e139de4bde.min.js"></script>
-<script src="vendor/tanstack-table.min.js"></script>
-<!-- QR decoder for the camera-first check-in kiosk (window.jsQR). Plain vendor
-     script, so the prod build keeps it (only Babel + JSX tags are stripped). -->
-<script src="vendor/jsQR.min.js" defer></script>
-
+<script defer src="app.bccd9b6f88.min.js"></script>
 <!-- The Learn app (/learn): the curriculum as its own place, not a sheet. -->
 <script>
   // Fade out boot screen after React mounts

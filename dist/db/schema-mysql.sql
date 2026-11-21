@@ -5349,7 +5349,121 @@ CREATE TABLE IF NOT EXISTS shop_orders (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (237) ON DUPLICATE KEY UPDATE version = version;
 
--- 238 — instalment plans (domain/payment-plans.php): the agreement, its dated instalments, and the accountability log.
+-- ── 238 · Managing the shop (domain/shop-manage.php): the stock ledger, order timelines, refunds, cash sessions, codes ──
+ALTER TABLE shop_products ADD COLUMN lowStock INT NOT NULL DEFAULT -1;
+ALTER TABLE shop_products ADD COLUMN preorderUntil VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN channel VARCHAR(12) NOT NULL DEFAULT 'online';
+ALTER TABLE shop_orders ADD COLUMN payMethod VARCHAR(16) NOT NULL DEFAULT 'paystack';
+ALTER TABLE shop_orders ADD COLUMN sessionId VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN pickupCode VARCHAR(8) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN gatewayFee INT NOT NULL DEFAULT 0;
+ALTER TABLE shop_orders ADD COLUMN refunded INT NOT NULL DEFAULT 0;
+ALTER TABLE shop_orders ADD COLUMN refundState VARCHAR(12) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN cancelKind VARCHAR(12) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN cancelledAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN remindedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN tracking VARCHAR(300) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN discountCode VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE shop_orders ADD COLUMN discount INT NOT NULL DEFAULT 0;
+ALTER TABLE shop_orders MODIFY COLUMN note TEXT;
+CREATE INDEX idx_shop_orders_paid ON shop_orders(paidAt);
+CREATE INDEX idx_shop_orders_created ON shop_orders(createdAt);
+CREATE INDEX idx_shop_orders_session ON shop_orders(sessionId);
+CREATE TABLE IF NOT EXISTS shop_stock_moves (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  productId VARCHAR(24) NOT NULL, variant VARCHAR(40) NOT NULL DEFAULT '', delta INT NOT NULL DEFAULT 0, balance INT NOT NULL DEFAULT 0,
+  reason VARCHAR(16) NOT NULL DEFAULT '', note VARCHAR(300) NOT NULL DEFAULT '', orderId VARCHAR(32) NOT NULL DEFAULT '', byId VARCHAR(64) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_shop_moves_product (productId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_order_events (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  orderId VARCHAR(32) NOT NULL, kind VARCHAR(16) NOT NULL DEFAULT '', text VARCHAR(1000) NOT NULL DEFAULT '', byId VARCHAR(64) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_shop_events_order (orderId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_refunds (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  refundId VARCHAR(32) NOT NULL, orderId VARCHAR(32) NOT NULL, amount INT NOT NULL DEFAULT 0, method VARCHAR(12) NOT NULL DEFAULT 'paystack',
+  status VARCHAR(12) NOT NULL DEFAULT 'pending', gatewayId VARCHAR(40) NOT NULL DEFAULT '', reason VARCHAR(300) NOT NULL DEFAULT '', restock TEXT,
+  byId VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '', processedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_shop_refund (refundId), KEY idx_shop_refunds_order (orderId), KEY idx_shop_refunds_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_cash_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sessionId VARCHAR(32) NOT NULL, label VARCHAR(80) NOT NULL DEFAULT '', centre VARCHAR(160) NOT NULL DEFAULT '', centreId VARCHAR(48) NOT NULL DEFAULT '', openingFloat INT NOT NULL DEFAULT 0,
+  status VARCHAR(8) NOT NULL DEFAULT 'open', openedBy VARCHAR(64) NOT NULL DEFAULT '', openedAt VARCHAR(32) NOT NULL DEFAULT '',
+  closedBy VARCHAR(64) NOT NULL DEFAULT '', closedAt VARCHAR(32) NOT NULL DEFAULT '', expected INT NOT NULL DEFAULT 0, counted INT NOT NULL DEFAULT 0,
+  difference INT NOT NULL DEFAULT 0, note VARCHAR(300) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_shop_session (sessionId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS shop_codes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(32) NOT NULL, kind VARCHAR(8) NOT NULL DEFAULT 'percent', amount INT NOT NULL DEFAULT 0, maxUses INT NOT NULL DEFAULT 0,
+  perBuyer TINYINT NOT NULL DEFAULT 1, minSpend INT NOT NULL DEFAULT 0, startsAt VARCHAR(10) NOT NULL DEFAULT '', endsAt VARCHAR(10) NOT NULL DEFAULT '',
+  status VARCHAR(12) NOT NULL DEFAULT 'active', used INT NOT NULL DEFAULT 0, note VARCHAR(300) NOT NULL DEFAULT '',
+  byId VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_shop_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (238) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 239 · The Membership Agreement (MoU), signed online (domain/mou.php) ──
+CREATE TABLE IF NOT EXISTS mou_agreements (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  mouId VARCHAR(32) NOT NULL, memberId VARCHAR(48) NOT NULL, version VARCHAR(16) NOT NULL DEFAULT '', status VARCHAR(20) NOT NULL DEFAULT 'awaiting_family',
+  tokenHash VARCHAR(64) NOT NULL DEFAULT '', tokenExp VARCHAR(32) NOT NULL DEFAULT '', docTokenHash VARCHAR(64) NOT NULL DEFAULT '',
+  termsJson TEXT, prefillJson TEXT, familyJson TEXT, memberJson TEXT,
+  tripsChoice VARCHAR(12) NOT NULL DEFAULT '', quizPassedAt VARCHAR(32) NOT NULL DEFAULT '', quizAttempts INT NOT NULL DEFAULT 0,
+  sentAt VARCHAR(32) NOT NULL DEFAULT '', sentTo VARCHAR(600) NOT NULL DEFAULT '', viewedAt VARCHAR(32) NOT NULL DEFAULT '',
+  clientName VARCHAR(160) NOT NULL DEFAULT '', clientRel VARCHAR(16) NOT NULL DEFAULT '', clientSignature MEDIUMTEXT, clientSignedAt VARCHAR(32) NOT NULL DEFAULT '', clientIp VARCHAR(64) NOT NULL DEFAULT '',
+  witnessName VARCHAR(160) NOT NULL DEFAULT '', witnessPhone VARCHAR(32) NOT NULL DEFAULT '', witnessSignature MEDIUMTEXT, witnessSignedAt VARCHAR(32) NOT NULL DEFAULT '', witnessBy VARCHAR(16) NOT NULL DEFAULT '',
+  nggName VARCHAR(160) NOT NULL DEFAULT '', nggRole VARCHAR(120) NOT NULL DEFAULT '', nggById VARCHAR(48) NOT NULL DEFAULT '', nggSignature MEDIUMTEXT, nggSignedAt VARCHAR(32) NOT NULL DEFAULT '',
+  docHash VARCHAR(64) NOT NULL DEFAULT '', familyMailedAt VARCHAR(32) NOT NULL DEFAULT '', finalMailedAt VARCHAR(32) NOT NULL DEFAULT '',
+  voidReason VARCHAR(400) NOT NULL DEFAULT '', voidedAt VARCHAR(32) NOT NULL DEFAULT '', voidedBy VARCHAR(48) NOT NULL DEFAULT '',
+  createdBy VARCHAR(48) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_mou (mouId), KEY idx_mou_member (memberId, status), KEY idx_mou_status (status), KEY idx_mou_token (tokenHash), KEY idx_mou_doc (docTokenHash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (239) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 240 · NGG entry steps: checklist steps, resumption day, follow-ups, the signed paper MoU ──
+ALTER TABLE reg_checklist_items ADD COLUMN step VARCHAR(16) NOT NULL DEFAULT 'documents';
+ALTER TABLE reg_checklists ADD COLUMN resumedOn VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE reg_checklists ADD COLUMN lastProgressAt VARCHAR(40) NOT NULL DEFAULT '';
+ALTER TABLE reg_checklists ADD COLUMN nextFollowUpOn VARCHAR(10) NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS reg_checklist_followups (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, channel VARCHAR(16) NOT NULL DEFAULT 'call', outcome VARCHAR(24) NOT NULL DEFAULT '', note VARCHAR(500) NOT NULL DEFAULT '',
+  nextOn VARCHAR(10) NOT NULL DEFAULT '', byId VARCHAR(64) NOT NULL DEFAULT '', byName VARCHAR(160) NOT NULL DEFAULT '', createdAt VARCHAR(40) NOT NULL DEFAULT '',
+  KEY idx_rcl_fu (memberId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE INDEX idx_rcl_next ON reg_checklists(status, nextFollowUpOn);
+ALTER TABLE mou_agreements ADD COLUMN signedVia VARCHAR(12) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperUrl VARCHAR(600) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperChecks VARCHAR(400) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperReceivedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperReceivedBy VARCHAR(48) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperByName VARCHAR(160) NOT NULL DEFAULT '';
+ALTER TABLE mou_agreements ADD COLUMN paperCentre VARCHAR(120) NOT NULL DEFAULT '';
+INSERT IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+  VALUES ('RCI-ORIENTATION', 'Orientation attended', 'The child and a parent or guardian came to orientation at the centre, and it covered the policies, the membership fee, the monthly commitment fee and the NGG T-shirt. Note who came and any question they asked.', 'none', 1, 0, 10, 'active', 'orientation', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+INSERT IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+  VALUES ('RCI-FILE', 'File handed in', 'The member’s file (folder) has been handed in at the centre, with their name on it.', 'none', 1, 0, 20, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+INSERT IGNORE INTO reg_checklist_items (itemId, title, help, evidence, presence, maxAgeDays, sort, status, step, createdAt, createdBy, updatedAt)
+  VALUES ('RCI-REPORTCARD', 'Latest school report card', 'Photograph or scan the member’s most recent school report card: every page, readable. Give the date on it.', 'document', 0, 400, 30, 'active', 'documents', '2026-11-18T00:00:00Z', 'system', '2026-11-18T00:00:00Z');
+INSERT INTO schema_version (version) VALUES (240) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 241 · WhatsApp replies: a number that answered STOP to registration reminders ──
+CREATE TABLE IF NOT EXISTS whatsapp_optout (
+  phone VARCHAR(32) NOT NULL PRIMARY KEY, at VARCHAR(32) NOT NULL DEFAULT '', via VARCHAR(24) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (241) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 242 · Assignments: a returned hand-in's "resubmit by" date, and time-to-mark ──
+ALTER TABLE assignment_submissions ADD COLUMN resubmitBy VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE assignment_submissions ADD COLUMN markMinutes INT NULL;
+CREATE INDEX idx_sub_status ON assignment_submissions(status);
+INSERT INTO schema_version (version) VALUES (242) ON DUPLICATE KEY UPDATE version = version;
+-- 243 — instalment plans (domain/payment-plans.php): the agreement, its dated instalments, and the accountability log.
 CREATE TABLE IF NOT EXISTS payment_plans (
   id INT AUTO_INCREMENT PRIMARY KEY,
   planId VARCHAR(40) NOT NULL, memberId VARCHAR(64) NOT NULL,
@@ -5373,9 +5487,9 @@ CREATE TABLE IF NOT EXISTS payment_plan_events (
   actor VARCHAR(160) NOT NULL DEFAULT '', detail VARCHAR(600) NOT NULL DEFAULT '', amount INT NOT NULL DEFAULT 0, at VARCHAR(32) NOT NULL DEFAULT '',
   KEY idx_payment_plan_events_plan (planId, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-INSERT INTO schema_version (version) VALUES (238) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (243) ON DUPLICATE KEY UPDATE version = version;
 
--- 239 — instructor management (domain/instructor-admin.php): leave, offboarding, safeguarding expiry, reviews; the people record.
+-- 244 — instructor management (domain/instructor-admin.php): leave, offboarding, safeguarding expiry, reviews; the people record.
 ALTER TABLE volunteers ADD COLUMN leaveFrom VARCHAR(10) NOT NULL DEFAULT '';
 ALTER TABLE volunteers ADD COLUMN leaveUntil VARCHAR(10) NOT NULL DEFAULT '';
 ALTER TABLE volunteers ADD COLUMN leaveReason VARCHAR(600) NOT NULL DEFAULT '';
@@ -5391,8 +5505,14 @@ CREATE TABLE IF NOT EXISTS people_notes (
   text VARCHAR(2000) NOT NULL DEFAULT '', actor VARCHAR(80) NOT NULL DEFAULT '', at VARCHAR(32) NOT NULL DEFAULT '',
   KEY idx_people_notes_subject (subjectType, subjectId, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-INSERT INTO schema_version (version) VALUES (239) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (244) ON DUPLICATE KEY UPDATE version = version;
 
--- 240 — a payment that names the charges it pays (fees_allocate).
+-- 245 — a payment that names the charges it pays (fees_allocate). (240 on the finme line.)
 ALTER TABLE member_ledger ADD COLUMN appliesTo VARCHAR(2000) NOT NULL DEFAULT '';
-INSERT INTO schema_version (version) VALUES (240) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (245) ON DUPLICATE KEY UPDATE version = version;
+
+-- 246 — the finme and brave-faraday lines merged. On SQLite it replays 238-244 for a database built from a
+-- finme zip (which stands at 240 and would skip them). On MySQL, which is applied by hand from this file:
+-- a database at 240 from the finme line must apply the 238-244 sections above (the shop, the Membership
+-- Agreement, entry steps, WhatsApp opt-outs, hand-ins); a duplicate-column error there means it is already in.
+INSERT INTO schema_version (version) VALUES (246) ON DUPLICATE KEY UPDATE version = version;

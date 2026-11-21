@@ -499,6 +499,26 @@ registration checklist; a member accepted from an application gets theirs at
 once. A named **supervisor** at the member's centre helps them through it, and
 the member and their guardians see how far along they are.
 
+**It follows the NGG entry steps** — the card NGG hands a family: *Enquiry ·
+Orientation · Payment · Submit documents · Online registration · ID card · Attend
+lectures.* Every item sits in one step, and the checklist reads in that order.
+Enquiry is behind the family before the checklist exists (the application at
+/join). **Attend lectures is not an item anyone ticks: the day the last item is
+done is the day the member resumes.** That date is recorded once (*Resumed* on
+the member's checklist, and on the list) and never moves, even if an item is
+reopened later; the family, the member and the supervisor are told that day.
+
+| Step | Items on every checklist by default |
+|---|---|
+| Orientation | **Orientation attended** — at the centre, covering the policies, the membership fee, the monthly commitment fee and the NGG T-shirt (a note of who came). |
+| Payment | **Joining fees paid** — the joining invoice (membership fee and first month's commitment fee), while fees are switched on. |
+| Submit documents | **File handed in**; **Passport photograph** (on the record); **Membership Agreement (MoU) handed in** (see below); **Latest school report card** (a photo or scan, dated within 400 days); **Personal timetable on the site** — the member's school week entered at /timetable, signed in as them, with lessons on at least three school days. |
+| Online registration | Guardian linked, consents, date of birth, school, emergency contact, courses placed. |
+| ID card | **ID card printed** (a proof does not count). |
+
+Orientation, the file and the report card are ordinary items staff added: you
+may change, reorder or retire them like any other. A new item asks for its step.
+
 The checklist has two kinds of item:
 
 - **From the record.** Guardian linked, consents recorded (taking part,
@@ -523,6 +543,7 @@ The checklist has two kinds of item:
 | Add, change, reorder or retire an item | **Add an item** at the top; open an item under **Items staff added** to **Change**, **Move up**, **Move down** or **Retire** it. A retired item leaves every checklist but keeps its history; **Bring it back** restores it. |
 | Start checklists for members who joined before this existed | **Start N checklists** at the top (at most 500 a press; it says how many are left). Nobody is told until a supervisor is assigned. |
 | Help a member yourself | Assign yourself, then use **Show: Mine to help**. Open the member and press **Submit** (or **Check again** for an item from the record). |
+| Chase the ones that are stuck | **Show: Needs a follow-up** — a follow-up is due today, or nothing has moved in 14 days. Open each, call or message the family, then **Log a follow-up**: how, what happened, a note, and the day to try next (required while they are still registering, at most 60 days ahead). Every follow-up is listed on the member, newest first. |
 
 **Who may supervise.** Staff holding `people` whose centres include the
 member's; an NGG mentor at that centre whose screening is recorded; an NGG
@@ -541,10 +562,19 @@ than the item allows, comes from the member's assigned supervisor, and — when
 the item says so — the supervisor checked in at the member's centre that day.
 A refused attempt says why in words, and is kept.
 
-**Who is told.** The supervisor, in the app, when they are assigned and once a
-week while any of their members has items open. The guardians, by email and
-in the family account, once a week, with only the things the family can do
-(consents, the photo, date of birth, school, an emergency contact, the fee).
+**Who is told — the follow-ups.** Nothing waits on somebody remembering.
+- **The family**, by email and in the family account, on day 1, day 3 and
+  day 7 after the checklist starts, then weekly — only while something is
+  needed from them, and in words of what to **bring** and **where** ("the
+  printed Membership Agreement, signed by a parent and a witness … bring
+  things to Egbeda on a meeting day"). It stops the day registration is done.
+- **The supervisor**, in the app, when assigned, once a week while any of
+  their members is open, and on the day a follow-up they logged falls due.
+- **Staff with `people` for that centre**, once a day, when a registration
+  has made no progress in 14 days, or a follow-up is due and nobody is
+  helping. A follow-up logged as *They may not continue* goes to the inbox
+  as a member request, for a person to decide.
+- Every checklist starts with its first follow-up due three days on.
 The member sees "Your registration: 6 of 9 done" on **Me**, with what is left
 and the supervisor's first name; a guardian sees the same on **Today**. Neither
 sees any evidence, or anyone else's.
@@ -1270,8 +1300,8 @@ things settle a Paystack payment, and any one of them is enough:
 
 So a family who paid by transfer and closed the tab is settled within about ten
 minutes even if the webhook never arrives. When the family comes back before
-Paystack has finished, the pay page says **"Paystack is still confirming your
-payment… please don't pay again"** and checks again by itself. It no longer shows
+Paystack has finished, the pay page says **"Your payment is still being
+confirmed… please don't pay again"** and checks again by itself. It no longer shows
 the Pay button straight away. A payment Paystack marks *failed* is said as failed.
 
 **When a payment does not go through.** If Paystack reports an online payment as
@@ -2101,6 +2131,34 @@ homework is not set for Year 1 members.
 - An instructor sets work for their own courses and centre. They can also
   mark an every-centre assignment for their course, but only their own
   centre's hand-ins. Whole-Club work is admin-only.
+
+**Getting work marked, and getting it back in (from 19 Nov 2026).**
+
+- **Instructors are told what is waiting.** Their Today, the duty pop-up and
+  the daily duties email say "N hand-ins to mark — oldest X days", counting
+  only hand-ins they can actually open and mark (their courses, their
+  centre). It turns urgent once the oldest has waited **7 days**, and then
+  the lead mentor of their centre is nudged once (Mentorship → nudges, rule
+  `J:handinsOverdue`); with no lead mentor the nudge waits on the centre's
+  list. The Control Room overview shows **time to mark** — the median and
+  slowest-tenth hours from hand-in to mark over 90 days.
+- **Returned work is open work.** **Return for changes** now asks for a
+  **hand in again by** date (three days if left alone; it cannot be in the
+  past). Until it is handed in again it is back on the member's Today and in
+  their duties email, the desk's **Remind** reaches them, and the hourly
+  reminder job reminds them before and after that date, just like work never
+  handed in.
+- **Families see the week's homework.** In the family account, each child's
+  Today shows **This week's homework**: what is due this week or still owed
+  — to do, overdue, handed in, marked, or sent back — with the mark and the
+  feedback once it is marked. The child's own answer is not shown.
+- **Families are told when it is overdue.** When work is overdue (or
+  returned work is past its new date), the guardians on the family account
+  who take alerts get one message per piece of work per child — in the
+  family inbox, by email, and on WhatsApp where it is set up (falling back to
+  text). With no family account, the parent email on the record gets it.
+  Nothing goes between 21:00 and 07:00; it waits for the morning. The message
+  names the child's first name, the work and its date, nothing else.
 
 ### How the training fee works (from 29 Oct 2026)
 
@@ -5390,6 +5448,13 @@ and did not sign out. A coordinator scoped to two centres only sees those two. S
   - **Money → Dues & arrears → Dues register (PDF)**: every family owing in your centres, grouped by centre, with
     what each balance is made of, how old the oldest unpaid charge is, the last payment, and each centre's total.
     The same figures as "Who owes".
+  - **Money → Dues & arrears → Download balances**: everyone owing in your centres, largest first, as
+    **Images (PNG)**, a **PDF** or a **CSV**. Fifteen members to a part ("Part 1 of 3"): member, centre, **Days**
+    (days since the oldest unpaid charge fell due), dues, fines and payable, with the total payable at the foot
+    of every part. The images are one file per part, ready to post to a parents' group; the PDF is the same
+    pages on A4. **Dues + Fines = Payable** on every row: "Dues" is everything payable that is not a fine
+    (monthly dues, membership, training owed on leaving, adjustments), and the CSV splits it into those parts.
+    Pick a centre in the form to send one centre's list. If the browser asks to allow several downloads, allow it.
   - **A member's account → Statement (PDF)**: every charge and payment with the running balance, what is still owed
     and the balance to pay.
   - Families have the same statement in the family account (Fees → Statement → PDF), and a member has it on their
@@ -5399,24 +5464,29 @@ and did not sign out. A coordinator scoped to two centres only sees those two. S
 
 ## Running the shop (Control Room → Shop, and `/shop`)
 
-*Source: the owner's brief, 17 Nov 2026 ("Create a shop for NGG. To sell souvenirs and mercs"); the server is `api/_lib/domain/shop.php`, the pages `page-shop.jsx` and `src/modules/control/cr-tab-shop.jsx`.*
+*Source: the owner's brief, 17 Nov 2026 ("Create a shop for NGG. To sell souvenirs and mercs"), and the upgrade the same day ("Upgrade the shop massively … for better and effective management"). The server is `api/_lib/domain/shop.php` and `shop-manage.php`; the pages are `page-shop.jsx` and `src/modules/control/cr-tab-shop.jsx`. The research behind it is `docs/SHOP-MANAGEMENT-PLAN.md`.*
 
-The shop sells NGG souvenirs and merchandise to anyone, on `/shop`. Buyers pay online through Paystack and collect at their centre's desk, or have it delivered when delivery is on.
+The shop sells NGG souvenirs and merchandise to anyone, on `/shop`, and at a table at events and centres. Online buyers pay through Paystack and collect at their centre's desk, or have it delivered when delivery is on.
 
 ### Who owns what
 
-| Part | Capability | Who usually holds it |
+| Tab | What it is for | Capability |
 |---|---|---|
-| **Products** (the catalogue: names, prices, sizes, stock, pictures) | `content` | The content team |
-| **Orders** (handing over, cancelling, refunds) | `fees` | The fees desk |
-| **Settings** (open or close the shop, delivery and its fee, the notes buyers read) | `fees` | The fees desk |
+| **Today** | What needs doing now: orders to pack, refunds due, low stock, today's sales | `fees` |
+| **Orders** | Handing over, refunds, exchanges, notes, pick lists, packing slips | `fees` |
+| **Sell** | Selling at a table, and cash sessions | `fees` |
+| **Stock** | What is left, what is low, every change and why, the stock-take | read: `content` or `fees`; change: `content` |
+| **Products** | The catalogue: names, prices, sizes, stock, pictures, pre-orders | `content` |
+| **Codes** | Discount codes | `fees` |
+| **Reports** | Sales by product and size, Paystack's fees, refunds, net; CSV | `fees` |
+| **Settings** | Open or close the shop, delivery, unpaid orders, low stock | `fees` |
 
-`fees` is not part of the admin bundle; it is granted per person in Access & roles. A fees holder who is scoped to centres sees only the orders collected at their centres; deliveries belong to head office.
+`fees` is not part of the admin bundle; it is granted per person in Access & roles. A fees holder who is scoped to centres sees only the orders collected at their centres, and sells only inside a session at one of their centres; deliveries belong to head office.
 
 ### Before the first sale
 
-1. Paystack must be set up: Settings → API keys holds the Paystack secret key, and the Paystack webhook points at `/api/hooks/paystack.php`. Without it the shop page shows its products but says it cannot take orders.
-2. Buyers pay Paystack's charge on top of the price, worked out by the same settings as membership payments (Money → Dues & arrears → Amounts → Paying online). They see it before they press Pay.
+1. Paystack must be set up: Settings → API keys holds the Paystack secret key, and the Paystack webhook points at `/api/hooks/paystack.php`. Payments **and refunds** report back through that one webhook. Without the key the shop page shows its products but says it cannot take orders.
+2. Buyers pay the **payment processing fee** (Paystack's charge) on top of the price, worked out by the same settings as membership payments (Money → Dues & arrears → Amounts → Paying online). They see it before they press Pay.
 3. Collection is offered at every active NGG centre that is a building. NGG Online is never offered.
 
 ### Add a product (content)
@@ -5425,11 +5495,21 @@ The shop sells NGG souvenirs and merchandise to anyone, on `/shop`. Buyers pay o
 2. Fill in the name, category, price in whole naira and a description.
 3. Picture: paste an `https://` link, or upload a file.
 4. Sizes or options: type them separated by commas (`S, M, L, XL`). Leave the field empty for a product with no options, such as a mug.
-5. Stock: leave **Limited stock** off for no limit. Turn it on and give one number per option, in the same order (`10, 12, 8`). A size at 0 shows as sold out.
-6. Status: **Draft** is seen by staff only. **On sale** shows on `/shop` at once. **Retired** takes it off the page; past orders keep it.
-7. Press **Add product**. If the server refuses, the reason appears under the field concerned (for example, a product cannot go on sale at ₦0).
+5. Stock: leave **Limited stock** off for no limit. Turn it on and give one number per option, in the same order (`10, 12, 8`). A size at 0 shows as sold out. **Warn when this many are left** sets the product's low-stock line; empty uses the shop's default, 0 never warns.
+6. **Pre-order until** (optional): until the end of that day the product sells past its stock. Use it to take orders before a print run; Reports gives the counts per size.
+7. Status: **Draft** is seen by staff only (it can still be sold at a table). **On sale** shows on `/shop` at once. **Retired** takes it off the page; past orders keep it.
+8. Press **Add product**. If the server refuses, the reason appears under the field concerned.
 
-To change a price or the stock later, open the product from the list and save. A price change never alters an order already placed; each order keeps the prices it was charged.
+A price change never alters an order already placed; each order keeps the prices it was charged. A count changed in the product form is recorded as a **correction**; for deliveries in, damage and give-aways use **Stock → Adjust stock** so the reason is kept.
+
+### Stock (content)
+
+Every change to a count is kept with its reason, who made it and when: sold online, sold at a table, order cancelled, refund (back on the shelf), exchange, received, damaged, given away, returned to the shelf, correction, stock-take. Open a row in **Stock** to see its history.
+
+- **Adjust stock**: choose the product, size and reason, and how many. Received and returned add; damaged and given away take away; a correction can go either way and needs a note.
+- **Stock-take**: count the shelf and type each number. Each difference is recorded as a stock-take with your name; matching numbers change nothing. If one line is wrong, nothing is saved.
+- A count can go **below nought** when a table sells more than was recorded. That is deliberate (a queue is never stopped for a count); do a stock-take.
+- **Low stock**: a size at or below its line shows as Low; at nought, Sold out. Once a day, after 7 in the morning, the staff who hold `fees` or `content` get one email listing them (Settings → Low stock turns it off).
 
 ### Open the shop (fees)
 
@@ -5437,34 +5517,164 @@ To change a price or the stock later, open the product from the list and save. A
 2. Turn **Shop open** on. The shop refuses to open until at least one product is on sale.
 3. If you deliver, turn **Offer delivery** on and set the **Delivery fee**.
 4. Check the two notes buyers read: **About collecting** and **About delivery**.
-5. Press **Save** in the bar that appears.
+5. **Unpaid orders**: how many hours an unpaid order lives (24 by default, 6 to 168), and whether the buyer gets one reminder after two hours.
+6. Press **Save** in the bar that appears.
 
 To close the shop, turn **Shop open** off and save. `/shop` then says the shop is closed. Orders already paid are still handed over as normal.
 
 ### Take an order through to collected (fees)
 
-1. A buyer pays. Paystack confirms it and the order appears under Shop → **Orders** as **Paid**. The buyer receives an email with the order number (`SHP-…`).
-2. Pack the order. Open it from the list to see its items, the buyer and where it goes.
-3. Press **Mark ready**. The buyer is emailed that it is ready to collect at their centre, or on its way.
-4. When the buyer collects it, check the order number they bring against the order. Press **Mark collected** (or **Mark delivered**). This cannot be undone.
+1. A buyer pays. Paystack confirms it and the order appears under **Orders** as **Paid**. The buyer's email carries the order number (`SHP-…`) and, for a collection, a six-digit **pickup code**.
+2. To pack several orders, tick them and use **Print pick list** (totals per item and size) and **Print packing slips** (one page per order, without the pickup code).
+3. Open the order and press **Mark ready**. For a delivery you can add a **delivery note** (the courier, a waybill number, the day); it goes to the buyer. Several orders can be marked ready at once from the list.
+4. When the buyer collects it, press **Mark collected** and type the **pickup code** they give you. A wrong code is refused. If they have lost it, switch on "They don't have the code" and say how you know the order is theirs; it is kept on the order's timeline.
+5. A delivery is finished with **Mark delivered** (one at a time or several at once; the buyer is emailed). This cannot be undone.
 
-Several orders can be marked at once: tick them in the list and use **Mark ready** or **Mark completed**. Each order gets its own answer from the server. If some are refused (an order that is not paid yet, for example), the message says how many and why.
+Every order has a **timeline**: ordered, paid, ready, collected, refunds, exchanges, reminders, and staff notes (**Add a note…**).
 
-The **Status** filter starts on **To hand over** (paid or ready). **Waiting for payment** orders were opened at Paystack but never paid. They hold no stock back and need no action. The list shows the newest 300 orders for each filter; search by order number, name or email to find an older one.
+**Exchange a size** (the wrong T-shirt): open a paid order, **Exchange a size…**, choose the item, the new size and how many. The old size goes back on the shelf, the new one comes off, and no money moves.
 
-### Cancel an order and refund it (fees)
+**Waiting for payment** orders hold no stock. The buyer can pay later from the link in their email (**Pay now** on the order page); **Send the pay link again** emails it (at most once an hour). An order still unpaid after the hours set in Settings is cancelled by itself; if the money arrives afterwards anyway, the order is paid and opens again.
 
-1. Open the order and press **Cancel order…**.
-2. For a paid order, write why (at least five characters). The stock goes back, the buyer is emailed that a refund follows, and the order's note reads "Refund due".
-3. Refund the payment in the Paystack dashboard, using the Paystack reference shown on the order.
+The list is paged on the server: filter by status (including **Refund due** and **Refunded**), by **Sold** (online or at a table) and by when it was **Ordered**; search by order number, name, email or phone. **Download CSV** gives every order in a date range for the accounts.
 
-An unpaid order can be cancelled without a reason; nothing was charged.
+### Refund an order (fees)
+
+1. Open the order and press **Refund…**.
+2. The amount suggested is the goods and delivery. At most what the buyer was charged can go back. Paystack keeps its processing fee, which the buyer paid on top.
+3. Choose how: **Through Paystack** (for an online order), or **Paid back another way** (cash or a transfer, and every table sale).
+4. Write why. If items come back, type how many of each go **back on the shelf**.
+5. Press **Refund**.
+
+A Paystack refund shows as **Waiting for Paystack** until Paystack confirms it; it can take up to 10 working days to reach the buyer. The buyer is emailed when it is processed. If the webhook is slow, open the order and press **Check now** on the refund; the shop also asks Paystack every hour. A refund Paystack fails says so on the timeline, and the money is still due.
+
+**Cancel order…** on a paid order puts its stock back and offers the refund in the same step: **Refund through Paystack now**, **Paid back another way**, or **Leave it due** (it then shows under the **Refund due** filter and on **Today**). An unpaid order can be cancelled without a reason; nothing was charged.
+
+### Sell at a table (fees)
+
+1. Shop → **Sell** → **Open a cash session**. Name it ("Open day, Egbeda"), choose the centre, and type the cash already in the drawer (the float).
+2. Tap **Add** on each item (choose the size first), adjust the numbers in **This sale**, choose **Cash**, **Bank transfer** or **POS terminal**, and press **Record sale**. The sale is completed at once and comes off the same stock as the online shop. Cash needs an open session; transfers and the terminal do not.
+3. At the end, open the session in the list and press **Close the session…**. Count the drawer. The screen shows what should be there (float + cash taken − cash paid back). If the count is short or over, say why; the difference is kept as counted.
+
+### Discount codes (fees)
+
+Shop → **Codes** → **New code**. A code takes a percentage or an amount off the **goods** (never the delivery), and always leaves at least ₦100 to pay. You can set a minimum spend, a cap on uses, once per buyer (by email), and dates. A code is counted when the order is paid. **Paused** stops it for now; **Archived** retires it.
+
+### Reports (fees)
+
+Shop → **Reports** shows the last 30 days; **Change dates** picks any range of up to a year, and optionally one product (for a pre-order, the counts per size are the print order).
+
+- **Gross**: what orders paid, after discounts, with delivery. **Paystack's fees**: what Paystack kept, as Paystack reported it on each payment. **Refunds**: processed in the range. **Net** = gross + the processing fees buyers paid − Paystack's fees − refunds.
+- By how it was paid, sell-through (sold against sold plus what is left), by day, and by product and size, with **Download by product (CSV)**.
 
 ### When something is wrong
 
 | You see | It means | Do this |
 |---|---|---|
-| An order's note says "Paid while short of stock" | Two buyers paid for the last item at the same moment | Restock, or cancel the order and refund it |
-| A payment on the unapplied-payments record with an `NGGS-` reference | Paystack reported money that did not match an order, or that reached an order no longer waiting | Check it in Paystack; refund or apply it by hand |
+| "Paid while short of stock" on an order's timeline | Two buyers paid for the last item at the same moment | Restock, or refund it |
+| "Sold past the recorded stock" on a table sale | The table sold more than the count said | Do a stock-take |
+| A payment on the unapplied-payments record with an `NGGS-` reference | Paystack reported money that did not match an order, or reached an order staff had cancelled | Check it in Paystack; refund or apply it by hand |
+| A refund stuck at **Waiting for Paystack** | The webhook did not arrive | Press **Check now**; check the webhook address in the Paystack dashboard |
+| A refund marked **Failed** | Paystack could not refund it (some bank-transfer and USSD payments) | Pay it back another way and record it as such |
 | "The order changed while you were looking" | Someone else moved the order first | It reloads; look again |
+| "Allow pop-ups for this site to print" | The browser blocked the print window | Allow pop-ups for the Control Room, then print again |
 | The shop page says it can't take orders | Paystack is not set up, or no centre takes collections and delivery is off | See "Before the first sale" |
+
+
+## Photos: the quality gate
+
+NGG does not take low-quality photos. A photo that is too small (under 600 × 800), too dark, washed out,
+unevenly lit, flat or blurry is refused where it comes in — the application, a guardian's retake, a member's
+"change my photo", the profile, a volunteer's record and a staff upload — with the reason in plain words
+("The photo is blurry. Hold the phone steady, tap the face to focus, and retake."). The family sees it at once,
+before anything is sent; the server checks the photo again wherever it is stored.
+How it decides is in `docs/PHOTO_QUALITY.md`. A super-admin can switch it off (`photo_quality_gate` = off) during
+a storage outage.
+
+## Membership Agreements (MoU)
+
+**Members → Agreements.** The Membership Agreement is the MoU, signed online.
+
+- **It is a scholarship.** Clause 3 states that the member's place is an **NGG scholarship** — ₦1,500,000 over the
+  three years by default — funded by NGG, and that what the family pays is a contribution, not the price of the place.
+  The printed copy opens with the award (the child's name, the value, the family's contribution); the family's page
+  and every email carry it too. Change the figure under **Money → Amounts → Scholarship value of an NGG place**. It is
+  stated, never charged, and an agreement keeps the figure it was signed with.
+- **Not for online members.** Members whose centre is an online one have different terms: this agreement is never
+  sent to them, they are not listed under *Not started*, and it is not on their registration checklist.
+
+- **It starts by itself** when you press *Accept & create member* on an NGG application: the family gets the
+  welcome email and, after it, a private link to read and sign. For members who joined before, press
+  *Send to N members without one* (or select some under *Not started* and choose *Send the agreement*).
+- **The family** reads each part as a short summary with the full wording a tap away, answers five quick
+  questions (a wrong answer shows what the agreement says; they try again — nobody is locked out), confirms
+  their details and the off-site trips choice, and signs: a typed full name and a signature (drawn, or made from
+  the typed name). A witness signs on the same screen, or they leave it to NGG. They are emailed their copy at once.
+- **Then it is printed, signed in ink and brought to the centre.** After signing online the family is shown
+  (and emailed) *Print the agreement to sign*: the printed copy carries the agreement's number and version at the
+  foot of every page and a section to sign in ink — parent or guardian, witness, and NGG. No printer: open the
+  agreement here and press *Print it to sign in ink*.
+- **You receive the paper copy.** It is listed under *Paper copy to receive*. Open it → *Receive the signed copy*,
+  and with the paper in your hand turn on each check: every page there with this agreement's number; a parent or
+  guardian signed and dated it in ink; a witness signed and printed their name; the names match the record;
+  nothing crossed out or added. If one is not true, give it back to the family — do not receive it. Then take a
+  photograph of the signed page with the phone's camera (the whole page filling the picture; at least 1600 × 1000
+  pixels, or it is refused as too small to read). Who received it, where and when are recorded; *See the
+  photograph* opens it later.
+- **A family that cannot sign online** signs the paper only: print it from here, they sign at the centre, and when
+  you receive it you also type what the paper says — who signed (father, mother or guardian), the witness's name
+  and the off-site activities answer. Their consents are recorded from it.
+- **You countersign** — only after the paper copy is received. It appears under *To countersign*. Open it, press *Countersign*, give your role and sign.
+  If nobody witnessed it at home, you are the witness too, and the copy says so. The family is emailed the
+  completed agreement with a link to the printable copy (*Print or save as PDF*).
+- **Resend** makes a new link and stops the old one; the link is also copied so you can send it by WhatsApp.
+  **Withdraw** (with a reason) keeps the record and lets you start a new one.
+- **Its consents are the member's consents.** Signing writes taking part, emergency medical care, records,
+  updates, photos and the website (granted) and off-site trips (as chosen) to the consents ledger.
+- **The money in it is the website's.** The monthly contribution, membership fee and training place are read
+  from Money → Amounts on the day the family signs and frozen on that agreement.
+- The registration checklist's item *Membership Agreement (MoU) handed in* is done once the paper copy is received
+  **and** NGG has countersigned. An agreement countersigned before the paper step existed needs its paper copy
+  received too.
+- A member with a signed agreement cannot be merged without a person deciding: the agreement names one child.
+
+## Receipts as PDF and image
+
+Every receipt can be downloaded as a **PDF** (A4) or an **image** (PNG), drawn by the server — nothing depends on
+the phone's browser, fonts or printer. You will find *Download PDF* and *Download image* on the receipt page, beside
+*Print*; on the family's payment page after paying; in the receipt email; and in Money → Membership payments
+(*PDF*, *Image* beside each paid invoice's receipt number). The image is the receipt cropped to fit a phone screen —
+the easiest thing to forward on WhatsApp. Both are drawn from the receipt as it was issued, so they always match it.
+
+
+## My week — a child's personal timetable
+
+**/timetable?easy=1**, and what a signed-in member with no timetable yet sees at /timetable. Four short screens, all
+by tapping: **School** (which days, when it starts and ends, or "I don't go"), **What else do you do?** (homework,
+study, extra lessons, Arabic school, football, chores, church, mosque, music… then the days, the time and how long),
+**Your NGG sessions** (their own sessions at their centre, already ticked), and **Is this your week?** (day by day;
+anything that overlaps is said in words) then **Save my week**. It saves to their account and meets the registration
+item *Personal timetable on the site*. The full maker — colours, printing, wallpapers, one-off changes — is one link
+away (*Full timetable maker*, or /timetable?full=1). Help a child at the centre: sign in as them and open
+/timetable?easy=1; they can do the rest themselves.
+
+
+## WhatsApp: families answer registration reminders
+
+When WhatsApp (Kapso) is set up (Settings → API keys → WhatsApp (Kapso)), every registration reminder also goes on
+WhatsApp, to the guardians on the family account (else the parent phone on the record), with three answers:
+**This Saturday · Next week · I need help**. Families answer with a tap, or by typing 1, 2 or 3.
+
+| They answer | What happens, with nobody at a desk |
+|---|---|
+| This Saturday / Next week | A follow-up is logged as theirs (*The family, on WhatsApp*) and the next follow-up is set for the day after. They are thanked and told what to bring. |
+| I need help | Logged as *needs help*, due tomorrow; the staff inbox and the child's helper are told to call. |
+| A photo or document | Kept on this site and put on the child's registration as *Sent by the family on WhatsApp*. The helper checks it and submits it against the right item — a photo never ticks anything by itself. |
+| STOP / START | No more WhatsApp reminders (email continues) / reminders again. |
+| Anything else | The Control Room inbox, as before. |
+
+Open a child under Members → Registration to see the WhatsApp conversation. **Buttons at any time:** WhatsApp
+allows free buttons only within 24 hours of the family's last message. To have tappable buttons on every reminder,
+get a Utility template approved in Kapso with the body *Next Generation Genius: {{1}}* and three quick-reply buttons
+(This Saturday · Next week · I need help), and put its name in **Reply-button template**. Without it, families
+reply 1, 2 or 3, which works the same.

@@ -81,17 +81,8 @@ const yearsAgo = (n, md) => (new Date().getFullYear() - n) + '-' + (md || '01-15
       await p.waitForSelector(at === '/policies' ? '.pol-page' : '.apf', { timeout: 30000 });
       return p;
     };
-    // A photo made in the page: grey (passes) or near-black (too dark), 900 × 1200.
-    const photo = async (p, lum) => {
-      const b64 = await p.evaluate(l => {
-        const c = document.createElement('canvas'); c.width = 900; c.height = 1200; const g = c.getContext('2d');
-        g.fillStyle = 'rgb(' + l + ',' + l + ',' + l + ')'; g.fillRect(0, 0, 900, 1200);
-        g.fillStyle = 'rgb(' + Math.min(255, l + 60) + ',' + Math.min(255, l + 40) + ',' + Math.min(255, l + 30) + ')';
-        for (let i = 0; i < 40; i++) g.fillRect((i * 37) % 860, (i * 53) % 1160, 40, 40);
-        return c.toDataURL('image/png').split(',')[1];
-      }, lum);
-      return { name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from(b64, 'base64') };
-    };
+    // A photo drawn in the page (tests/_photo.js): a portrait that passes the quality gate, and copies that must not.
+    const { testPhoto } = require('./_photo');
     const blurField = async (p, sel) => { await p.focus(sel); await p.keyboard.press('Tab'); };
     const pickCombo = async (p, id, text) => { await p.fill('#apf-in-' + id, text); await p.keyboard.press('Enter'); };
     const cont = p => p.click('.apf-inlinebar .apf-btn--ink, .apf-bar .apf-btn--ink');
@@ -182,11 +173,17 @@ const yearsAgo = (n, md) => (new Date().getFullYear() - n) + '-' + (md || '01-15
 
     await P.waitForSelector('#apf-fld-agree');
     chk('the fees are said before anybody applies, from the server’s own terms', /₦10,000 membership fee/.test(await P.innerText('.apf-info')) && /Nothing to pay today/.test(await P.innerText('.apf-info')));
-    await P.setInputFiles('.apf-photo input[type=file]:not([capture])', await photo(P, 12));
-    await P.waitForFunction(() => /Needs another try/.test((document.querySelector('.apf-photo-badge') || {}).innerText || ''), null, { timeout: 10000 });
-    chk('a photo too dark to see the face is refused, with the reason', /Too dark/.test(await P.innerText('.apf-photo')));
-    await P.setInputFiles('.apf-photo input[type=file]:not([capture])', await photo(P, 150));
-    await P.waitForFunction(() => /Meets the rules|Check sharpness/.test((document.querySelector('.apf-photo-badge') || {}).innerText || ''), null, { timeout: 10000 });
+    const badge = () => P.evaluate(() => (document.querySelector('.apf-photo-badge') || {}).innerText || '');
+    const tryPhoto = async (opts, re) => {
+      await P.setInputFiles('.apf-photo input[type=file]:not([capture])', await testPhoto(P, opts));
+      // Wait for THIS photo's verdict, not the last one's: the reason or the pass names it.
+      await P.waitForFunction(r => new RegExp(r, 'i').test((document.querySelector('.apf-photo') || {}).innerText || ''), re, { timeout: 15000 }).catch(() => {});
+      return P.innerText('.apf-photo');
+    };
+    chk('a photo too dark to see the face is refused, with the reason', /too dark/i.test(await tryPhoto({ dark: 0.85 }, 'too dark')));
+    chk('a blurred photo is refused (it used to be only a warning), with what to do', /blurry/i.test(await tryPhoto({ blur: 4 }, 'blurry')) && /Needs another try/.test(await badge()));
+    chk('a photo too small to print is refused, not enlarged', /too small/i.test(await tryPhoto({ w: 420, h: 560 }, 'too small')));
+    await tryPhoto({}, 'Meets the rules');
     chk('a usable photo is cropped to the card and shown in the preview', !!(await P.$('.apf-idprev-ph img')));
     await P.click('.apf-agree-row:has-text("Photos, videos and website") .apf-agree-read');
     await P.waitForSelector('.apf-pol');

@@ -63,6 +63,7 @@ function RclSupervisorDesk() {
   const [err, setErr] = React.useState(null);
   const [open, setOpen] = React.useState("");
   const [said, setSaid] = React.useState({});
+  const [fu, setFu] = React.useState("");
   const load = React.useCallback(() => { setErr(null); return NGGApi.member.regcheck.mine().then(setD).catch(setErr); }, []);
   React.useEffect(() => { load(); }, [load]);
   const recheck = (m, i) => NGGApi.member.regcheck.submit({ memberId: m.memberId, itemKey: i.key })
@@ -78,7 +79,8 @@ function RclSupervisorDesk() {
       {ms.map(m => (
         <section key={m.memberId} className="rcl-card" aria-labelledby={"rcl-h-" + m.memberId}>
           <div className="rcl-head"><h2 id={"rcl-h-" + m.memberId}>{m.fullName}</h2><span>{[m.displayId, m.centre].filter(Boolean).join(" · ")}</span></div>
-          <p className="rcl-meta">{m.done} of {m.total} done · {m.presentToday ? "You are checked in at " + m.centre + " today" : "You have not checked in at " + m.centre + " today"}</p>
+          <p className="rcl-meta">{m.done} of {m.total} done · {m.presentToday ? "You are checked in at " + m.centre + " today" : "You have not checked in at " + m.centre + " today"}
+            {m.status === "open" && m.nextFollowUpOn ? " · Follow up with the family " + (m.nextFollowUpOn <= d.today ? "today" : "on " + m.nextFollowUpOn) : ""}</p>
           <progress className="rcl-bar" value={m.done} max={m.total || 1} aria-label={m.first + "’s registration: " + m.done + " of " + m.total + " done"}/>
           <ul className="rcl-items">
             {m.items.map(i => {
@@ -91,7 +93,7 @@ function RclSupervisorDesk() {
                 <li key={i.key} className={"rcl-item" + (i.done ? " is-done" : "")}>
                   <i className={rclIcon(i)} aria-hidden="true"/>
                   <div className="rcl-item-body">
-                    <b>{i.title}</b><span>{sub}</span>
+                    <b>{i.stepLabel ? <span className="rcl-step">{i.stepLabel}</span> : null}{i.title}</b><span>{sub}</span>
                     {!i.done && i.lastRefusal && !s && open !== k && <span className="rcl-why">Last try: {i.lastRefusal}</span>}
                     {s && <span className={"rcl-res" + (s.ok ? " is-ok" : " is-bad")} role={s.ok ? "status" : "alert"}>{s.t}</span>}
                     {open === k && <RclEvidenceForm m={m} i={i} onCancel={() => setOpen("")} onDone={t => { setOpen(""); setSaid(x => Object.assign({}, x, { [k]: { ok: true, t } })); load(); }}/>}
@@ -103,9 +105,45 @@ function RclSupervisorDesk() {
               );
             })}
           </ul>
+          {m.status === "open" && (fu === m.memberId
+            ? <RclFollowupForm m={m} d={d} onCancel={() => setFu("")} onDone={t => { setFu(""); setSaid(x => Object.assign({}, x, { [m.memberId + ":fu"]: { ok: true, t } })); load(); }}/>
+            : <button type="button" className="rcl-btn" onClick={() => setFu(m.memberId)}>Log a follow-up with the family</button>)}
+          {said[m.memberId + ":fu"] && <p className="rcl-res is-ok" role="status">{said[m.memberId + ":fu"].t}</p>}
         </section>
       ))}
     </div>
+  );
+}
+
+/** A call, a message or a visit to the family, and the next day to try. */
+function RclFollowupForm({ m, d, onCancel, onDone }) {
+  const plus = n => { const t = new Date((d.today || new Date().toISOString().slice(0, 10)) + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+  const [v, setV] = React.useState({ channel: "call", outcome: "reached", note: "", nextOn: plus(3) });
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const set = (k, x) => setV(o => Object.assign({}, o, { [k]: x }));
+  const id = "rcl-fu-" + m.memberId;
+  const submit = async e => {
+    e.preventDefault(); setBusy(true); setErr("");
+    try { const r = await NGGApi.member.regcheck.followup(Object.assign({ memberId: m.memberId }, v)); onDone("Logged. Next follow-up " + r.nextOn + "."); }
+    catch (x) { setErr((x && x.data && x.data.message) || "Couldn’t save. Try again."); setBusy(false); }
+  };
+  return (
+    <form className="rcl-form" onSubmit={submit} onKeyDown={e => { if (e.key === "Escape") onCancel(); }} aria-label={"Follow up with " + m.first + "’s family"}>
+      <label className="rcl-field" htmlFor={id + "-c"}><span>How</span>
+        <select id={id + "-c"} value={v.channel} onChange={e => set("channel", e.target.value)}>{Object.entries(d.channels || {}).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+      <label className="rcl-field" htmlFor={id + "-o"}><span>What happened</span>
+        <select id={id + "-o"} value={v.outcome} onChange={e => set("outcome", e.target.value)}>{Object.entries(d.outcomes || {}).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+      <label className="rcl-field" htmlFor={id + "-n"}><span>Note</span>
+        <textarea id={id + "-n"} rows={3} maxLength={500} value={v.note} onChange={e => set("note", e.target.value)}/></label>
+      <label className="rcl-field" htmlFor={id + "-d"}><span>Follow up next on</span>
+        <input id={id + "-d"} type="date" value={v.nextOn} onChange={e => set("nextOn", e.target.value)} required/></label>
+      {err && <p className="rcl-res is-bad" role="alert">{err}</p>}
+      <div className="rcl-acts">
+        <button type="submit" className="rcl-btn is-main" disabled={busy}>{busy ? "Saving…" : "Log it"}</button>
+        <button type="button" className="rcl-btn" onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
   );
 }
 
@@ -126,9 +164,17 @@ function RclProgress({ who, linkId, first }) {
     <section className="rcl-card rcl-progress" aria-labelledby={"rcl-p-" + (linkId || "me")}>
       <h2 id={"rcl-p-" + (linkId || "me")}>{h}</h2>
       <progress className="rcl-bar" value={d.done} max={d.total || 1} aria-label={h}/>
+      {(d.steps || []).length > 0 && <ol className="rcl-steps" aria-label="Entry steps">
+        {d.steps.map(x => <li key={x.step} className={x.complete ? "is-done" : ""}><span aria-hidden="true">{x.complete ? "✓" : "·"}</span><b>{x.label}</b><small>{x.complete ? "Done" : x.done + " of " + x.total}</small></li>)}
+        <li className={d.resumedOn ? "is-done" : ""}><span aria-hidden="true">{d.resumedOn ? "✓" : "·"}</span><b>Attend lectures</b>
+          <small>{d.resumedOn ? "From " + new Date(d.resumedOn + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : "On the day every step is done"}</small></li>
+      </ol>}
       {d.complete
-        ? <p className="rcl-meta">Everything is done. {who === "family" ? name + " is" : "You are"} fully registered.</p>
-        : <React.Fragment><p className="rcl-meta">Still to do:</p><ul className="rcl-left">{d.left.map((t, n) => <li key={n}>{t}</li>)}</ul></React.Fragment>}
+        ? <p className="rcl-meta">Everything is done. {who === "family" ? name + " is" : "You are"} fully registered{d.resumedOn ? " and started lectures on " + new Date(d.resumedOn + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : ""}.</p>
+        : <React.Fragment><p className="rcl-meta">{who === "family" ? name + " starts lectures on the day every step is done. Still needed — bring things to " + (d.centre || "the centre") + " on a meeting day:" : "Still to do:"}</p>
+            <ul className="rcl-left">{(who === "family" && (d.bring || []).length ? d.bring : d.left).map((t, n) => <li key={n}>{t.charAt(0).toUpperCase() + t.slice(1)}</li>)}</ul></React.Fragment>}
+      {!d.complete && who !== "family" && (d.left || []).includes("Personal timetable on the site") &&
+        <a className="rcl-btn is-main rcl-cta" href="/timetable?easy=1">Make my week now</a>}
       {!d.complete && <p className="rcl-meta">{d.helper ? d.helper + " at the centre is helping " + (who === "family" ? name : "you") + " with this." : "Someone at the centre will be asked to help " + (who === "family" ? name : "you") + "."}</p>}
     </section>
   );

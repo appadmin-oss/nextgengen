@@ -678,18 +678,6 @@ function EventsBand({ setPage }) {
   );
 }
 
-/* ============================================================================
-   PUBLIC STATUS PAGE (/s-status) — a live, PII-free transparency board.
-   Aggregate numbers only: no child name or photo ever appears here.
-   (Legacy /status transparently resolves here — see pageFromPath in app.jsx.)
-   ============================================================================ */
-function relAgo(iso) {
-  if (!iso) return "";
-  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (s < 60) return s + "s ago";
-  if (s < 3600) return Math.floor(s / 60) + "m ago";
-  return Math.floor(s / 3600) + "h ago";
-}
 function rateTone(r) { return r >= 85 ? "#2f9e44" : r >= 60 ? "#e8a92b" : "#e03131"; }
 
 function statusBg(r) { return r >= 85 ? "rgba(47,158,68,0.12)" : r >= 60 ? "rgba(232,169,43,0.16)" : "rgba(224,49,49,0.12)"; }

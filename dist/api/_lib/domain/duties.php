@@ -192,7 +192,13 @@ function duties_tick(?int $now = null): array {
         $esc = safe_json((string)(db_row("SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = 'duty.escalated'", [$last])['stateValue'] ?? '{}'));
         $esc = is_array($esc) ? $esc : []; $changed = false;
         foreach ($list as $d) {
+            // An instructor's hand-ins: their lead hears once the OLDEST has waited a week —
+            // measured on the work, not on when the duty was first seen — once per stuck hand-in.
+            if ($d['key'] === 'instructor:handins') { if (duty_tell_handins_lead($m)) $leads++; continue; }
             if ($d['days'] < 7 || !empty($esc[$d['key']])) continue;
+            // Overdue homework has already gone to the family by assignment_tell_family (once per piece of work).
+            if ($d['role'] === 'member' && preg_match('/^member:asg-(.+)$/', $d['key'], $mm)
+                && db_row("SELECT 1 FROM assignment_notices WHERE assignmentId = ? AND memberId = ? AND kind = 'family'", [$mm[1], $last])) { $esc[$d['key']] = $day; $changed = true; continue; }
             if ($d['role'] === 'member' && filter_var((string)($m['parentEmail'] ?? ''), FILTER_VALIDATE_EMAIL) && (string)$m['parentEmail'] !== $to) {
                 try { send_mail((string)$m['parentEmail'], 'Can you help ' . mp_first((string)$m['fullName']) . ' with something on NGG?',
                     email_template(['eyebrow' => 'For the family', 'title' => mp_first((string)$m['fullName']) . ' has had this waiting for a week',
@@ -210,4 +216,25 @@ function duties_tick(?int $now = null): array {
     }
     setting_set('duty_cursor', ['day' => $day, 'after' => $last, 'done' => count($people) < DUTYR_BATCH]);
     return ['people' => count($people), 'emails' => $sent, 'guardians' => $guardians, 'leads' => $leads];
+}
+
+/**
+ * An instructor's hand-ins have waited ASG_MARK_URGENT_DAYS: their lead is
+ * nudged, as a mentor's lead is for a duty a week old — the lead mentor of
+ * the instructor's centre (mentors.rank = 'lead'), or, with none, the centre's
+ * staff queue (a nudge with no mentorId is on the Mentorship screen by
+ * centre). Once per oldest hand-in, so a backlog cleared and grown again is a
+ * new nudge, and one that is not cleared is not repeated. True when it went.
+ */
+function duty_tell_handins_lead(array $m): bool {
+    if (!function_exists('ms_nudge') || !function_exists('instructor_handins_queue')) return false;
+    $q = instructor_handins_queue(['requesterId' => (string)$m['memberId']]);
+    if ($q['count'] < 1 || $q['oldestDays'] < ASG_MARK_URGENT_DAYS) return false;
+    $centre = (string)(($q['centres'] ?? [])[0] ?? '');
+    if ($centre === '') { $v = db_row("SELECT centre FROM volunteers WHERE memberId = ? AND role = 'instructor' ORDER BY id LIMIT 1", [(string)$m['memberId']]); $centre = (string)($v['centre'] ?? ''); }
+    $lead = $centre !== '' ? db_row("SELECT mentorId FROM mentors WHERE status = 'active' AND mentors.rank = 'lead' AND LOWER(TRIM(centre)) = ? ORDER BY id LIMIT 1", [assignment_centre_key($centre)]) : null;
+    $first = mp_first((string)$m['fullName']);
+    return ms_nudge('J:handinsOverdue:' . (string)$m['memberId'] . ':' . $q['oldestId'], 'J:handinsOverdue', ['audience' => 'lead', 'mentorId' => (string)($lead['mentorId'] ?? ''), 'memberId' => '', 'centre' => $centre,
+        'title' => $first . ' has ' . $q['count'] . ' hand-in' . ($q['count'] === 1 ? '' : 's') . ' waiting for a mark — oldest ' . $q['oldestDays'] . ' days',
+        'body' => 'Members hear nothing about their work until it is marked. A reminder has gone to ' . $first . ' every day.', 'suggestion' => 'Ask what is in the way, or share the marking.']);
 }

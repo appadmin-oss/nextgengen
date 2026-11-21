@@ -671,29 +671,6 @@ function MlbHome({ go, startPlay, onNotMember }) {
   );
 }
 
-/* ── The constellation map ── */
-function MlbStars({ stage, onPick, decorative }) {
-  const pts = stage.comps.map((c, i) => [24 + i * 30, 44 + Math.sin(i * 1.3 + stage.n) * 22]);
-  /* Decorative where the topic list beside it is the way in: one route for the keyboard, not two. */
-  if (decorative) return (
-    <svg className="mlb-stars" viewBox="0 0 320 90" aria-hidden="true" focusable="false">
-      <polyline points={pts.map(p => p.join(",")).join(" ")} className="mlb-stars-line"/>
-      {stage.comps.map((c, i) => { const on = MLB_GOOD_V.indexOf(c.state) >= 0, mid = ["learning", "practising", "ready", "review"].indexOf(c.state) >= 0;
-        return <g key={c.id} className={"mlb-star is-" + c.state}><circle cx={pts[i][0]} cy={pts[i][1]} r={on ? 9 : mid ? 7 : 5}/>{c.state === "longterm" || c.state === "secure" ? <circle cx={pts[i][0]} cy={pts[i][1]} r="13" className="mlb-star-halo"/> : null}</g>; })}
-    </svg>);
-  return (
-    <svg className="mlb-stars" viewBox="0 0 320 90" role="list" aria-label={"Stage " + stage.n + " topics"}>
-      <polyline points={pts.map(p => p.join(",")).join(" ")} className="mlb-stars-line"/>
-      {stage.comps.map((c, i) => {
-        const on = MLB_GOOD_V.indexOf(c.state) >= 0, mid = ["learning", "practising", "ready", "review"].indexOf(c.state) >= 0;
-        return <g key={c.id} role="listitem" tabIndex={c.state === "soon" ? -1 : 0} className={"mlb-star is-" + c.state} aria-label={c.title + ": " + (MLB_STATE_L[c.state] || c.state)}
-          onClick={() => c.state !== "soon" && onPick(c)} onKeyDown={e => { if ((e.key === "Enter" || e.key === " ") && c.state !== "soon") { e.preventDefault(); onPick(c); } }}>
-          <circle cx={pts[i][0]} cy={pts[i][1]} r={on ? 9 : mid ? 7 : 5}/>{c.state === "longterm" || c.state === "secure" ? <circle cx={pts[i][0]} cy={pts[i][1]} r="13" className="mlb-star-halo"/> : null}
-          <title>{c.title}</title></g>;
-      })}
-    </svg>
-  );
-}
 /* The map, Duolingo's way: each stage is a unit with a coloured banner, its ten topics a
    winding path of round lesson buttons (done, the one to do now, open, locked), and the
    stage boss at the end. Pressing a lesson opens a small card with its name and a Start
