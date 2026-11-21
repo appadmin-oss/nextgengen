@@ -18,7 +18,7 @@
      deploy shows up without anybody hunting for a hard refresh.
    ================================================================ */
 
-const CACHE_VERSION = 'ngg-30113b0de2';
+const CACHE_VERSION = 'ngg-ade98f515b';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 
@@ -44,7 +44,7 @@ const PRECACHE = [
   '/photos.36b0b4ea72.js',
   '/api-client.34e7a275ee.js',
   '/outbox.042a8c9122.js',
-  '/app.600f237a21.min.js',
+  '/app.02111df666.min.js',
   '/vendor/react.production.min.js',
   '/vendor/react-dom.production.min.js',
   '/assets/logo.png',
@@ -97,8 +97,13 @@ async function shellResponse() {
   // /review?g=…, /apply?g=…, /q/<token>. Matching the request URL exactly could
   // only ever hit for a URL somebody had visited before, offline, twice; the
   // shell is the same document for all of them.
-  return (await caches.match('/index.html', { ignoreSearch: true }))
+  const hit = (await caches.match('/index.html', { ignoreSearch: true }))
       || (await caches.match('/', { ignoreSearch: true }));
+  if (!hit) return hit;
+  /* The cached shell carries the HOME page's prerendered first screen (tools/prerender.js). Offline, this answers
+     every route, so that screen is taken out: the app draws the right page, never the home page under it. */
+  const html = (await hit.text()).replace(/<!--ngg-pre-->[\s\S]*?<!--\/ngg-pre-->/, '<!--ngg-pre--><!--/ngg-pre-->');
+  return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
 
 const OFFLINE_HTML = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

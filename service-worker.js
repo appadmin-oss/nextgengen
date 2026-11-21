@@ -97,8 +97,13 @@ async function shellResponse() {
   // /review?g=…, /apply?g=…, /q/<token>. Matching the request URL exactly could
   // only ever hit for a URL somebody had visited before, offline, twice; the
   // shell is the same document for all of them.
-  return (await caches.match('/index.html', { ignoreSearch: true }))
+  const hit = (await caches.match('/index.html', { ignoreSearch: true }))
       || (await caches.match('/', { ignoreSearch: true }));
+  if (!hit) return hit;
+  /* The cached shell carries the HOME page's prerendered first screen (tools/prerender.js). Offline, this answers
+     every route, so that screen is taken out: the app draws the right page, never the home page under it. */
+  const html = (await hit.text()).replace(/<!--ngg-pre-->[\s\S]*?<!--\/ngg-pre-->/, '<!--ngg-pre--><!--/ngg-pre-->');
+  return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
 
 const OFFLINE_HTML = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

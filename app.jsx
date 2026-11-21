@@ -667,10 +667,21 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(
-  <ErrorBoundary>
-    <AuthProvider>
-      <App/>
-    </AuthProvider>
-  </ErrorBoundary>
-);
+/* The first render waits for the full stylesheets when the shell loads them without blocking (build.js
+   applyCriticalCss: window.__nggCss). Until then the page's prerendered first screen is on view, styled by the
+   inlined subset; drawing the app earlier could show a screen that subset does not cover. Never longer than 8 s:
+   a stylesheet that does not arrive must not keep anybody from the app. */
+(function nggMount() {
+  const draw = () => ReactDOM.createRoot(document.getElementById("root")).render(
+    <ErrorBoundary>
+      <AuthProvider>
+        <App/>
+      </AuthProvider>
+    </ErrorBoundary>
+  );
+  if (!window.__nggCss || typeof window.__nggCss.then !== "function") return draw();
+  let drawn = false;
+  const once = () => { if (!drawn) { drawn = true; draw(); } };
+  window.__nggCss.then(once, once);
+  setTimeout(once, 8000);
+})();

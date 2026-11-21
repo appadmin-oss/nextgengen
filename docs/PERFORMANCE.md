@@ -52,9 +52,42 @@ It is too heavy … Research! How does Canva do? How do games do it?"
 
 Background work was not the problem: an idle page makes no requests and requests one animation frame.
 
+## 21 Nov 2026: the first screen from HTML, not from the bundle
+
+Measured with `tools/perf-probe.js` (`npm run perf:probe`): `dist/` served as the host serves it, an emulated
+low-end Android phone (6× CPU, 1.6 Mbps down, 150 ms RTT), cold cache. The numbers are transferred bytes
+(compressed), which is why they differ from the uncompressed table above.
+
+| Home page | Before | After |
+|---|---|---|
+| First contentful paint | 2.2 s | **1.2 s** |
+| Largest contentful paint (the page you see) | 5.4 s | **1.2 s** |
+| Bytes over the wire | 969 KB | 835 KB |
+
+`/club` went from 4.8 s to **1.1 s** for its largest paint. Repeat visits were already fast (service worker).
+
+What changed:
+- **Prerendered first screens** (`tools/prerender.js`, run by `build.js` when Chromium is present). The real app,
+  in Chromium at build time, saves each indexable page's first screen. Its API calls are held open, so data
+  areas are saved in their loading state. The home page's goes into `index.html`; `api/public/spa.php` puts each
+  other page's own snapshot in its place, and none for an unknown address or a signed-in area. React's
+  `createRoot` replaces it with the same screen. A CSS rule hides the boot screen whenever a page arrives drawn.
+- **Per-page critical CSS** (`applyCriticalCss` in `build.js`): the rules whose classes appear in that page's
+  snapshot (`tools/css-split.js`), about 60 KB a page, inlined. The two full sheets (826 KB) are added by a
+  small inline script, so they no longer block the first paint; `<noscript>` keeps the plain links.
+  `app.jsx` draws once they have loaded (`window.__nggCss`, at most 8 s), so no screen draws unstyled.
+- **React deferred**, no longer parser-blocking in the head.
+- **Precompressed Brotli and gzip** copies of every fingerprinted script and stylesheet (Node's own zlib), served
+  by `.htaccess` before the real-file pass, with no second compression.
+- **Icon fonts subset** to the 609 icons the site names (`tools/phosphor-subset.py`, cached in
+  `vendor/phosphor/subset/` and recorded in `vendor/VERSIONS.json` by the build): 144 KB → 60 KB and
+  129 KB → 51 KB.
+- A build without Chromium (or with `NGG_PRERENDER=0`) ships the plain shell, and old snapshots are removed so
+  none is served under a newer app. `tests/perf-shell.test.js` holds all of it.
+
 ## Next, in order of value
 
 1. Split `page-club.jsx` (546 KB) and `page-other.jsx` (539 KB) by area into their own bundles — the same
    mechanism, one more entry in `build.js` and `app.jsx` each.
-2. Subset the Phosphor font file itself (147 KB) to the icons used (needs fonttools at build time).
-3. Prerender the home page's first screen into `index.html` (PROXX's biggest first-paint win).
+2. ~~Subset the Phosphor font~~ (done 21 Nov).
+3. ~~Prerender the first screen~~ (done 21 Nov, every public page).

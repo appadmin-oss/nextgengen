@@ -619,6 +619,20 @@
       "bytes": 1107,
       "sha256": "766ccc1f306c885aa45542a9846bbd0a505b27a0374f146778171c2254ce18e3",
       "note": "KaTeX licence (MIT)."
+    },
+    "phosphor/subset/Phosphor-Fill.a7c78a4548.woff2": {
+      "package": "@phosphor-icons/web",
+      "version": null,
+      "bytes": 51896,
+      "sha256": "919e9a303ec4d3c7880def16cc732b1ae1b1966e67212753100643bca0daed5a",
+      "note": "subset of phosphor/Phosphor-Fill.woff2 to the icons the site names (tools/phosphor-subset.py, made by build.js)"
+    },
+    "phosphor/subset/Phosphor.032d5ff730.woff2": {
+      "package": "@phosphor-icons/web",
+      "version": null,
+      "bytes": 61256,
+      "sha256": "78ced7df976f5d3df99dfdedbbc2210b045d815637773e0c733760d0368a32d8",
+      "note": "subset of phosphor/Phosphor.woff2 to the icons the site names (tools/phosphor-subset.py, made by build.js)"
     }
   }
 }

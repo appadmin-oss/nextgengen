@@ -412,7 +412,55 @@ async function build() {
     const ph = fs.readFileSync(path.join(ROOT, 'vendor/phosphor/phosphor.css'), 'utf8')
       .replace(/^\.ph(?:-fill)?\.ph-([a-z0-9-]+):before\s*\{[^}]*\}\s*/gm, (m, name) => words.has(name) || words.has('ph-' + name) ? m : '');
     // At the root, beside the other fingerprinted sheets (the vendor mirror would prune it); the font path is made absolute.
-    const phMin = Buffer.from((await esbuild.transform(ph.replace(/url\(["']?\.\/(Phosphor[\w-]*\.woff2)["']?\)/g, 'url("/vendor/phosphor/$1")'), { loader: 'css', minify: true, legalComments: 'none' })).code);
+    /* The FONT, cut to the same icons (tools/phosphor-subset.py): the full Phosphor files are 147 KB and 132 KB and
+       carry ~1,500 icons for the ~600 the site names. A subset is keyed by a hash of the font and the icon list, kept
+       in vendor/phosphor/subset/ (committed), and made here when Python's fontTools is available — otherwise the
+       full font ships and the build says so. The stylesheet and the font can never disagree: a subset is used only
+       when one exists for exactly this list. */
+    const cps = [...new Set([...ph.matchAll(/content:\s*["']\\([0-9a-f]{4,5})["']/gi)].map(m => m[1].toLowerCase()))].sort();
+    const subsetDir = path.join(ROOT, 'vendor/phosphor/subset');
+    const subsetFor = (font) => {
+      const src = path.join(ROOT, 'vendor/phosphor', font);
+      if (!cps.length || !fs.existsSync(src)) return null;
+      const key = require('crypto').createHash('sha256').update(fs.readFileSync(src)).update(cps.join(',')).digest('hex').slice(0, 10);
+      const base = font.replace(/\.woff2$/, '');
+      const out = path.join(subsetDir, base + '.' + key + '.woff2');
+      if (!fs.existsSync(out)) {
+        fs.mkdirSync(subsetDir, { recursive: true });
+        const list = path.join(require('os').tmpdir(), 'ngg-ph-' + key + '.txt');
+        fs.writeFileSync(list, cps.join('\n'));
+        const r = require('child_process').spawnSync('python3', [path.join(ROOT, 'tools/phosphor-subset.py'), src, out, list],
+          { encoding: 'utf8', env: Object.assign({}, process.env, process.env.NGG_PYTHONPATH ? { PYTHONPATH: process.env.NGG_PYTHONPATH } : {}) });
+        fs.rmSync(list, { force: true });
+        if (r.status !== 0 || !fs.existsSync(out)) { log(`  phosphor: no subset of ${font} (fontTools unavailable) — shipping the full font`); fs.rmSync(out, { force: true }); return null; }
+        // The previous subsets of this font are for an icon list nobody ships any more.
+        for (const f of fs.readdirSync(subsetDir)) if (f.startsWith(base + '.') && f !== path.basename(out)) fs.rmSync(path.join(subsetDir, f), { force: true });
+      }
+      log(`  phosphor: ${font} ${(fs.statSync(src).size / 1024).toFixed(0)} KB → ${(fs.statSync(out).size / 1024).toFixed(0)} KB (${cps.length} icons)`);
+      return '/vendor/phosphor/subset/' + path.basename(out);
+    };
+    const fontUrl = {};
+    for (const font of ['Phosphor.woff2', 'Phosphor-Fill.woff2']) fontUrl[font] = subsetFor(font) || '/vendor/phosphor/' + font;
+    /* vendor/VERSIONS.json records every file in vendor/ (tests/build.test.js): the subsets are recorded here, as they
+       are made, and a subset no longer shipped is taken out — a hand-kept entry would go stale with every icon added. */
+    {
+      const vf = path.join(ROOT, 'vendor/VERSIONS.json');
+      const v = JSON.parse(fs.readFileSync(vf, 'utf8'));
+      const want = {};
+      if (fs.existsSync(subsetDir)) for (const f of fs.readdirSync(subsetDir)) {
+        const buf = fs.readFileSync(path.join(subsetDir, f));
+        want['phosphor/subset/' + f] = { package: '@phosphor-icons/web', version: (v.files['phosphor/' + f.replace(/\.[0-9a-f]{10}\.woff2$/, '.woff2')] || {}).version || null,
+          bytes: buf.length, sha256: require('crypto').createHash('sha256').update(buf).digest('hex'),
+          note: 'subset of phosphor/' + f.replace(/\.[0-9a-f]{10}\.woff2$/, '.woff2') + ' to the icons the site names (tools/phosphor-subset.py, made by build.js)' };
+      }
+      let changed = false;
+      for (const k of Object.keys(v.files)) if (k.startsWith('phosphor/subset/') && !want[k]) { delete v.files[k]; changed = true; }
+      for (const [k, e] of Object.entries(want)) if (JSON.stringify(v.files[k]) !== JSON.stringify(e)) { v.files[k] = e; changed = true; }
+      if (changed) {
+        fs.writeFileSync(vf, JSON.stringify(v, null, 2) + '\n');
+      }
+    }
+    const phMin = Buffer.from((await esbuild.transform(ph.replace(/url\(["']?\.\/(Phosphor[\w-]*\.woff2)["']?\)/g, (m, f) => 'url("' + (fontUrl[f] || '/vendor/phosphor/' + f) + '")'), { loader: 'css', minify: true, legalComments: 'none' })).code);
     assets['phosphor.css'] = hashedName('phosphor-used.css', fileTag(phMin));
     fs.writeFileSync(path.join(DIST, assets['phosphor.css']), phMin);
   }
@@ -435,10 +483,15 @@ async function build() {
   prod = prod.replace(/<script src="vendor\/babel\.min\.js"><\/script>\s*/g, '');
   prod = prod.replace(/<script type="text\/babel" src="[^"]+"><\/script>\s*/g, '');
 
+  /* React and ReactDOM are DEFERRED like everything after them. They used to be plain blocking scripts in the
+     head, so a phone parsed nothing else — not the boot screen, not the stylesheet's first paint — until 140 KB
+     had arrived and run. Deferred scripts still run in document order, so React is ready before the bundle. */
+  prod = prod.replace(/<script src="vendor\/react\.production\.min\.js"><\/script>/, '<script defer src="vendor/react.production.min.js"></script>');
+  prod = prod.replace(/<script src="vendor\/react-dom\.production\.min\.js"><\/script>/, '<script defer src="vendor/react-dom.production.min.js"></script>');
   const A = (f) => assets[f] || f;
   // Insert the bundled scripts + a preload right after the React tags
   prod = prod.replace(
-    /(<script src="vendor\/react-dom\.production\.min\.js"><\/script>\s*)/,
+    /(<script defer src="vendor\/react-dom\.production\.min\.js"><\/script>\s*)/,
     /* `preload as="script"`, NOT `modulepreload`.
        The bundle is a classic script (`<script defer>`), and a
        modulepreload is fetched with module semantics — so the browser could
@@ -466,6 +519,10 @@ async function build() {
   prod = prod.split('href="styles-app.css"').join(`href="${A('styles-app-public.css')}" id="ngg-app-css"`);
   prod = prod.replace(/(<meta name="ngg-more" content="[^"]+"\/>\n)/, `$1<meta name="ngg-more-css" content="/${A('styles-app.css')}"/>\n`);
   prod = prod.split('href="/vendor/phosphor/phosphor.css"').join(`href="/${A('phosphor.css')}"`);
+
+  /* Where each page's prerendered first screen goes (tools/prerender.js; api/public/spa.php fills it per page).
+     Empty until the prerender step runs; React's createRoot clears it on its first render. */
+  prod = prod.replace('<div id="root"></div>', '<div id="root"><!--ngg-pre--><!--/ngg-pre--></div>');
 
   // Mark the build so we can spot which version a page is running
   prod = prod.replace(/<head>/, `<head>\n<meta name="ngg-build" content="${buildId}"/>`);
@@ -559,14 +616,42 @@ async function build() {
    * names the current set, so a reload always asks for these. The only window
    * where a stale one could be wanted is a deferred script fetch landing in the
    * seconds a deploy is being copied, which the plain names cover. */
-  const current = new Set(Object.values(assets).concat(Object.values(assets).map(a => a + '.map')));
+  /* PRECOMPRESSED copies of every fingerprinted script and stylesheet: Brotli at quality 11 and gzip at level 9,
+     served by dist/.htaccess when the browser accepts them (docs/PERFORMANCE.md). Built here, once, because the
+     host compresses on the fly at a lower setting on every request. Node's own zlib: no new dependency. */
+  let preBytes = 0, preBr = 0;
+  for (const name of Object.values(assets)) {
+    if (!/\.[0-9a-f]{10}\.(min\.)?(js|css)$/.test(name)) continue;
+    const file = path.join(DIST, name);
+    if (!fs.existsSync(file)) continue;
+    const raw = fs.readFileSync(file);
+    const br = zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length } });
+    fs.writeFileSync(file + '.br', br);
+    fs.writeFileSync(file + '.gz', zlib.gzipSync(raw, { level: 9 }));
+    preBytes += raw.length; preBr += br.length;
+  }
+  log(`precompressed ${(preBytes / 1048576).toFixed(1)} MB of scripts and styles to ${(preBr / 1048576).toFixed(2)} MB (Brotli)`);
+
+  const current = new Set(Object.values(assets).flatMap(a => [a, a + '.map', a + '.br', a + '.gz']));
   let swept = 0;
   for (const f of fs.readdirSync(DIST)) {
-    if (!/\.[0-9a-f]{10}\.(min\.)?(js|css)(\.map)?$/.test(f) || current.has(f)) continue;
+    if (!/\.[0-9a-f]{10}\.(min\.)?(js|css)(\.map|\.br|\.gz)?$/.test(f) || current.has(f)) continue;
     fs.rmSync(path.join(DIST, f), { force: true });
     swept++;
   }
   if (swept) log(`swept ${swept} fingerprinted file(s) from earlier builds`);
+
+  /* Prerender each public page's first screen into the shell (tools/prerender.js): a phone paints the page from
+     HTML and CSS instead of waiting for the bundle to run. Then the CSS that first screen needs is inlined and the
+     full sheets stop blocking the first paint (applyCriticalCss). Needs Chromium; without it the step says so and
+     the shell ships as before. NGG_PRERENDER=0 skips it (a quick local build). It never fails the build. BEFORE
+     the CSP is written, because the CSP hashes the inline script this adds. */
+  if (process.env.NGG_PRERENDER !== '0') {
+    try {
+      const pr = await require('./tools/prerender.js').run();
+      if (pr && pr.done && Object.keys(pr.done).length) applyCriticalCss(assets);
+    } catch (e) { log('prerender skipped: ' + String(e && e.message || e).split('\n')[0]); fs.rmSync(path.join(DIST, 'prerender'), { recursive: true, force: true }); }
+  } else fs.rmSync(path.join(DIST, 'prerender'), { recursive: true, force: true });   // no snapshot of last build's pages under this build's app
 
   writeProductionCsp();
 
@@ -710,6 +795,49 @@ async function buildJournal(buildId, assets) {
  * back cleanly when eval is refused. style-src keeps 'unsafe-inline': React
  * renders inline style attributes, and a stylesheet cannot run code. */
 const CSP_PHP_HANDLERS = ['window.print()'];   // receipt and curriculum-document pages
+/**
+ * Critical CSS (docs/PERFORMANCE.md). Public pages blocked their first paint on two full stylesheets — 508 KB and
+ * 318 KB — although the first screen uses a sliver of either. With every public page prerendered, the rules those
+ * screens can use are known: the ones whose classes appear in the snapshots (tools/css-split.js, by evidence —
+ * class-less rules, @font-face and @keyframes always kept). They are inlined in the head; the full sheets are added
+ * by a small inline script, which a browser never lets block the first paint; app.jsx draws only once they have
+ * loaded (window.__nggCss), so the app never renders a screen the inlined subset does not cover. <noscript> keeps
+ * the plain links. The shell is shared by every route (spa.php), so the subset is the union of every snapshot.
+ */
+function applyCriticalCss(assets) {
+  const { splitCss } = require('./tools/css-split.js');
+  const preDir = path.join(DIST, 'prerender');
+  const idxFile = path.join(DIST, 'index.html');
+  let html = fs.readFileSync(idxFile, 'utf8');
+  const sheets = [assets['styles.css'], assets['styles-app-public.css']].filter(Boolean);
+  const sheetCss = sheets.map(f => fs.readFileSync(path.join(DIST, f), 'utf8'));
+  const linkA = `<link rel="stylesheet" href="${assets['styles.css']}"/>`;
+  const linkB = `<link rel="stylesheet" href="${assets['styles-app-public.css']}" id="ngg-app-css"/>`;
+  if (!html.includes(linkA) || !html.includes(linkB)) { log('critical CSS not applied: stylesheet links not found'); return; }
+  // The shell's own markup (header, boot screen) counts for every page; the home page's snapshot does not.
+  const shellMarkup = html.replace(/<!--ngg-pre-->[\s\S]*?<!--\/ngg-pre-->/, '');
+  const per = {}; let total = 0, n = 0;
+  for (const f of fs.readdirSync(preDir).filter(x => x.endsWith('.html'))) {
+    const vocab = { words: new Set(), prefixes: [] };
+    for (const t of [fs.readFileSync(path.join(preDir, f), 'utf8'), shellMarkup])
+      for (const m of t.matchAll(/class="([^"]*)"/g)) for (const c of m[1].split(/\s+/)) if (c) vocab.words.add(c);
+    const css = sheetCss.map(c => splitCss(c, vocab).pub).join('').replace(/<\/style/gi, '<\\/style');
+    if (css.length > 120 * 1024) continue;   // too big to be worth inlining: that page keeps blocking sheets' timing
+    const id = f.replace(/\.html$/, '');
+    fs.writeFileSync(path.join(preDir, id + '.css'), css);
+    per[id] = css; total += css.length; n++;
+  }
+  if (!per.home) { log('critical CSS not applied: no subset for the home page'); return; }
+  const full = sheets.reduce((t, f) => t + fs.statSync(path.join(DIST, f)).size, 0);
+  // The two blocking links become one non-blocking loader, in the same order (the cascade is unchanged).
+  const loader = `<style id="ngg-critical">${per.home}</style>\n`
+    + `<script>window.__nggCss=Promise.all(${JSON.stringify(sheets)}.map(function(h,i){return new Promise(function(r){var l=document.createElement("link");l.rel="stylesheet";l.href=h;if(i)l.id="ngg-app-css";l.onload=l.onerror=function(){r()};document.head.appendChild(l)})}));</script>\n`
+    + `<noscript>${linkA}${linkB}</noscript>`;
+  html = html.replace(linkA, '').replace(linkB, loader);
+  fs.writeFileSync(idxFile, html);
+  log(`critical CSS: ${n} page(s), ${(total / n / 1024).toFixed(0)} KB each on average inlined instead of ${(full / 1024).toFixed(0)} KB of blocking stylesheets`);
+}
+
 function writeProductionCsp() {
   const crypto = require('crypto');
   const sha = (t) => "'sha256-" + crypto.createHash('sha256').update(t, 'utf8').digest('base64') + "'";

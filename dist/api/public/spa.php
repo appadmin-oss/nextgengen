@@ -42,6 +42,29 @@ function spa_route_for(string $path, array $routes): array {
     return ['route' => null, 'status' => 404, 'path' => ''];
 }
 
+/**
+ * Each page's own prerendered first screen (tools/prerender.js) in place of the shell's, between the markers.
+ * index.html carries the HOME page's (it is served as-is for "/"), so every other page must replace it: its own
+ * snapshot when one was made, nothing otherwise — never another page's content painted under this page's title.
+ */
+function spa_prerender(string $html, array $hit, string $root): string {
+    $id = ($hit['status'] === 200 && $hit['route']) ? (string)($hit['route']['id'] ?? '') : '';
+    $snap = '';
+    if ($id !== '' && preg_match('/^[a-z0-9-]+$/', $id)) {
+        $f = $root . '/prerender/' . $id . '.html';
+        if (is_file($f)) $snap = (string)@file_get_contents($f);
+    }
+    // A callback, so nothing in the snapshot (a "$5" price, a backslash) is read as a replacement pattern.
+    $out = preg_replace_callback('#<!--ngg-pre-->.*?<!--/ngg-pre-->#s', static fn() => '<!--ngg-pre-->' . $snap . '<!--/ngg-pre-->', $html, 1);
+    if ($out === null) return $html;
+    /* The CSS that page's first screen uses (build.js applyCriticalCss), in place of the home page's. A page with
+       no snapshot gets none: it shows the boot screen (styled inline) until the full sheets arrive. */
+    $css = '';
+    if ($snap !== '' && is_file($root . '/prerender/' . $id . '.css')) $css = (string)@file_get_contents($root . '/prerender/' . $id . '.css');
+    $out2 = preg_replace_callback('#<style id="ngg-critical">.*?</style>#s', static fn() => '<style id="ngg-critical">' . $css . '</style>', $out, 1);
+    return $out2 === null ? $out : $out2;
+}
+
 function spa_render(string $html, array $hit, string $query = ''): string {
     $r = $hit['route'];
     $set = static function (string $html, string $pattern, string $replacement): string {
@@ -92,5 +115,5 @@ if ((PHP_SAPI !== 'cli' || getenv('SPA_SERVE')) && !defined('SPA_LIBRARY')) {
     http_response_code($html === false ? 500 : $hit['status']);
     header('Content-Type: text/html; charset=utf-8');
     header('Cache-Control: no-cache');   // as index.html itself: a deploy is picked up at once
-    echo $html === false ? 'The site is being updated. Please refresh in a moment.' : spa_render($html, $hit, (string)($_SERVER['QUERY_STRING'] ?? ''));
+    echo $html === false ? 'The site is being updated. Please refresh in a moment.' : spa_render(spa_prerender($html, $hit, $root), $hit, (string)($_SERVER['QUERY_STRING'] ?? ''));
 }

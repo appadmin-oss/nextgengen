@@ -133,7 +133,7 @@ AddDefaultCharset UTF-8
   # (files.example.org) must be added to connect-src and frame-src here by
   # hand, or uploads and printed photos fail with a CSP error in the console.
   Header always set Content-Security-Policy "default-src 'self'; \
-script-src 'self' 'sha256-YjP3q340SssGzfDxgdsVZsI24XcgHIdAU3UDhygHUp0=' 'sha256-ASeAsjmszLOr0kt3B2Fj+iQMh8bualLheARFcxKRI9I=' 'sha256-wTtV1fZ1LDkHeQLSubl2Dm/5+Ut1tJdcipzYHpbUkCc=' 'sha256-mKIF9SO7F9PdewecOKNZgV6Rxs27qr2vGcMQWtIUTDI=' 'sha256-1kg2x4XteKTODYzGnkjEe1nQJYOSvlvJY4fdtuKo6OQ=' 'sha256-xHa/pnm6+KO5RpKF+7KJ2uoALZHW93H0tKhWCmyOsas=' 'sha256-0oum4Q4hYuyjH6H7YRlAYOwOsMf5vXmTkbTw7FVaheI=' 'unsafe-hashes' 'sha256-MguIPR6qNR8D3B+eAlK+bIRTZe8t3wkOY4B/56Me9FU=' 'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc='; \
+script-src 'self' 'sha256-YjP3q340SssGzfDxgdsVZsI24XcgHIdAU3UDhygHUp0=' 'sha256-ASeAsjmszLOr0kt3B2Fj+iQMh8bualLheARFcxKRI9I=' 'sha256-KqYiZgb12lPzIwIozw+2Qjih8YIghcef44sUWpw8kjA=' 'sha256-wTtV1fZ1LDkHeQLSubl2Dm/5+Ut1tJdcipzYHpbUkCc=' 'sha256-mKIF9SO7F9PdewecOKNZgV6Rxs27qr2vGcMQWtIUTDI=' 'sha256-1kg2x4XteKTODYzGnkjEe1nQJYOSvlvJY4fdtuKo6OQ=' 'sha256-xHa/pnm6+KO5RpKF+7KJ2uoALZHW93H0tKhWCmyOsas=' 'sha256-0oum4Q4hYuyjH6H7YRlAYOwOsMf5vXmTkbTw7FVaheI=' 'unsafe-hashes' 'sha256-MguIPR6qNR8D3B+eAlK+bIRTZe8t3wkOY4B/56Me9FU=' 'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc='; \
 style-src 'self' 'unsafe-inline'; \
 img-src 'self' data: https: blob:; \
 font-src 'self' data:; \
@@ -200,6 +200,27 @@ object-src 'none'"
   <FilesMatch "\.[0-9a-f]{10}\.(min\.)?(js|css)$">
     Header set Cache-Control "public, max-age=31536000, immutable"
     Header unset Expires
+  </FilesMatch>
+  # The precompressed copies: the type of what they hold, the encoding they are in, never compressed a second
+  # time, and the same year-long immutable life as the file they copy.
+  <FilesMatch "\.(br|gz)$">
+    RemoveType .br .gz
+    RemoveEncoding .br .gz
+    Header append Vary Accept-Encoding
+    Header set Cache-Control "public, max-age=31536000, immutable"
+    Header unset Expires
+  </FilesMatch>
+  <FilesMatch "\.js\.(br|gz)$">
+    ForceType "application/javascript; charset=utf-8"
+  </FilesMatch>
+  <FilesMatch "\.css\.(br|gz)$">
+    ForceType "text/css; charset=utf-8"
+  </FilesMatch>
+  <FilesMatch "\.br$">
+    Header set Content-Encoding br
+  </FilesMatch>
+  <FilesMatch "\.gz$">
+    Header set Content-Encoding gzip
   </FilesMatch>
   # The API. Live data, sessions and children's records — never cacheable by
   # the browser or by anything between us and it. Mirrors the no-store header
@@ -273,6 +294,17 @@ object-src 'none'"
   # Checked BEFORE the real-file pass below, which would otherwise serve it.
   # Relative to this directory, so it holds when the site is in a subfolder.
   RewriteRule ^[^/]+\.php$ - [F,L]
+
+  # PRECOMPRESSED copies (build.js writes app.<hash>.min.js.br and .gz beside each fingerprinted script and
+  # stylesheet). Brotli at its highest setting is ~20% smaller than the gzip mod_deflate makes on the fly, and
+  # costs the host no CPU per request. Only fingerprinted names have copies, so a copy can never be stale.
+  # Before the real-file pass: the copy is a real file too, and this decides which one is sent.
+  RewriteCond %{HTTP:Accept-Encoding} \bbr\b
+  RewriteCond %{REQUEST_FILENAME}.br -f
+  RewriteRule ^(.+\.(?:js|css))$ $1.br [E=no-gzip:1,L]
+  RewriteCond %{HTTP:Accept-Encoding} \bgzip\b
+  RewriteCond %{REQUEST_FILENAME}.gz -f
+  RewriteRule ^(.+\.(?:js|css))$ $1.gz [E=no-gzip:1,L]
 
   # Don't rewrite real files / directories
   RewriteCond %{REQUEST_FILENAME} -f [OR]

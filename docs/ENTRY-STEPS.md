@@ -22,7 +22,7 @@ This page records how each line of the card became the system, and why.
 | — passport | **Passport photograph** on the record. | `RCL_AUTO['photo']` |
 | — MoU | **Membership Agreement (MoU) handed in**: signed online, then the inked paper copy checked and photographed at the centre, then countersigned. | `RCL_AUTO['mou']`, `admin_mou_paper` |
 | — report card | Default item **Latest school report card** (a document, dated within 400 days). | `RCI-REPORTCARD` |
-| — timetable | **School timetable on the site**: the member's own timetable at /timetable has school lessons on at least three weekdays. A copied NGG session does not count. | `RCL_AUTO['timetable']`, `rcl_timetable_days` |
+| — timetable | **Personal timetable on the site** (19 Nov 2026, "My week"): the member's own timetable at /timetable has school on at least three weekdays AND one thing of the child's own (study or an activity). An NGG session does not count as their own. | `RCL_AUTO['timetable']`, `rcl_timetable_own` |
 | Online registration | Guardian linked, consents, date of birth, school, emergency contact, courses. | `RCL_AUTO` (step `online`) |
 | ID card | **ID card printed** (a proof is not a card). | `RCL_AUTO['idcard']` |
 | Attend lectures | **Not a box.** The day the last item is done is the day the member resumes: `resumedOn`, written once and never moved; the family, member and supervisor are told. | `rcl_refresh`, `rcl_tell_resumed` |
