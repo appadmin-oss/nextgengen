@@ -38943,6 +38943,49 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('sweep: still settling at Paystack, it is left open to be asked again; never failed, never paid early',
         (string)membership_invoice_by('invoiceId', (string)$bi4['invoiceId'])['status'] === 'open');
 
+    // ── Guards ──
+    // Follow-up email: never over a payment in flight. $bi4's checkout started ten minutes ago and is settling.
+    db_insert('audit_log', ['at' => gmdate('Y-m-d\TH:i:s\Z', time() - 2400), 'actorId' => 'paystack', 'event' => 'membership.paystack.failed', 'subject' => 'NGG-PF-1', 'ip' => '',
+        'meta' => json_encode(['invoiceId' => (string)$bi4['invoiceId'], 'reference' => 'NGGM-0000000000000FA1', 'reason' => 'Declined', 'kind' => 'declined'], JSON_UNESCAPED_SLASHES)]);
+    $GLOBALS['__mail_sink'] = [];
+    chk('guard: no "didn’t go through" email while the family is trying again (a newer checkout in the last half hour)',
+        paystack_rescue_failed() === 0 && count($rescueMails()) === 0);
+    db_exec("UPDATE audit_log SET at = ? WHERE event = 'membership.paystack.init' AND meta LIKE ?", [gmdate('Y-m-d\TH:i:s\Z', time() - 2000), '%' . $in4['reference'] . '%']);
+    chk('guard: …once that retry is old enough to have an answer and the invoice is still unpaid, the one email goes',
+        paystack_rescue_failed() === 1 && count($rescueMails()) === 1);
+
+    chk('guard: Paystack’s answers are told apart: no reply, a refused key, and a real answer about one payment',
+        paystack_answer_kind(['ok' => false, 'error' => 'network']) === 'unanswered' && paystack_answer_kind(['ok' => false, 'error' => 'bad_response']) === 'unanswered'
+        && paystack_answer_kind(['status' => false, 'message' => 'Invalid key']) === 'bad_key'
+        && paystack_answer_kind(['status' => false, 'message' => 'Transaction reference not found']) === 'answered'
+        && paystack_answer_kind(['status' => true, 'data' => []]) === 'answered');
+
+    // Paystack down: the sweep stops after PAYSTACK_SWEEP_BREAKER silent calls instead of spending 15 s on each.
+    for ($gi = 1; $gi <= 6; $gi++) db_insert('donations', ['reference' => 'NGGD-GUARD000000000' . $gi, 'email' => 'guard' . $gi . '@test.invalid', 'name' => 'Guard', 'amount' => 1000,
+        'currency' => 'NGN', 'status' => 'pending', 'message' => '', 'createdAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 600 - $gi)]);
+    $GLOBALS['__paystack_mock'] = fn($m, $p, $b) => ['ok' => false, 'error' => 'network'];
+    $down = paystack_sweep();
+    chk('guard: Paystack not answering, the run stops after ' . PAYSTACK_SWEEP_BREAKER . ' silent calls and says why',
+        ($down['stopped'] ?? '') === 'unreachable' && ($down['checked'] ?? 0) === PAYSTACK_SWEEP_BREAKER
+        && db_row("SELECT 1 FROM audit_log WHERE event = 'paystack.sweep.unreachable'"));
+    paystack_sweep();
+    chk('guard: …recorded once an hour, not once a run', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'paystack.sweep.unreachable'")['c'] === 1);
+    chk('guard: …and no follow-up email goes out while Paystack itself is failing', ($down['rescued'] ?? -1) === 0);
+
+    // Paystack refusing the key: every payment is failing for OUR reason. Stop at once; tell fees staff once a day.
+    $GLOBALS['__paystack_mock'] = fn($m, $p, $b) => ['status' => false, 'message' => 'Invalid key'];
+    $bad = paystack_sweep();
+    paystack_sweep();
+    chk('guard: a refused key stops the run at the first call, and is recorded once a day, not once a run',
+        ($bad['stopped'] ?? '') === 'bad_key' && ($bad['checked'] ?? 0) === 1
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'paystack.key.refused'")['c'] === 1);
+    chk('guard: …nothing was marked paid or failed by either outage',
+        (int)db_row("SELECT COUNT(*) c FROM donations WHERE reference LIKE 'NGGD-GUARD%' AND status <> 'pending'")['c'] === 0);
+    db_exec("DELETE FROM donations WHERE reference LIKE 'NGGD-GUARD%'");
+
+    chk('guard: one run is held to a time budget and an email cap',
+        PAYSTACK_SWEEP_BUDGET > 0 && PAYSTACK_SWEEP_BUDGET <= 30 && PAYSTACK_RESCUE_MAX > 0 && PAYSTACK_SWEEP_MAX <= 40);
+
     unset($GLOBALS['__paystack_mock'], $GLOBALS['CONFIG']['paystack']);
     setting_set('fees', is_array($keep) ? $keep : [], 'test');
     db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-PF-1'"); db_exec("DELETE FROM membership_invoices WHERE memberId = 'NGG-PF-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-PF-1'");

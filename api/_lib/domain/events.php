@@ -226,10 +226,12 @@ function paystack_secret(): string {
 
 /** HTTP to Paystack (mockable in tests). Returns decoded body or ['ok'=>false]. */
 function paystack_http(string $method, string $path, array $body = []): array {
+    // The last answer is kept for the sweep's guards (paystack_answer_kind): it cannot see a verify
+    // function's raw response, and must tell "Paystack said no" from "Paystack did not answer".
     if (isset($GLOBALS['__paystack_mock']) && is_callable($GLOBALS['__paystack_mock'])) {
-        return ($GLOBALS['__paystack_mock'])($method, $path, $body);
+        return $GLOBALS['__paystack_last'] = ($GLOBALS['__paystack_mock'])($method, $path, $body);
     }
-    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'no_curl'];
+    if (!function_exists('curl_init')) return $GLOBALS['__paystack_last'] = ['ok' => false, 'error' => 'no_curl'];
     $ch = curl_init('https://api.paystack.co' . $path);
     $opts = [
         CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_CONNECTTIMEOUT => 6,
@@ -238,9 +240,9 @@ function paystack_http(string $method, string $path, array $body = []): array {
     if ($method === 'POST') { $opts[CURLOPT_POST] = true; $opts[CURLOPT_POSTFIELDS] = json_encode($body, JSON_UNESCAPED_SLASHES); }
     curl_setopt_array($ch, $opts);
     $out = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-    if ($out === false) return ['ok' => false, 'error' => 'network'];
+    if ($out === false) return $GLOBALS['__paystack_last'] = ['ok' => false, 'error' => 'network'];
     $j = json_decode((string)$out, true);
-    return is_array($j) ? $j : ['ok' => false, 'error' => 'bad_response'];
+    return $GLOBALS['__paystack_last'] = (is_array($j) ? $j : ['ok' => false, 'error' => 'bad_response', 'httpCode' => $code]);
 }
 
 /** Start a donation → returns the Paystack checkout URL. */

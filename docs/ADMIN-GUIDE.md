@@ -1293,6 +1293,24 @@ Paystack's words · ref · family emailed (date)*, so the desk can answer the
 parent who rings. Look the reference up
 in the Paystack dashboard if the family says money left their account.
 
+**Guards on the automatic re-check and the follow-up email.**
+- **If Paystack is down**, the 10-minute re-check stops after three unanswered
+  calls instead of waiting on each one. It tries again on the next run and
+  records `paystack.sweep.unreachable` once an hour. Nothing is marked paid or
+  failed while Paystack is silent.
+- **If Paystack refuses NGG's secret key**, nothing can start or be confirmed:
+  not the pay page, not the webhook, not the re-check. The re-check stops at
+  once and **everyone who holds `fees` is emailed** ("Paystack is refusing NGG's
+  key"), at most once a day, until the key in the site's configuration is fixed.
+  Families can still pay by transfer. Waiting payments settle on the first run
+  after the key works.
+- **One run is limited** to 20 seconds and 40 Paystack calls. Anything left over
+  waits for the next run, ten minutes later.
+- **The follow-up email is held back** while Paystack itself is failing, while
+  the family has started a new checkout in the last half hour (it may still be
+  going through), for pay-ahead invoices (optional, so nothing is "still to
+  pay"), and for members who have left. At most 20 go out per run.
+
 **Amounts.** A payment for less than the checkout never settles. A payment for
 *more* settles only if the extra is no more than Paystack itself can add when
 its dashboard passes charges to the customer (1.5% + ₦100, capped at ₦2,000).

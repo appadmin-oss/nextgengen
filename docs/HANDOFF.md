@@ -7717,6 +7717,16 @@ The owner asked for this "only if you think it is cool". It is, for one concrete
    still open with no transfer waiting. It is claimed in the audit whether or not the mail went, so a
    broken mailer cannot send one a run. The staff row shows the kind and whether the family was emailed.
 
-**Verified.** `run.php`: 22 new checks (settling, failed and its kinds, follow-up email, overpaid, sweep),
-run in CI. `node build.js` is clean.
+6. *Guards* (owner: "we need guards to avoid errors"). `paystack_http` keeps its last answer in
+   `$GLOBALS['__paystack_last']`, and `paystack_answer_kind()` reads it as answered | unanswered |
+   bad_key. The sweep stops after `PAYSTACK_SWEEP_BREAKER` (3) unanswered calls in a row, with an audit
+   once an hour. On a refused key it stops at the first call and `paystack_key_alarm()` emails fees
+   holders once per `PAYSTACK_KEY_ALERT_HOURS` (24). One run is held to `PAYSTACK_SWEEP_BUDGET` (20 s),
+   shared with the follow-up emails, which are capped at `PAYSTACK_RESCUE_MAX` (20). No follow-up is sent
+   during an outage, over a checkout started in the last half hour (retried on a later run), for an
+   `advance` invoice, or to a member who has left. Settling twice was already prevented by the
+   ledger's unique `(memberId, kind, periodKey)` and the conditional updates on shop orders and donations.
+
+**Verified.** `run.php`: 32 new checks (settling, failed and its kinds, follow-up email, overpaid, sweep,
+guards), run in CI. `node build.js` is clean.
 

@@ -1039,20 +1039,32 @@ const PAYSTACK_RESCUE_AFTER = 1800;   // seconds after a failure before the fami
  * failed, what will work instead, and the link. Most families who meet a decline simply stop; the ones
  * who meant to pay are a message away from paying. Run from the sweep. Returns how many were sent.
  */
-function paystack_rescue_failed(): int {
+function paystack_rescue_failed(float $budget = PAYSTACK_SWEEP_BUDGET): int {
+    $t0 = microtime(true);
     $from = gmdate('Y-m-d\TH:i:s\Z', time() - PAYSTACK_SWEEP_HOURS * 3600);
     $to = gmdate('Y-m-d\TH:i:s\Z', time() - PAYSTACK_RESCUE_AFTER);
+    $recent = gmdate('Y-m-d\TH:i:s\Z', time() - PAYSTACK_RESCUE_AFTER);
     $sent = 0; $seen = [];
-    foreach (db_all("SELECT meta FROM audit_log WHERE event = 'membership.paystack.failed' AND at >= ? AND at <= ? ORDER BY id DESC LIMIT 100", [$from, $to]) as $a) {
+    foreach (db_all("SELECT at, meta FROM audit_log WHERE event = 'membership.paystack.failed' AND at >= ? AND at <= ? ORDER BY id DESC LIMIT 100", [$from, $to]) as $a) {
+        if ($sent >= PAYSTACK_RESCUE_MAX || microtime(true) - $t0 >= $budget) break;
         $m = json_decode((string)$a['meta'], true); $iid = (string)($m['invoiceId'] ?? '');
         if ($iid === '' || isset($seen[$iid])) continue;
         $seen[$iid] = true;
         $inv = membership_invoice_by('invoiceId', $iid);
         if (!$inv || (string)$inv['status'] !== 'open') continue;
+        // Paying ahead is optional: "still to pay" would be untrue, so no chaser for it.
+        if ((string)($inv['purpose'] ?? '') === 'advance') continue;
         if (db_row("SELECT id FROM offline_payments WHERE invoiceId = ? AND status = 'pending' LIMIT 1", [$iid])) continue;
         if (db_row("SELECT id FROM audit_log WHERE event = 'membership.paystack.rescue' AND meta LIKE ? LIMIT 1", ['%"' . $iid . '"%'])) continue;
+        /* Trying again right now — a checkout started after the failure, in the last half hour, may still be
+           settling. Emailing "it didn't go through" over a payment in flight is how a family pays twice.
+           Left for a later run, which looks again once that checkout is old enough to have an answer. */
+        if (db_row("SELECT id FROM audit_log WHERE event = 'membership.paystack.init' AND at > ? AND at >= ? AND meta LIKE ? LIMIT 1",
+            [(string)$a['at'], $recent, '%"invoiceId":"' . $iid . '"%'])) { unset($seen[$iid]); continue; }
         $mem = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$inv['memberId']]);
-        $email = $mem ? membership_contact($mem) : '';
+        // A member who has left is not chased by an automatic email; the desk decides.
+        if (!$mem || in_array((string)($mem['status'] ?? ''), ['inactive', 'suspended', 'deactivated', 'left', 'archived'], true)) continue;
+        $email = membership_contact($mem);
         if ($email === '') continue;
         $terms = membership_fee_terms();
         $adv = paystack_fail_advice((string)($m['kind'] ?? paystack_fail_kind((string)($m['reason'] ?? ''))), $inv, $terms);
@@ -1079,6 +1091,40 @@ function paystack_rescue_failed(): int {
 const PAYSTACK_SWEEP_HOURS = 48;   // a checkout older than this was abandoned, not settling
 const PAYSTACK_SWEEP_MAX = 40;     // Paystack verify calls in one run (net time is not ours)
 const PAYSTACK_SWEEP_MIN_AGE = 120; // seconds: leave a live return trip to the family's own page
+/* Guards. The sweep runs inside a visitor's request or the outside scheduler's 50-second run, and every
+   call it makes is up to 15 seconds of somebody else's server. */
+const PAYSTACK_SWEEP_BUDGET = 20;   // seconds one run may spend, settling and emailing together
+const PAYSTACK_SWEEP_BREAKER = 3;   // unanswered calls in a row: Paystack is down, stop asking this run
+const PAYSTACK_RESCUE_MAX = 20;     // follow-up emails in one run
+const PAYSTACK_KEY_ALERT_HOURS = 24; // "Paystack refuses our key" told to fees staff at most this often
+
+/**
+ * What the last Paystack call came back as: `answered` (Paystack replied — yes, no or "not found"),
+ * `unanswered` (network, timeout, a reply that was not Paystack's JSON) or `bad_key` (Paystack refused
+ * the secret key itself). The difference matters: "not found" is an answer about ONE payment, while
+ * no answer or a refused key is about ALL of them, and asking forty more times only makes it slower.
+ */
+function paystack_answer_kind(?array $r): string {
+    if (!is_array($r)) return 'unanswered';
+    if (in_array((string)($r['error'] ?? ''), ['network', 'bad_response', 'no_curl'], true)) return 'unanswered';
+    if (empty($r['status']) && preg_match('/invalid key|secret key|authori[sz]ation/i', (string)($r['message'] ?? ''))) return 'bad_key';
+    return 'answered';
+}
+
+/**
+ * Paystack refuses NGG's secret key: no payment can start or be confirmed — not by the page, not by the
+ * webhook (which is signed with the same key), not by this sweep. It used to fail one family at a time
+ * with nothing to say why. Recorded, and the staff who hold `fees` are told, once a day at most.
+ */
+function paystack_key_alarm(string $message): void {
+    $since = gmdate('Y-m-d\TH:i:s\Z', time() - PAYSTACK_KEY_ALERT_HOURS * 3600);
+    if (db_row("SELECT id FROM audit_log WHERE event = 'paystack.key.refused' AND at >= ? LIMIT 1", [$since])) return;
+    audit('paystack.key.refused', 'system', '', ['message' => mb_substr($message, 0, 160)]);
+    membership_bank_notify('Paystack is refusing NGG’s key',
+        'Paystack answered "' . mb_substr($message, 0, 120) . '". Until the Paystack secret key in the site’s configuration is corrected, '
+        . 'no online payment can start or be confirmed, and payments already made will not show. Families can still pay by bank transfer. '
+        . 'NGG checks again every ten minutes and settles waiting payments as soon as the key works.');
+}
 
 /**
  * Ask Paystack again about every recent checkout that has not settled: joining, balance, instalment and
@@ -1112,18 +1158,32 @@ function paystack_sweep(): array {
     foreach (db_all("SELECT reference FROM donations WHERE status = 'pending' AND createdAt >= ? AND createdAt <= ? ORDER BY id DESC LIMIT 200", [$from, $to]) as $d)
         $todo[(string)$d['reference']] = 'donation';
 
-    $checked = 0; $settled = [];
+    $t0 = microtime(true);
+    $checked = 0; $settled = []; $silent = 0; $stopped = '';
     foreach ($todo as $ref => $kind) {
         if ($checked >= PAYSTACK_SWEEP_MAX) break;
+        if (microtime(true) - $t0 >= PAYSTACK_SWEEP_BUDGET) { $stopped = 'budget'; break; }
         $checked++;
+        $GLOBALS['__paystack_last'] = null;
         try {
             $v = match ($kind) { 'membership' => membership_paystack_verify($ref), 'shop' => shop_paystack_verify($ref), default => donation_verify($ref) };
-        } catch (Throwable $e) { continue; }
+        } catch (Throwable $e) { $v = []; }
+        // A reference rejected by our own format check never reached Paystack: no answer to judge.
+        $ans = array_key_exists('__paystack_last', $GLOBALS) && $GLOBALS['__paystack_last'] !== null ? paystack_answer_kind($GLOBALS['__paystack_last']) : 'answered';
+        if ($ans === 'bad_key') { paystack_key_alarm((string)($GLOBALS['__paystack_last']['message'] ?? '')); $stopped = 'bad_key'; break; }
+        $silent = $ans === 'unanswered' ? $silent + 1 : 0;
+        if ($silent >= PAYSTACK_SWEEP_BREAKER) {
+            $stopped = 'unreachable';
+            if (!db_row("SELECT id FROM audit_log WHERE event = 'paystack.sweep.unreachable' AND at >= ? LIMIT 1", [gmdate('Y-m-d\TH:i:s\Z', time() - 3600)]))
+                audit('paystack.sweep.unreachable', 'system', '', ['checked' => $checked]);
+            break;
+        }
         if (!empty($v['ok']) && (string)($v['status'] ?? '') === 'paid' && empty($v['already'])) $settled[] = $kind . ':' . $ref;
     }
     if ($settled) audit('paystack.sweep.settled', 'system', '', ['count' => count($settled), 'references' => $settled, 'checked' => $checked]);
-    $rescued = paystack_rescue_failed();
-    return ['ok' => true, 'checked' => $checked, 'settled' => count($settled), 'more' => count($todo) > $checked, 'rescued' => $rescued];
+    // No follow-up email while Paystack itself is failing: the family's retry would fail for OUR reason.
+    $rescued = $stopped === '' || $stopped === 'budget' ? paystack_rescue_failed(max(0.0, PAYSTACK_SWEEP_BUDGET - (microtime(true) - $t0))) : 0;
+    return ['ok' => true, 'checked' => $checked, 'settled' => count($settled), 'more' => count($todo) > $checked, 'rescued' => $rescued, 'stopped' => $stopped];
 }
 
 /* ── Staff ───────────────────────────────────────────────────────────────── */
