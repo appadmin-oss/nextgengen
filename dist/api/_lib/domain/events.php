@@ -678,6 +678,12 @@ function public_apply(array $p): array {
     $details = null;
     $age = 0; $track = ''; $centre = ''; $role = ''; $program = ''; $programme = ''; $courses = []; $faculty = ''; $visibilityConsent = 0;
     $photoUrl = intake_photo_accept((string)($p['photoUrl'] ?? ''));
+    /* An online mentor (docs/ONLINE-MEMBERS-PLAN.md, phase 5): placed at the online centre, so accepting them makes
+       a mentor there and the Online desk pairs them with online members. */
+    if ($kind === 'mentor' && (string)($p['mode'] ?? '') === 'online' && function_exists('online_offer')) {
+        $on = online_offer();
+        if (!empty($on['available'])) $centre = (string)$on['centre'];
+    }
     if ($kind === 'teen') {
         // Age is derived from the date of birth, not entered separately.
         $age = $dobAge;
@@ -696,6 +702,14 @@ function public_apply(array $p): array {
            course is spelled as its own programme's list spells it, so a
            member's track matches the timetable and the curriculum. */
         $progKey = $program === 'summer' ? 'summer' : 'ngg';
+        /* "Online" is a way to take part, not a centre the family picks from the list: the server places the
+           applicant at the online centre itself. NGG only — Summer School meets in person. */
+        if ((string)($p['mode'] ?? '') === 'online') {
+            if ($progKey !== 'ngg') return ['ok' => false, 'error' => 'online_ngg_only', 'detail' => 'Summer School meets at a centre. NGG Online is for the Club.'];
+            $on = function_exists('online_offer') ? online_offer() : ['available' => false];
+            if (empty($on['available'])) return ['ok' => false, 'error' => 'online_unavailable', 'detail' => 'NGG Online is not taking applications right now. Choose a centre.'];
+            $centre = (string)$on['centre'];
+        }
         if ($centre !== '') {
             $hit = db_row("SELECT name, programmes FROM centres WHERE lower(name) = ? AND status = 'active' LIMIT 1", [mb_strtolower($centre)]);
             if ($hit && function_exists('centre_serves') && !centre_serves($hit, $progKey)) {
@@ -1257,6 +1271,8 @@ function public_programme(array $p): array {
     $out = ['ok' => true, 'program' => $prog === 'summer' ? 'summer' : 'anchor', 'faculties' => $fac, 'centres' => $centres];
     // What joining NGG costs, said before anybody applies (nothing is paid until a place is offered).
     if ($prog === 'ngg' && function_exists('membership_fee_terms')) $out['fees'] = membership_fee_terms();
+    // NGG Online: the other way to join, with its own price and what it includes (domain/online.php).
+    if ($prog === 'ngg' && function_exists('online_offer')) $out['online'] = online_offer();
     return $out;
 }
 

@@ -64,6 +64,7 @@ function rate_limit_default(string $op): ?array {
         'wifi.usage'         => ['max' => 30, 'window' => 60],    // a router reports its sessions in pages of 100 each fetch    // a router fetches every 5 minutes; a key guess is slowed
         'wifi.speed'         => ['max' => 40, 'window' => 600],   // a speed test is a handful of downloads; slows anybody using it as a pipe
         'wifi.pin'           => ['max' => 6,  'window' => 600],
+        'online.join'        => ['max' => 10, 'window' => 600],   // the online session's Join: attendance + the link
         'volpay.bank'        => ['max' => 5,  'window' => 3600],  // a volunteer changing where they are paid   // a member's own PIN reset (3 a day is the domain's rule)
         'member.coach'       => ['max' => 20, 'window' => 600],   // each reply is a paid model call
         'member.chat'        => ['max' => 20, 'window' => 600],   // a child's messages to their mentor; each one notifies an adult

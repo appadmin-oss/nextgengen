@@ -40366,6 +40366,113 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     setting_set('policy', (string)$keepPol, 'test'); setting_set('memberProgramme', (string)$keepCal, 'test'); setting_set('policy_member_swept_through', (string)$keepCur, 'system');
 })();
 
+/* ── Online membership, phases 2–6 (21 Nov 2026): joining online, what an online member pays, the online Saturday
+   session, online mentors and the staff's Online view. ── */
+(function () {
+    $now = now_iso();
+    $keepFees = setting_raw('fees'); $keepOn = setting_raw(ONLINE_SETTINGS_KEY);
+    fees_settings_save(['enabled' => true, 'membershipFee' => 10000, 'monthlyDues' => 2000, 'trainingFee' => 300000, 'trainingBasis' => 'total',
+        'onlineMonthly' => 13000, 'onlineMonthlyUsd' => 10, 'onlineCourseFee' => 6500, 'onlineCourseUsd' => 5, 'onlineCourseBasis' => 'month', 'payFeeOn' => false], 'test');
+
+    // Joining.
+    $offer = online_offer();
+    chk('online · the offer: NGG Online, $10 (₦13,000) a month with a mentor, $5 (₦6,500) a course with an instructor',
+        !empty($offer['available']) && $offer['centre'] === 'NGG Online' && $offer['monthly'] === 13000 && $offer['monthlyUsd'] === 10 && $offer['course'] === 6500 && $offer['courseUsd'] === 5 && count($offer['includes']) >= 6);
+    chk('online · the join form is told about it', (public_programme(['program' => 'ngg'])['online']['centre'] ?? '') === 'NGG Online');
+    $base = ['kind' => 'teen', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY, 'sex' => 'Female', 'dob' => '2012-03-04',
+        'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg'];
+    chk('online · Summer School cannot be joined online (it meets at a centre)',
+        (backend_dispatch('public.apply', $base + ['program' => 'summer', 'mode' => 'online', 'firstName' => 'Sum', 'lastName' => 'Online', 'email' => 'sum.online@test.invalid', 'phone' => '08039990001'])['error'] ?? '') === 'online_ngg_only');
+    $ap = backend_dispatch('public.apply', $base + ['program' => 'anchor', 'mode' => 'online', 'centre' => 'Somewhere Else', 'firstName' => 'Ada', 'lastName' => 'Online', 'email' => 'ada.online@test.invalid', 'phone' => '08039990002']);
+    $row = db_row("SELECT centre FROM applications WHERE email = 'ada.online@test.invalid' ORDER BY id DESC LIMIT 1");
+    chk('online · applying online places the child at NGG Online — the server decides, whatever centre the form sent',
+        !empty($ap['ok']) && $row && $row['centre'] === 'NGG Online');
+    setting_set(ONLINE_SETTINGS_KEY, ['enabled' => false] + ONLINE_DEFAULTS, 'test');
+    chk('online · switched off, the form is told and an online application is refused by name',
+        empty(online_offer()['available']) && (backend_dispatch('public.apply', $base + ['program' => 'anchor', 'mode' => 'online', 'firstName' => 'Off', 'lastName' => 'Line', 'email' => 'off.line@test.invalid', 'phone' => '08039990003'])['error'] ?? '') === 'online_unavailable');
+    setting_set(ONLINE_SETTINGS_KEY, ONLINE_DEFAULTS, 'test');
+
+    // Money.
+    $course = (member_course_names())[0] ?? 'Chess';
+    db_insert('members', ['memberId' => 'NGG-ONP-1', 'fullName' => 'Ola Online', 'email' => '', 'parentEmail' => 'ola.family@test.invalid', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => 'NGG Online', 'joinDate' => gmdate('Y-m-01'), 'courses' => json_encode([$course]), 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-ONP-C', 'fullName' => 'Centre Child', 'email' => '', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => 'Testville', 'joinDate' => gmdate('Y-m-01'), 'createdAt' => $now, 'updatedAt' => $now]);
+    $om = db_row("SELECT * FROM members WHERE memberId = 'NGG-ONP-1'"); $cm = db_row("SELECT * FROM members WHERE memberId = 'NGG-ONP-C'");
+    $items = membership_invoice_items($om, gmdate('Y-m-20'));
+    $kinds = array_column($items, 'kind');
+    chk('online · the joining invoice: the whole first month (never pro-rated for a late start), the course, and no membership fee',
+        !in_array('membership', $kinds, true) && ($items[0]['kind'] ?? '') === 'dues' && (int)$items[0]['amount'] === 13000
+        && count(array_filter($items, static fn($i) => $i['kind'] === 'training' && (int)$i['amount'] === 6500)) === 1);
+    $cItems = membership_invoice_items($cm, gmdate('Y-m-20'));
+    chk('online · …while a centre member’s joining invoice is unchanged: membership fee and a pro-rated commitment fee',
+        in_array('membership', array_column($cItems, 'kind'), true) && (int)(array_values(array_filter($cItems, static fn($i) => $i['kind'] === 'dues'))[0]['amount'] ?? 0) < 2000);
+    chk('online · the course line is only for a catalogue course — free text ("Other") is never billed',
+        fees_online_courses(['centre' => 'NGG Online', 'courses' => '', 'track' => 'Underwater basket weaving']) === []);
+    $acc = fees_accrue_member($om);
+    $led = db_all("SELECT kind, amount, periodKey FROM member_ledger WHERE memberId = 'NGG-ONP-1'");
+    $ks = array_column($led, 'kind');
+    chk('online · the accrual charges the online month and the course, and none of the centre’s fees (membership, commitment, training place)',
+        !in_array('membership', $ks, true) && count(array_filter($led, static fn($l) => $l['kind'] === 'dues' && (int)$l['amount'] === 13000)) === 1
+        && count(array_filter($led, static fn($l) => $l['kind'] === 'training' && (int)$l['amount'] === 6500 && str_starts_with($l['periodKey'], 'course:'))) === 1
+        && !array_filter($led, static fn($l) => $l['kind'] === 'training' && (int)$l['amount'] === 300000));
+    fees_accrue_member($om);
+    chk('online · …and twice is once: the month and the course are keyed, so a re-run posts nothing',
+        count(db_all("SELECT id FROM member_ledger WHERE memberId = 'NGG-ONP-1'")) === count($led));
+    chk('online · one answer for what a member pays a month', fees_member_monthly($om) === 13000 && fees_member_monthly($cm) === 2000);
+    $next = gmdate('Y-m', strtotime(gmdate('Y-m-01') . ' +1 month'));
+    $up = membership_upcoming_charges($om, fees_settings(), 2, gmdate('Y-m-d'));
+    chk('online · pay-ahead and the advance notices quote next month at the online fee, with the course on the same day — never the commitment fee or a renewal',
+        (bool)array_filter($up, static fn($c) => $c['kind'] === 'dues' && $c['key'] === $next && (int)$c['amount'] === 13000)
+        && (bool)array_filter($up, static fn($c) => $c['kind'] === 'training' && $c['due'] === $next . '-01')
+        && !array_filter($up, static fn($c) => $c['kind'] === 'membership'));
+    chk('online · the notice names the charges in the family’s words (never "Membership renewal" for a course)',
+        str_starts_with(dues_charge_label(['kind' => 'dues', 'key' => $next], $om), 'NGG Online') && str_starts_with(dues_charge_label(['kind' => 'training', 'key' => 'course:' . mb_strtolower($course) . ':' . $next], $om), 'Course · ' . $course));
+
+    // The online Saturday session.
+    $w = online_session_window(strtotime('2026-11-18 12:00:00 UTC'), ['sessionDay' => 'Saturday', 'sessionTime' => '08:30', 'sessionMinutes' => 90] + ONLINE_DEFAULTS);
+    chk('online · the next session is the coming Saturday at 08:30 Lagos time', $w['date'] === '2026-11-21' && gmdate('H:i', $w['start']) === '07:30');
+    chk('online · the session card is for online members only', (backend_dispatch('member.online.session', ['memberId' => 'NGG-ONP-C'])['error'] ?? '') === 'not_online');
+    setting_set(ONLINE_SETTINGS_KEY, ['sessionUrl' => ''] + ONLINE_DEFAULTS, 'test');
+    chk('online · with no link set, Join says so rather than opening nothing', (backend_dispatch('member.online.session.join', ['memberId' => 'NGG-ONP-1'])['error'] ?? '') === 'no_link');
+    $began = new DateTime('-10 minutes', new DateTimeZone('Africa/Lagos'));   // its day comes from the same moment, so midnight cannot split them
+    setting_set(ONLINE_SETTINGS_KEY, ['sessionUrl' => 'https://meet.example/ngg', 'sessionDay' => $began->format('l'), 'sessionTime' => $began->format('H:i'), 'sessionMinutes' => 90] + ONLINE_DEFAULTS, 'test');
+    $j1 = backend_dispatch('member.online.session.join', ['memberId' => 'NGG-ONP-1']);
+    $j2 = backend_dispatch('member.online.session.join', ['memberId' => 'NGG-ONP-1']);
+    chk('online · joining while it is on hands over the link and records attendance — once, however often Join is pressed',
+        ($j1['url'] ?? '') === 'https://meet.example/ngg' && !empty($j2['ok']) && (int)db_row("SELECT COUNT(*) c FROM online_session_joins WHERE memberId = 'NGG-ONP-1'")['c'] === 1
+        && !empty(backend_dispatch('member.online.session', ['memberId' => 'NGG-ONP-1'])['session']['joined']));
+    setting_set(ONLINE_SETTINGS_KEY, ['sessionUrl' => 'https://meet.example/ngg', 'sessionDay' => (new DateTime('+3 days', new DateTimeZone('Africa/Lagos')))->format('l')] + ONLINE_DEFAULTS, 'test');
+    chk('online · outside the session, Join is refused: "attended" means pressed while it was on',
+        (backend_dispatch('member.online.session.join', ['memberId' => 'NGG-ONP-1'])['error'] ?? '') === 'not_open');
+
+    // Staff: settings, mentors, the overview.
+    db_insert('members', ['memberId' => 'NGG-ONP-ADM', 'fullName' => 'Online Admin', 'email' => 'onp.admin@test.invalid', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('online · the settings refuse a link that is not https and a time that is not a time',
+        (admin_online_settings_save(['requesterId' => 'NGG-ONP-ADM', 'settings' => ['sessionUrl' => 'http://x.example']])['error'] ?? '') === 'bad_url'
+        && (admin_online_settings_save(['requesterId' => 'NGG-ONP-ADM', 'settings' => ['sessionTime' => '25:00']])['error'] ?? '') === 'bad_time');
+    chk('online · pairing with no online mentor says so by name', (admin_online_mentor_pair(['requesterId' => 'NGG-ONP-ADM', 'auto' => true])['error'] ?? '') === 'no_online_mentors');
+    db_insert('mentors', ['mentorId' => 'MEN-ONP-1', 'fullName' => 'Mo Mentor', 'status' => 'active', 'centre' => 'NGG Online', 'maxMentees' => 5, 'tracks' => '']);
+    $pr = admin_online_mentor_pair(['requesterId' => 'NGG-ONP-ADM', 'auto' => true]);
+    chk('online · "pair everyone without a mentor" gives the online member the online mentor, through the same pairing a person makes by hand',
+        !empty($pr['ok']) && db_row("SELECT 1 FROM mentor_assignments WHERE memberId = 'NGG-ONP-1' AND mentorId = 'MEN-ONP-1' AND status = 'active'")
+        && !db_row("SELECT 1 FROM mentor_assignments WHERE memberId = 'NGG-ONP-C' AND status = 'active' AND mentorId = 'MEN-ONP-1'"));
+    $again = admin_online_mentor_pair(['requesterId' => 'NGG-ONP-ADM', 'mentorId' => 'MEN-ONP-1', 'memberIds' => ['NGG-ONP-1', 'NGG-ONP-C']]);
+    chk('online · per-row verdicts: already paired is "unchanged", a centre member is refused as not online',
+        !empty(array_filter($again['results'] ?? [], static fn($r) => $r['id'] === 'NGG-ONP-1' && !empty($r['unchanged'])))
+        && !empty(array_filter($again['results'] ?? [], static fn($r) => $r['id'] === 'NGG-ONP-C' && ($r['error'] ?? '') === 'not_online')));
+    $ov = admin_online_overview(['requesterId' => 'NGG-ONP-ADM']);
+    $mine = array_values(array_filter($ov['members'] ?? [], static fn($r) => $r['memberId'] === 'NGG-ONP-1'))[0] ?? [];
+    chk('online · the Online view lists online members only, with what they owe and their mentor',
+        !empty($ov['ok']) && $mine && $mine['mentor'] === 'Mo Mentor' && $mine['owing'] > 0
+        && !array_filter($ov['members'], static fn($r) => $r['memberId'] === 'NGG-ONP-C') && ($ov['counts']['members'] ?? 0) >= 1);
+
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-ONP-%'"); db_exec("DELETE FROM mentor_assignments WHERE memberId LIKE 'NGG-ONP-%'");
+    db_exec("DELETE FROM online_session_joins WHERE memberId LIKE 'NGG-ONP-%'"); db_exec("DELETE FROM mentors WHERE mentorId = 'MEN-ONP-1'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-ONP-%'");
+    setting_set('fees', (string)$keepFees, 'test'); setting_set(ONLINE_SETTINGS_KEY, $keepOn === null || $keepOn === '' ? ONLINE_DEFAULTS : (string)$keepOn, 'test');
+})();
+
 /* ── WhatsApp through Kapso (owner, 14 Nov 2026: every text WhatsApp first, SMS as the fallback; replies into the inbox) ── */
 (function () {
     $keepCfg = $GLOBALS['CONFIG']['whatsapp'] ?? null; $keepSms = $GLOBALS['CONFIG']['sms'] ?? null; $keepMock = $GLOBALS['__sms_http_mock'] ?? null;

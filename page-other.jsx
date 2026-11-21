@@ -451,7 +451,7 @@ function VolunteersPage({ setPage }) {
 }
 
 function MentorApplySection() {
-  const [d, setD] = useState({ firstName: "", lastName: "", otherName: "", sex: "", email: "", phone: "", dob: "", role: VOLUNTEER_ROLES[0] ? VOLUNTEER_ROLES[0].name : "Mentor", why: "" });
+  const [d, setD] = useState({ firstName: "", lastName: "", otherName: "", sex: "", email: "", phone: "", dob: "", role: VOLUNTEER_ROLES[0] ? VOLUNTEER_ROLES[0].name : "Mentor", why: "", mode: "centre" });
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [err, setErr] = useState("");
@@ -474,6 +474,7 @@ function MentorApplySection() {
         email: d.email.trim(), phone: d.phone.trim(), dob: d.dob,
         role: d.role,
         why: d.why.trim(),
+        ...(d.mode === "online" ? { mode: "online" } : {}),
       }, "ngg_apply_mentor");
       setSent(true);
       if (typeof toast !== "undefined") toast.success("We'll write back within a week.", "Application received");
@@ -548,6 +549,13 @@ function MentorApplySection() {
               <label style={{color:"rgba(255,255,255,0.8)"}}>Which role fits your time?</label>
               <select value={d.role} onChange={e => setD({...d, role: e.target.value})}>
                 {VOLUNTEER_ROLES.map(r => <option key={r.name} value={r.name}>{r.name} — {r.commit}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="mentor-mode" style={{color:"rgba(255,255,255,0.8)"}}>Where will you mentor?</label>
+              <select id="mentor-mode" value={d.mode} onChange={e => setD({...d, mode: e.target.value})}>
+                <option value="centre">At a centre, on Saturdays</option>
+                <option value="online">Online: NGG Online members, through the portal</option>
               </select>
             </div>
             <div className="field">

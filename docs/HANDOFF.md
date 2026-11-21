@@ -8016,3 +8016,36 @@ guards), run in CI. `node build.js` is clean.
 - Still flaky, not fixed: "…and appears under recently finished" (12 games completed in one second, `ORDER BY
   updatedAt LIMIT 10`, random matchId tie order on MySQL), and clock-dependent checks (homework 9, walk, maths lab
   mini review, rulebook, punctuality) that fail on clean HEAD too depending on the hour.
+
+## 21 Nov 2026 — Other sessions' work merged; NGG Online phases 2, 3, 5 and 6
+
+**Merged** `afv/brave-faraday-pdlh7o` and `claude/stoic-hamilton-1f18hh` into this branch. They hold shop
+management, the Membership Agreement, entry steps, homework, instalment approval and the MySQL 8 fixes.
+- `community-audit-1aqug7` was not merged: it is an older form of the Wi-Fi work already here.
+- `vibrant-cray-3gmdum` was not merged: it is a change followed by its own revert.
+
+**Migrations.** Both lines used 238–240.
+- This ladder keeps brave-faraday's 238–244.
+- The finme line's appliesTo is renumbered to **245**.
+- **246** replays 238–244 for a database built from a finme zip. Such a database stands at 240 and would
+  otherwise never get the shop, agreement or entry-step tables. Every replayed statement tolerates being
+  already applied.
+- **247** adds `online_session_joins`.
+
+**NGG Online** (docs/ONLINE-MEMBERS-PLAN.md, "Built"):
+- `domain/online.php`: the offer, the session window and Join (attendance), pairing through
+  `admin_assign_mentor`, the staff overview, and the settings.
+- Money in `fees.php`: `fees_member_monthly`, `fees_online_course_items`, an online branch in
+  `fees_accrue_member`, the joining invoice, and `membership_upcoming_charges` (pay-ahead and notices).
+- `dues_charge_label` no longer calls a course a "Membership renewal".
+- Screens:
+  - the join form's *How will you take part?*;
+  - the mentor form's *Where will you mentor?*;
+  - the portal's Saturday screen card (`Mp9Online`);
+  - Members → Online (`cr-tab-members.jsx`);
+  - the NGG Online group in Money → Amounts.
+- Defaults the owner has not confirmed: the $10 is monthly and the $5 is per course per month.
+
+**Verified.** `run.php`: 25 checks under *Online membership, phases 2–6*, run in CI. `node build.js` is
+clean.
+

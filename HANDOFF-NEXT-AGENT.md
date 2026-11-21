@@ -81,12 +81,12 @@ day. The join form lists only buildings.
 - *"Upgrade the value of being an online member so the pay is actually worth it."* The plan lists the
   value case.
 
-**Next:** phase 2.
-- The join form asks "At a centre (scholarship)" or "Online".
-- Accepting an online member sends the online invoice: in full, not pro-rated, with no yearly fee.
-- The money settings `onlineMonthlyNgn` 13000 and `onlineMonthlyUsd` 10.
-- Course enrolment at $5 with an instructor.
-- Then phases 3–6.
+**Done 21 Nov 2026:** phases 2, 3, 5 and 6 (see the plan's "Built" section): joining online, the online
+fee and course fees, online mentors and pairing, the online Saturday session with Join-as-attendance, and
+Members → Online for staff.
+
+**Next:** phase 4 (on-site scholarship completion: the T-shirt line on the joining invoice, once its price is
+known) and the owner's open questions below.
 
 **Still open with the owner:**
 - What happens to an unpaid online member's access.

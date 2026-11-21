@@ -778,6 +778,12 @@ function backend_dispatch(string $op, array $args = []): array {
             'wifi.setup.script'           => 'wifi_setup_script',
             'admin.wifi.usage'            => 'admin_wifi_usage',
             'admin.wifi.overview'         => 'admin_wifi_overview',
+            // NGG Online (domain/online.php)
+            'member.online.session'       => 'member_online_session',
+            'member.online.session.join'  => 'member_online_session_join',
+            'admin.online.overview'       => 'admin_online_overview',
+            'admin.online.settings.save'  => 'admin_online_settings_save',
+            'admin.online.mentor.pair'    => 'admin_online_mentor_pair',
             'admin.wifi.cacentre'         => 'admin_wifi_cac_status',
             'admin.wifi.cacentre.push'    => 'admin_wifi_cac_push',
             'admin.wifi.cacentre.starts'  => 'admin_wifi_cac_starts',

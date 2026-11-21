@@ -12343,6 +12343,8 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9x-view-opt.is-on { border-color: #0b0b0c; background: #fff; box-shadow: 0 0 0 1px #0b0b0c; }
 .m9x-view-opt:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
 .m9x-wifi .m9x-view-h { display: flex; align-items: center; gap: 8px; }
+.m9x-online .m9x-view-h { display: flex; align-items: center; gap: 8px; }
+.m9x-online-when { margin: 0 0 6px; font-size: 15px; font-weight: 600; color: #0b0b0c; }
 .m9x-ask .m9x-view-h { display: flex; align-items: center; gap: 8px; }
 .m9x-ask-b { font: inherit; font-weight: 600; cursor: pointer; min-height: 44px; padding: 0 18px; border-radius: 12px; border: 0; background: #0b0b0c; color: #fff; margin-right: 12px; }
 .m9x-ask-b:disabled { cursor: progress; opacity: .6; }

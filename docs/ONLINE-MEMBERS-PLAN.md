@@ -146,3 +146,38 @@ This is the survey of 17 Nov 2026, kept here so the phases can be checked agains
   - Community
   - a progress report to the family every month
   - a digital member card
+
+## Built, 21 Nov 2026 (phases 2, 3, 5 and 6)
+
+Phase 1 was `35217954`. The rest is built. Defaults are where the owner had not decided; each one is a
+setting.
+
+- **Joining (phase 2).** The join form asks "How will your child take part?": *At a centre* or *Online*,
+  with the price. Online removes the centre question; the server places the applicant at NGG Online
+  (`public_apply` `mode: online`). Summer School cannot be joined online. Staff switch Online off under
+  Members → Online.
+- **Money (phase 3).** `fees_member_monthly()` is the one answer for what a member pays a month. It is read by
+  the joining invoice, the accrual, pay-ahead and the advance notices. An online member pays:
+  - `onlineMonthly` (₦13,000, shown as $10), owed on the 1st and never pro-rated, with a mentor included;
+  - `onlineCourseFee` (₦6,500, shown as $5) for each course they take, with an instructor;
+  - no membership fee, no commitment fee and no training place.
+  - **Default, to confirm:** the course fee is **per month** (`onlineCourseBasis` `month`). `once` charges a
+    course one time.
+  - **Default, to confirm:** the $10 is **monthly** (the voice note), not a one-off registration.
+  - Course charges are posted for the current month only, because when a course was chosen is not recorded.
+  - Only catalogue courses are billed, never "Other" free text.
+- **Online mentors and the session (phase 5).**
+  - The mentor form asks "Where will you mentor?". *Online* places the applicant at NGG Online.
+  - Members → Online pairs online members with online mentors through `admin_assign_mentor`, one at a time
+    or "everyone without a mentor".
+  - The online session has a link, a day, a time (Saturday 08:30 Lagos by default) and a length.
+  - Online members press **Join** on the portal's Saturday screen. That records attendance
+    (`online_session_joins`, migration 247) and only then hands over the link.
+- **Staff (phase 6).** Members → Online shows who is owing, who has no mentor, who missed the last session and
+  who was quiet this week. It also holds the session settings. The online prices are under Money → Dues &
+  arrears → Amounts → NGG Online.
+
+**Still open with the owner:** the $10 (monthly or one-off), the $5 (per month or once), what happens to an
+unpaid online member's access (nothing automatic is built), and dollars or naira for buyers abroad (naira
+today; the dollar figure is what families are told).
+

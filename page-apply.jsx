@@ -51,8 +51,8 @@ const APF_AGREE = [
   { id: "cMedia", pol: "media", types: ["media", "site_visibility"], t: "Photos, videos and website", s: "NGG may use photos and videos from club activities, and show first name and work on its website. Never a surname, age or school with a photo." },
 ];
 /* Kept for "Apply for another child": the family, not the child. */
-const APF_SIBLING_KEEP = ["filledBy", "centre", "address", "resState", "resLga", "originState", "originLga", "nationality", "parent1Rel", "parent1Name", "parent1Phone", "parent2None", "parent2Rel", "parent2Name", "parent2Phone", "heardFrom", "heardOther", "email", "promoCode"];
-const APF_EMPTY = { filledBy: "", centre: "", nationality: "Nigerian", parent2None: false, hobbies: [], influenceAreas: [] };
+const APF_SIBLING_KEEP = ["filledBy", "join", "centre", "address", "resState", "resLga", "originState", "originLga", "nationality", "parent1Rel", "parent1Name", "parent1Phone", "parent2None", "parent2Rel", "parent2Name", "parent2Phone", "heardFrom", "heardOther", "email", "promoCode"];
+const APF_EMPTY = { filledBy: "", join: "", centre: "", nationality: "Nigerian", parent2None: false, hobbies: [], influenceAreas: [] };
 
 function apfTitle(s) { return String(s || "").trim().replace(/\s+/g, " ").toLowerCase().replace(/(^|[\s\-'’])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()); }
 function apfPhone(s) { let d = String(s || "").replace(/\D/g, ""); if (d.startsWith("234")) d = "0" + d.slice(3); if (d.length === 10 && /^[789]/.test(d)) d = "0" + d; return d; }
@@ -92,8 +92,13 @@ function apfEmailFix(e) {
 }
 function apfEmailOk(e) { return /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(String(e || "").trim()); }
 /* What joining costs, from the server's own fee terms, said before anybody applies. */
-function apfFeesText(fees, kid) {
+function apfFeesText(fees, kid, online) {
   const money = n => (typeof fmtMoney === "function" ? fmtMoney(n) : "₦" + Number(n).toLocaleString("en-NG"));
+  /* NGG Online: the monthly price in dollars and naira, prepaid, mentor included; each course on top. */
+  if (online) return "Nothing to pay today. If " + (kid ? "you are" : "your child is") + " offered a place, we send a private invoice link for the first month: "
+    + (online.monthlyUsd ? "$" + online.monthlyUsd + " (" + money(online.monthly) + ")" : money(online.monthly)) + " a month, paid before each month, with a mentor included"
+    + (online.course > 0 ? ", plus " + (online.courseUsd ? "$" + online.courseUsd + " (" + money(online.course) + ")" : money(online.course)) + (online.courseBasis === "once" ? " once" : " a month") + " for each course, with an instructor" : "")
+    + ". No yearly membership fee.";
   if (!fees || !fees.enabled || !(fees.membershipFee > 0 || fees.monthlyCommitment > 0)) return "Nothing to pay today. After acceptance we send a private invoice link. The first month covers only the Saturdays left.";
   const parts = [];
   if (fees.membershipFee > 0) parts.push("the " + money(fees.membershipFee) + " membership fee" + (fees.membershipEveryMonths === 12 ? " (once a year)" : ""));
@@ -107,10 +112,20 @@ function apfCourse(v) { return v.course === APF_OTHER_COURSE ? v.courseOther : v
 function apfSteps(v, offer) {
   const kid = v.filledBy === "child", you = kid ? "you" : "your child";
   const centres = ((offer && offer.centres) || []).map(c => [c.name, c.name, c.area || ""]);
+  /* NGG Online is a way to take part, not one more centre in the list (docs/ONLINE-MEMBERS-PLAN.md): asked
+     first, and choosing it removes the centre question — the server places the applicant itself. */
+  const on = offer && offer.online && offer.online.available ? offer.online : null;
+  const N = n => "₦" + Number(n || 0).toLocaleString("en-NG");
+  const online = !!on && v.join === "online";
+  const joinField = on ? [{ id: "join", type: "seg", label: "How will " + you + " take part?", req: 1, wide: 1, opts: [
+    ["centre", "At a centre", "Scholarship · Saturdays in person", "map-pin"],
+    ["online", "Online", (on.monthlyUsd ? "$" + on.monthlyUsd + " (" + N(on.monthly) + ")" : N(on.monthly)) + " a month · a mentor included", "globe"]] }] : [];
+  const centreField = online ? [] : [{ id: "centre", type: "seg", label: "Which centre will you attend?", req: 1, opts: centres, loading: !offer }];
   return [
     { id: "start", l: "Start", t: "Let’s get started", s: "NGG is for ages 10 to 17. Two quick questions so we show you the right form.", f: [
       { id: "filledBy", type: "seg", label: "Who is filling in this form?", req: 1, wide: 1, opts: [["parent", "I’m a parent or guardian", "Applying for my child", "users"], ["child", "I’m applying for myself", "I’ll add my parents’ details", "user"]] },
-      { id: "centre", type: "seg", label: "Which centre will you attend?", req: 1, opts: centres, loading: !offer }] },
+      ...joinField, ...centreField,
+      ...(online ? [{ id: "onlineInfo", type: "info", text: "Online members never come to a centre. You get a named mentor, a live online session every " + ((on.session && on.session.day) || "Saturday") + " at " + ((on.session && on.session.time) || "8:30") + ", an instructor for each course, the Labs with exams and certificates, the journal, the community, a monthly progress report and a digital member card." }] : [])] },
     { id: "about", l: "Applicant", t: kid ? "About you" : "About your child", s: "As written on their school records. This is the name we print on the ID card.", f: [
       { id: "firstName", type: "text", label: "First name", req: 1, ac: "given-name", ph: "e.g. Tolulope" },
       { id: "middleName", type: "text", label: "Middle name(s)", ac: "additional-name", ph: "Leave blank if none" },
@@ -156,7 +171,7 @@ function apfSteps(v, offer) {
       { id: "photo", type: "photo", label: "Passport photo of " + (kid ? "you" : "your child"), req: 1 },
       { id: "agree", type: "agree", req: 1 },
       { id: "trips", type: "toggle", pol: "trips", text: "Supervised off-site activities are fine. The family is told before each one." },
-      { id: "feesInfo", type: "info", pol: "fees", text: apfFeesText(offer && offer.fees, kid) },
+      { id: "feesInfo", type: "info", pol: "fees", text: apfFeesText(offer && offer.fees, kid, online ? on : null) },
       { id: "promoCode", type: "text", label: "Referral or promo code", ph: "e.g. NEXTGENGENMEM", hint: "Only if someone gave you one. Letters and numbers, no spaces." },
       { id: "heardFrom", type: "combo", label: "How did you hear about NGG?", req: 1, ph: "Choose one", opts: APF_HEAR },
       ...(v.heardFrom === "Something else" ? [{ id: "heardOther", type: "text", label: "Tell us where", req: 1 }] : [])] },
@@ -233,7 +248,7 @@ function apfLoadDraft() {
 }
 
 /* Server refusals, in the words the form uses, and the step that fixes them. */
-const APF_FIELD_STEP = { filledBy: 0, centre: 0, firstName: 1, surname: 1, dob: 1, sex: 1, email: 1, mobile: 1, school: 2, class: 2, address: 3, resState: 3, resLga: 3, originState: 3, nationality: 3,
+const APF_FIELD_STEP = { filledBy: 0, join: 0, centre: 0, firstName: 1, surname: 1, dob: 1, sex: 1, email: 1, mobile: 1, school: 2, class: 2, address: 3, resState: 3, resLga: 3, originState: 3, nationality: 3,
   parent1Rel: 4, parent1Name: 4, parent1Phone: 4, parent2Rel: 4, parent2Name: 4, parent2Phone: 4, vision: 5, hobbies: 5, influenceAreas: 5, heardFrom: 6, promoCode: 6 };
 function apfServerWhy(e) {
   const code = (e && (e.code || e.message)) || "";
@@ -250,6 +265,7 @@ function apfServerWhy(e) {
     photo_required: "Add a passport photo.",
     photo_low_quality: photoQaServerWords(e),
     centre_not_offered: d.detail || "That centre doesn’t run the Club. Choose another on the first step.",
+    online_unavailable: d.detail || "NGG Online isn’t taking applications right now. Choose a centre on the first step.",
     upstream_unreachable: "We couldn’t reach the server. Your answers are saved here; try again in a moment.",
     bad_dob: "Check the date of birth: it must be a real date.",
     bad_sex: "Choose Female or Male.",
@@ -262,7 +278,7 @@ function apfServerWhy(e) {
   };
   const step = ["age_ngv", "bad_age", "bad_dob", "bad_sex", "bad_email", "phone_required"].includes(code) ? 1
     : ["bad_division", "division_required", "course_not_in_division"].includes(code) ? 5
-    : code === "consent_required" || code === "photo_required" || code === "photo_low_quality" ? 6 : code === "centre_not_offered" ? 0
+    : code === "consent_required" || code === "photo_required" || code === "photo_low_quality" ? 6 : code === "centre_not_offered" || code === "online_unavailable" ? 0
     : d.field && APF_FIELD_STEP[d.field] != null ? APF_FIELD_STEP[d.field] : -1;
   return { text: map[code] || (d.field ? "Something in this section needs another look." : "We couldn’t send the application. Your answers are saved here; try again."), step };
 }
@@ -389,7 +405,7 @@ function ClubApplyPage({ setPage }) {
         kind: "teen", program: "anchor",
         firstName: v.firstName.trim(), lastName: v.surname.trim(), otherName: (v.middleName || "").trim(),
         email: v.email.trim().toLowerCase(), phone: apfPhone(v.mobile), sex: v.sex, dob: v.dob,
-        centre: v.centre, track: course, ...(division ? { division } : {}),
+        centre: v.join === "online" ? "" : v.centre, ...(v.join === "online" ? { mode: "online" } : {}), track: course, ...(division ? { division } : {}),
         why: v.vision.trim(), photoUrl,
         details: {
           filledBy: v.filledBy, school: v.school, class: v.class, classArm: v.classArm || "",
@@ -406,7 +422,7 @@ function ClubApplyPage({ setPage }) {
       });
       setCodeAsk(null); setEditCode("");
       try { localStorage.removeItem(APF_DRAFT_KEY); } catch (_) {}
-      setDone({ ref: (r && r.ref) || "", updated: !!(r && r.updated), queued: !!(r && r.queued), first: v.firstName, email: v.email, centre: v.centre, phone: v.parent1Phone || v.mobile });
+      setDone({ ref: (r && r.ref) || "", updated: !!(r && r.updated), queued: !!(r && r.queued), first: v.firstName, email: v.email, centre: v.join === "online" ? "" : v.centre, online: v.join === "online", phone: v.parent1Phone || v.mobile });
       scrollTop();
     } catch (e) {
       const code = (e && (e.code || e.message)) || "";
@@ -1054,7 +1070,7 @@ function ApfReview({ v, age, go }) {
   const photoBad = apfErr({ id: "photo", type: "photo", req: 1 }, v);
   const agreed = APF_AGREE.every(a => v[a.id] === true);
   const secs = [
-    ["Start", 0, [R("Filled in by", v.filledBy === "child" ? "The applicant" : v.filledBy ? "Parent or guardian" : ""), R("Centre", v.centre)]],
+    ["Start", 0, [R("Filled in by", v.filledBy === "child" ? "The applicant" : v.filledBy ? "Parent or guardian" : ""), R("Taking part", v.join === "online" ? "Online (NGG Online)" : v.centre ? "At " + v.centre : "")]],
     ["Applicant", 1, [R("Name", [v.firstName, v.middleName, v.surname].filter(Boolean).join(" ")), R("Date of birth", v.dob ? new Date(v.dob + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) + (age != null ? " · age " + age : "") : ""), R("Sex", v.sex), R("Email", v.email), R("Mobile", v.mobile)]],
     ["School", 2, [R("School", v.school), R("Class", [v.class, v.classArm].filter(Boolean).join(" · "))]],
     ["Home and origin", 3, [R("Address", v.address), R("Lives in", [v.resLga, v.resState].filter(Boolean).join(", ")), R("Origin", [v.originLga, v.originState].filter(Boolean).join(", ")), R("Nationality", v.nationality)]],
@@ -1077,7 +1093,9 @@ function ApfReview({ v, age, go }) {
 function ApfDone({ done, sibling, restart, setPage }) {
   const steps = [["We check the details", "Usually within 3 working days. If something’s missing we’ll call the main contact."],
     ["Pay with the link we send", "Only after acceptance. Paystack or bank transfer; the receipt is emailed to you."],
-    ["Come to " + (done.centre || "your centre") + " on Saturday", "Bring this reference. Your ID card is printed from the photo you sent."]];
+    done.online
+      ? ["Meet your mentor online", "Your mentor gets in touch, and the online Saturday session opens in the portal. Your digital member card is in the portal too."]
+      : ["Come to " + (done.centre || "your centre") + " on Saturday", "Bring this reference. Your ID card is printed from the photo you sent."]];
   return (
     <section className="apf-card apf-done" aria-labelledby="apf-done-h">
       <i className="ph-fill ph-check-circle apf-done-ico" aria-hidden="true"/>

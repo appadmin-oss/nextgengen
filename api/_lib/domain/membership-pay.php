@@ -66,7 +66,7 @@ function membership_fee_terms(): array {
     $cfg = fees_settings();
     $pay = membership_pay_settings();
     return [
-        'enabled' => !empty($cfg['enabled']) && ((int)$cfg['membershipFee'] > 0 || (int)$cfg['monthlyDues'] > 0),
+        'enabled' => !empty($cfg['enabled']) && ((int)$cfg['membershipFee'] > 0 || (int)$cfg['monthlyDues'] > 0 || (int)$cfg['onlineMonthly'] > 0),
         'currency' => (string)$cfg['currency'],
         'symbol' => FEES_CURRENCY_SYMBOL[(string)$cfg['currency']] ?? '',
         'membershipFee' => (int)$cfg['membershipFee'],
@@ -127,6 +127,15 @@ function membership_prorate(int $monthly, string $start, ?array $member = null):
 function membership_invoice_items(array $member, string $start): array {
     $cfg = fees_settings();
     $items = [];
+    /* NGG Online: the first month in full (they pay for the platform, not for meeting days), the courses
+       they take, and no membership fee. The keys are the accrual's, so the ledger is posted once. */
+    if (function_exists('member_is_online') && member_is_online($member)) {
+        $mk = substr($start, 0, 7);
+        if ((int)$cfg['onlineMonthly'] > 0)
+            $items[] = ['kind' => 'dues', 'periodKey' => $mk, 'amount' => (int)$cfg['onlineMonthly'], 'label' => fees_monthly_label($member, $mk),
+                'detail' => 'Paid before the month · your mentor included' . ((int)$cfg['onlineMonthlyUsd'] > 0 ? ' · $' . (int)$cfg['onlineMonthlyUsd'] . ' a month' : '')];
+        return array_merge($items, fees_online_course_items($member, $mk, $cfg));
+    }
     if ((int)$cfg['membershipFee'] > 0) {
         $per = fees_membership_periods($start, $start, (int)$cfg['membershipEveryMonths']);
         $every = (int)$cfg['membershipEveryMonths'];
@@ -497,13 +506,18 @@ function membership_upcoming_charges(array $m, array $cfg, int $months, ?string 
     $from = max($start, gmdate('Y-m-01', (int)strtotime($today . ' 00:00:00 UTC')));
     $upto = gmdate('Y-m-t', (int)strtotime(substr($from, 0, 7) . '-01 00:00:00 UTC +' . ($months - 1) . ' months'));
     $out = [];
-    if ((int)$cfg['monthlyDues'] > 0) {
+    $monthly = fees_member_monthly($m, $cfg);
+    $online = function_exists('member_is_online') && member_is_online($m);
+    if ($monthly > 0) {
         foreach (fees_due_months($from, $upto, $months) as $mk) {
             if (isset($on['dues|' . $mk]) || ($settled !== '' && $mk <= substr($settled, 0, 7))) continue;
-            $out[] = ['kind' => 'dues', 'key' => $mk, 'due' => $mk . '-01', 'amount' => (int)$cfg['monthlyDues']];
+            $out[] = ['kind' => 'dues', 'key' => $mk, 'due' => $mk . '-01', 'amount' => $monthly];
+            // An online member's courses fall due on the same day as the month.
+            foreach ($online ? fees_online_course_items($m, $mk, $cfg) : [] as $it)
+                if (!isset($on['training|' . $it['periodKey']])) { $out[] = ['kind' => 'training', 'key' => $it['periodKey'], 'due' => $mk . '-01', 'amount' => (int)$it['amount']]; $on['training|' . $it['periodKey']] = true; }
         }
     }
-    if ((int)$cfg['membershipFee'] > 0 && (int)$cfg['membershipEveryMonths'] > 0) {
+    if (!$online && (int)$cfg['membershipFee'] > 0 && (int)$cfg['membershipEveryMonths'] > 0) {
         foreach (fees_membership_periods($start, $upto, (int)$cfg['membershipEveryMonths']) as $per) {
             if (isset($on['membership|' . $per['key']]) || (string)$per['due'] < $from || ($settled !== '' && (string)$per['due'] <= $settled)) continue;
             $out[] = ['kind' => 'membership', 'key' => (string)$per['key'], 'due' => (string)$per['due'], 'amount' => (int)$cfg['membershipFee']];
@@ -552,7 +566,7 @@ function membership_advance_plan(array $m, ?string $asOf = null): array {
         $termQuotes[] = $q;
     }
     return ['credit' => $credit, 'paidThrough' => $through, 'payable' => (int)$bal['payable'],
-        'monthly' => (int)$cfg['monthlyDues'], 'membershipFee' => (int)$cfg['membershipFee'], 'quotes' => $quotes,
+        'monthly' => fees_member_monthly($m, $cfg), 'membershipFee' => member_is_online($m) ? 0 : (int)$cfg['membershipFee'], 'quotes' => $quotes,
         'termQuotes' => $termQuotes, 'maxMonths' => MPAY_ADVANCE_MAX_MONTHS, 'capThrough' => $capKey, 'notice' => MPAY_ADVANCE_NOTICE];
 }
 
@@ -737,7 +751,9 @@ function membership_send_receipt(array $inv): array {
                 : '')
             . ((string)($inv['purpose'] ?? '') === 'part' ? '' : ((string)($inv['purpose'] ?? '') === 'advance'
                 ? '<p style="margin:12px 0 0;font-size:14px">The payment is held on ' . esc_html($first) . '’s account and meets each charge on the day it falls due, so there is nothing more to pay until it is used up. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>'
-                : '<p style="margin:12px 0 0;font-size:14px">From next month the commitment fee is ' . esc_html(fees_money_text((int)fees_settings()['monthlyDues'])) . ' a month. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>')),
+                : (member_is_online($m)
+                    ? '<p style="margin:12px 0 0;font-size:14px">NGG Online is ' . esc_html(fees_money_text(fees_member_monthly($m))) . ' a month, paid before each month starts; we tell you a week ahead. Your mentor will be in touch, and the online Saturday session is in the portal.</p>'
+                    : '<p style="margin:12px 0 0;font-size:14px">From next month the commitment fee is ' . esc_html(fees_money_text((int)fees_settings()['monthlyDues'])) . ' a month. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>'))),
         'ctaLabel' => 'View and print the receipt',
         'ctaUrl' => membership_receipt_url($inv),   // receipt.php renders the frozen receipt (documents.php)
         'footNote' => 'With thanks from the Next Generation Genius team.',

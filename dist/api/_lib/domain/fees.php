@@ -170,7 +170,19 @@ const FEES_DEFAULTS = [
        not shown as one — it exists so the reminder cron can say it once a month
        instead of every fifteen minutes. Written only by `fees_uprate_note()`. */
     'uprateNotedAt' => '',
+    /* ── NGG Online (docs/ONLINE-MEMBERS-PLAN.md; owner, 16–17 Nov 2026) ───────
+     * An online member pays the online monthly fee — "$10 a month, that's ₦13,000", prepaid, owed on the 1st,
+     * never pro-rated, with the mentor included — and nothing else of the centre's: no membership fee, no
+     * commitment fee, no training place. Each course they take is `onlineCourseFee` ("$5 with an
+     * instructor"), per month by default (`onlineCourseBasis` 'month'; 'once' charges a course one time).
+     * The dollar figures are what the family is told beside the naira; the account is kept in naira. */
+    'onlineMonthly' => 13000,
+    'onlineMonthlyUsd' => 10,
+    'onlineCourseFee' => 6500,
+    'onlineCourseUsd' => 5,
+    'onlineCourseBasis' => 'month',
 ];
+const FEES_ONLINE_COURSE_BASES = ['month', 'once'];
 /** ── Bounds, all of them named ────────────────────────────────────────────
  *
  * Every number this file enforces lives here rather than inline at the place it
@@ -377,6 +389,11 @@ function fees_settings_save(array $in, string $by): array {
         'serviceMonths'  => $phase($in['serviceMonths'] ?? null, (int)$cur['serviceMonths']),
         'scholarshipValue' => fees_money($in['scholarshipValue'] ?? null, (int)($cur['scholarshipValue'] ?? FEES_DEFAULTS['scholarshipValue'])),
         'balanceCap'     => fees_money($in['balanceCap'] ?? null, (int)$cur['balanceCap']),
+        'onlineMonthly'  => fees_money($in['onlineMonthly'] ?? null, (int)$cur['onlineMonthly']),
+        'onlineMonthlyUsd' => max(0, min(1000, (int)($in['onlineMonthlyUsd'] ?? $cur['onlineMonthlyUsd']))),
+        'onlineCourseFee' => fees_money($in['onlineCourseFee'] ?? null, (int)$cur['onlineCourseFee']),
+        'onlineCourseUsd' => max(0, min(1000, (int)($in['onlineCourseUsd'] ?? $cur['onlineCourseUsd']))),
+        'onlineCourseBasis' => in_array($in['onlineCourseBasis'] ?? null, FEES_ONLINE_COURSE_BASES, true) ? (string)$in['onlineCourseBasis'] : (string)$cur['onlineCourseBasis'],
         'remindEnabled'  => $bool('remindEnabled'),
         /* Floored, not just validated. An admin who types 1 gets the floor and is
            told, rather than getting a daily chase that nobody asked to defend. */
@@ -415,6 +432,7 @@ function fees_settings_save(array $in, string $by): array {
         'trainingFee' => $clean['trainingFee'], 'membershipFee' => $clean['membershipFee'],
         'trainingBasis' => $clean['trainingBasis'],
         'membershipEveryMonths' => $clean['membershipEveryMonths'],
+        'onlineMonthly' => $clean['onlineMonthly'], 'onlineCourseFee' => $clean['onlineCourseFee'], 'onlineCourseBasis' => $clean['onlineCourseBasis'],
     ], '');
     return $clean;
 }
@@ -1406,6 +1424,51 @@ function fees_accrue_batch(int $limit, array $cfg): array {
  * could pay is generating a number for its own sake, and the arrears it records
  * stop being a fact about the family and become a fact about the software.
  */
+/* ── What a member is charged a month, and for their courses ─────────────────
+ * ONE answer, read by the joining invoice, the accrual, the pay-ahead quotes and the advance notices, so an
+ * online member is never quoted the centre's commitment fee in one place and charged the online fee in
+ * another. */
+function fees_member_monthly(array $m, ?array $cfg = null): int {
+    $cfg = $cfg ?? fees_settings();
+    return function_exists('member_is_online') && member_is_online($m) ? (int)$cfg['onlineMonthly'] : (int)$cfg['monthlyDues'];
+}
+/** The month's label for that charge, as the family reads it. */
+function fees_monthly_label(array $m, string $mk): string {
+    $month = gmdate('F Y', (int)strtotime($mk . '-01 00:00:00 UTC'));
+    return function_exists('member_is_online') && member_is_online($m) ? 'NGG Online membership — ' . $month : 'Commitment fee — ' . $month;
+}
+/** The courses an online member is charged for: their chosen courses, or the course they applied for. */
+function fees_online_courses(array $m): array {
+    $list = function_exists('member_courses_of') ? member_courses_of($m) : [];
+    // The applied-for course stands in until staff choose courses — only a catalogue course, never free text
+    // ("Other: …"), which is a course nobody teaches and nobody may be billed for.
+    if (!$list && trim((string)($m['track'] ?? '')) !== '')
+        $list = function_exists('member_courses_clean') ? member_courses_clean([trim((string)$m['track'])])[0] : [trim((string)$m['track'])];
+    return array_values(array_unique(array_slice($list, 0, defined('MEMBER_COURSES_MAX') ? MEMBER_COURSES_MAX : 8)));
+}
+/** The ledger key of one course charge: per month ('course:<name>:YYYY-MM') or once ('course:<name>'). */
+function fees_online_course_key(string $course, string $mk, ?array $cfg = null): string {
+    $cfg = $cfg ?? fees_settings();
+    return 'course:' . mb_strtolower($course) . ((string)$cfg['onlineCourseBasis'] === 'once' ? '' : ':' . $mk);
+}
+/**
+ * The course charges due for an online member in month $mk: one per course they take, at the course fee,
+ * labelled for the family. Kind `training` — a course is what the Club teaches — so every money screen that
+ * already reads training reads these. Empty for anyone not online or when the fee is 0.
+ */
+function fees_online_course_items(array $m, string $mk, ?array $cfg = null): array {
+    $cfg = $cfg ?? fees_settings();
+    if (!(function_exists('member_is_online') && member_is_online($m)) || (int)$cfg['onlineCourseFee'] <= 0) return [];
+    $once = (string)$cfg['onlineCourseBasis'] === 'once';
+    $out = [];
+    foreach (fees_online_courses($m) as $c) {
+        $out[] = ['kind' => 'training', 'periodKey' => fees_online_course_key($c, $mk, $cfg), 'amount' => (int)$cfg['onlineCourseFee'],
+            'label' => 'Course — ' . $c . ($once ? '' : ', ' . gmdate('F Y', (int)strtotime($mk . '-01 00:00:00 UTC'))),
+            'detail' => 'With an instructor' . ($once ? '' : ' · each month you take it')];
+    }
+    return $out;
+}
+
 function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = null): array {
     $cfg = $cfg ?? fees_settings();
     $out = ['membership' => 0, 'dues' => 0, 'training' => 0, 'skipped' => ''];
@@ -1440,6 +1503,27 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
        never wanted a subscription keeps exactly the row it already has. */
     // Settled up to a date (recorded before that tool was retired): nothing on or before it is charged again.
     $settled = substr(trim((string)($member['feesSettledThrough'] ?? '')), 0, 10);
+    /* NGG Online: the online monthly fee, prepaid on the 1st and never pro-rated, and a fee per course —
+       nothing of the centre's (membership, commitment fee, training place). Course charges are posted for
+       the CURRENT month only: when a course was chosen is not recorded, so charging back months would bill
+       a course before it was taken. The accrual runs daily, so every month it is taken is charged in it. */
+    if (function_exists('member_is_online') && member_is_online($member)) {
+        $out['online'] = 0; $out['courses'] = 0;
+        $amt = (int)$cfg['onlineMonthly'];
+        if ($amt > 0) foreach (fees_due_months($ten['start'], $asOf ?? gmdate('Y-m-d')) as $mk) {
+            if ($settled !== '' && $mk <= substr($settled, 0, 7)) continue;
+            if (!$activeIn($mk . '-01', gmdate('Y-m-d', (int)strtotime($mk . '-01 00:00:00 UTC +1 month')))) continue;
+            if (!$room($amt)) { $out['skipped'] = 'at_cap'; break; }
+            if (fees_post($memberId, 'dues', $amt, ['periodKey' => $mk, 'note' => fees_monthly_label($member, $mk), 'by' => 'accrual'])) { $out['online']++; $out['dues']++; $owed += $amt; }
+        }
+        $mk = substr($asOf ?? gmdate('Y-m-d'), 0, 7);
+        if ($mk >= substr($ten['start'], 0, 7) && ($settled === '' || $mk > substr($settled, 0, 7)) && $activeIn($mk . '-01', gmdate('Y-m-d', (int)strtotime($mk . '-01 00:00:00 UTC +1 month'))))
+            foreach (fees_online_course_items($member, $mk, $cfg) as $it) {
+                if (!$room((int)$it['amount'])) { $out['skipped'] = 'at_cap'; break; }
+                if (fees_post($memberId, 'training', (int)$it['amount'], ['periodKey' => $it['periodKey'], 'note' => $it['label'], 'by' => 'accrual'])) { $out['courses']++; $out['training']++; $owed += (int)$it['amount']; }
+            }
+        return $out;
+    }
     if ((int)$cfg['membershipFee'] > 0) {
         foreach (fees_membership_periods($ten['start'], $asOf ?? gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) {
             if ($settled !== '' && (string)$per['due'] <= $settled) continue;

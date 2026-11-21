@@ -1021,6 +1021,13 @@ function crMoAmountsForm(cfg, B, defaults) {
         { id: "balanceCap", l: "Stop charging at (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.balanceCap), check: money,
           help: "A ceiling on one member’s balance; once reached nothing further accrues. 0 means no ceiling — an account that grows past what anyone can pay pushes a family out of the programme." },
       ] },
+      { h: "NGG Online", help: "What online members pay instead of the centre’s fees: no membership fee, no commitment fee, no training place. The month is paid before it starts and never shortened for a late start. The dollar figures are what families are told beside the naira; accounts are kept in naira.", rows: [
+        { id: "onlineMonthly", l: "Online membership, a month (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.onlineMonthly == null ? 13000 : cfg.onlineMonthly), check: money, help: "A mentor is included." },
+        { id: "onlineMonthlyUsd", l: "…said in dollars as ($)", c: "input", type: "number", im: "numeric", value: String(cfg.onlineMonthlyUsd == null ? 10 : cfg.onlineMonthlyUsd), check: int(0, 1000) },
+        { id: "onlineCourseFee", l: "Each course, with an instructor (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.onlineCourseFee == null ? 6500 : cfg.onlineCourseFee), check: money, help: "0 includes courses in the membership." },
+        { id: "onlineCourseUsd", l: "…said in dollars as ($)", c: "input", type: "number", im: "numeric", value: String(cfg.onlineCourseUsd == null ? 5 : cfg.onlineCourseUsd), check: int(0, 1000) },
+        { id: "onlineCourseBasis", l: "A course is charged", c: "select", value: cfg.onlineCourseBasis || "month", opts: [["month", "Every month it is taken"], ["once", "Once"]] },
+      ] },
       { h: "Before dues fall due", help: "Families hear what is coming, how much and how to pay, before it is owed — once per due date, to every linked guardian.", rows: [
         { id: "noticeEnabled", l: "Tell families before dues fall due", c: "toggle", value: !!cfg.noticeEnabled },
         { id: "noticeDaysBefore", l: "How many days before", c: "input", type: "number", im: "numeric", value: String(cfg.noticeDaysBefore), check: int(B.noticeDaysMin, B.noticeDaysMax),
@@ -1057,7 +1064,7 @@ function crMoAmountsForm(cfg, B, defaults) {
     ],
     save: async patch => {
       const send = {};
-      Object.keys(patch).forEach(k => { send[k] = typeof patch[k] === "boolean" || k === "trainingBasis" ? patch[k] : parseInt(patch[k], 10); });
+      Object.keys(patch).forEach(k => { send[k] = typeof patch[k] === "boolean" || k === "trainingBasis" || k === "onlineCourseBasis" ? patch[k] : parseInt(patch[k], 10); });
       /* The percentage is typed as a percentage and stored in basis points (1.5% → 150). */
       if (patch.payFeePct != null) { delete send.payFeePct; send.payFeeBps = Math.round(Number(patch.payFeePct) * 100); }
       const r = await NGGApi.admin.fees.settingsSet(send);

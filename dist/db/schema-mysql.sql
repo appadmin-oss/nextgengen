@@ -5524,3 +5524,12 @@ INSERT INTO schema_version (version) VALUES (245) ON DUPLICATE KEY UPDATE versio
 -- a database at 240 from the finme line must apply the 238-244 sections above (the shop, the Membership
 -- Agreement, entry steps, WhatsApp opt-outs, hand-ins); a duplicate-column error there means it is already in.
 INSERT INTO schema_version (version) VALUES (246) ON DUPLICATE KEY UPDATE version = version;
+
+-- 247 — NGG Online's Saturday session: one row per member per session joined through the portal.
+CREATE TABLE IF NOT EXISTS online_session_joins (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, sessionDate VARCHAR(10) NOT NULL, joinedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_online_join (memberId, sessionDate),
+  KEY idx_online_join_date (sessionDate)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (247) ON DUPLICATE KEY UPDATE version = version;

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 246;
+const NGG_SCHEMA_TARGET = 247;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6790,6 +6790,17 @@ function db_migrate(PDO $db): void {
        there is CREATE … IF NOT EXISTS, INSERT OR IGNORE, or an ADD COLUMN that the runner tolerates when it
        is already applied (db_ddl_already_applied), so on a database that has them all it changes nothing. */
     $migrations[246] = implode("\n", array_map(static fn($v) => $migrations[$v], [238, 239, 240, 241, 242, 243, 244]));
+    /* 247 — NGG Online's Saturday session (domain/online.php): one row each time an online member joins a session
+       through the portal, which is the only attendance an online member has. UNIQUE so pressing Join twice is
+       one attendance. */
+    $migrations[247] = "
+        CREATE TABLE IF NOT EXISTS online_session_joins (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          memberId TEXT NOT NULL, sessionDate TEXT NOT NULL, joinedAt TEXT NOT NULL DEFAULT ''
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_online_join ON online_session_joins(memberId, sessionDate);
+        CREATE INDEX IF NOT EXISTS idx_online_join_date ON online_session_joins(sessionDate);
+    ";
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
     db_assert_migration_ladder($migrations);

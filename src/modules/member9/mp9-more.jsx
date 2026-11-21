@@ -1000,8 +1000,9 @@ Object.assign(Mp9Portal.prototype, {
       onDone={(msg) => { this.setState({ handIn: null }); this.refresh(["dash", "today"]); this.toast(msg); }}/> : null;
     const rest = this.slotEndInner();
     // The view switch goes after the profile, never above the area's tabs: on a phone it pushed them off the first screen.
+    const online = s.scr === "sat" && typeof Mp9Online === "function" ? <Mp9Online toast={t => this.toast(t)}/> : null;
     const view = s.scr === "me" ? <>{typeof RclProgress === "function" ? <RclProgress who="member"/> : null}{typeof Mp9Wifi === "function" ? <Mp9Wifi toast={t => this.toast(t)}/> : null}{typeof Mp9VolWallet === "function" ? <Mp9VolWallet/> : null}{this.viewSwitch()}</> : null;
-    return handEl || view ? <>{view}{rest}{handEl}</> : rest;
+    return handEl || view || online ? <>{online}{view}{rest}{handEl}</> : rest;
   },
   slotEndInner() {
     const s = this.state;
@@ -1108,6 +1109,38 @@ function mp9WifiProblem(a, b, username) {
   if (username && a.toLowerCase() === String(username).toLowerCase()) return "Your password can’t be your sign-in name.";
   if (a !== b) return "The two passwords are not the same.";
   return "";
+}
+/* ── NGG Online's Saturday session (domain/online.php) ─────────────────────────────────────────────────────
+   For online members only (the server answers not_online to anyone else, and this renders nothing). Join is
+   the attendance: it is recorded when pressed while the session is on, and only then is the link handed over,
+   so the link is never sitting on a page to be passed round. Re-checked every minute, so Join opens on time. */
+function Mp9Online({ toast }) {
+  const [d, setD] = React.useState(null), [err, setErr] = React.useState(""), [busy, setBusy] = React.useState(false);
+  const load = React.useCallback(() => {
+    NGGApi.member.onlineSession().then(r => { setD(r.session || null); setErr(""); })
+      .catch(e => setErr((e && e.code) === "not_online" ? "skip" : "error"));
+  }, []);
+  React.useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, [load]);
+  if (err === "skip") return null;
+  const join = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { const r = await NGGApi.member.onlineJoin(); setD(x => Object.assign({}, x, { joined: true })); window.open(r.url, "_blank", "noopener"); toast("You’re marked present. The session opened in a new tab."); }
+    catch (e) { toast((e && e.data && e.data.detail) || "You couldn’t join just now. Try again in a moment."); load(); }
+    finally { setBusy(false); }
+  };
+  return <section className="m9x-slot m9x-view m9x-online" aria-labelledby="m9x-online-h">
+    <h2 id="m9x-online-h" className="m9x-view-h"><i className="ph ph-video-camera" aria-hidden="true"/> The online session</h2>
+    {err === "error" ? <p className="m9x-wifi-note" role="alert">We couldn’t load the session. <button type="button" className="m9x-wifi-new" onClick={load}>Try again</button></p>
+      : !d ? <p className="m9x-wifi-note" role="status">Loading…</p>
+      : <>
+        <p className="m9x-online-when">{d.label ? "Next: " + d.label + " (Lagos time), " + d.minutes + " minutes" : "No session is set yet."}</p>
+        <p className="m9x-wifi-note" role="status" aria-live="polite">{d.joined ? "You joined this one. You’re marked present." : d.open ? (d.hasLink ? "It’s on now. Join to be marked present." : "It’s on, but the link isn’t set yet. Your team has been told.") : "Join opens a few minutes before it starts. Joining here is how you’re marked present."}</p>
+        <div className="m9x-wifi-acts">
+          <button type="button" className="m9x-ask-b" onClick={join} disabled={busy || !d.open || !d.hasLink} aria-disabled={busy || !d.open || !d.hasLink}>{busy ? "Opening…" : d.joined ? "Open it again" : "Join the session"}</button>
+        </div>
+      </>}
+  </section>;
 }
 function Mp9Wifi({ toast }) {
   const [d, setD] = React.useState(null), [err, setErr] = React.useState(""), [busy, setBusy] = React.useState(false);

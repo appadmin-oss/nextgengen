@@ -139,9 +139,16 @@ function dues_notice_send(array $m, string $kind, string $refKey, array $msg, ?a
 /* ── Upcoming charges ────────────────────────────────────────────────────── */
 
 /** A coming charge in the family's words — the same words the family app's Fees screen uses. */
-function dues_charge_label(array $c): string {
-    return $c['kind'] === 'dues' ? 'Commitment fee · ' . gmdate('F Y', strtotime($c['key'] . '-01T12:00:00Z'))
-        : 'Membership renewal (year ' . substr((string)$c['key'], 1) . ')';
+function dues_charge_label(array $c, ?array $m = null): string {
+    if ($c['kind'] === 'dues') return ($m && function_exists('member_is_online') && member_is_online($m) ? 'NGG Online · ' : 'Commitment fee · ') . gmdate('F Y', strtotime($c['key'] . '-01T12:00:00Z'));
+    // An online member's course (fees_online_course_items): 'course:<name>[:YYYY-MM]'.
+    if ($c['kind'] === 'training' && str_starts_with((string)$c['key'], 'course:')) {
+        $parts = explode(':', (string)$c['key']);
+        $name = (string)($parts[1] ?? '');
+        if ($m) foreach (fees_online_courses($m) as $cn) if (mb_strtolower($cn) === $name) { $name = $cn; break; }
+        return 'Course · ' . $name . (isset($parts[2]) ? ' · ' . gmdate('F Y', strtotime($parts[2] . '-01T12:00:00Z')) : '');
+    }
+    return 'Membership renewal (year ' . substr((string)$c['key'], 1) . ')';
 }
 
 /**
@@ -161,7 +168,7 @@ function dues_coming_charges(array $m, array $cfg, string $today, int $days, int
     $out = [];
     foreach ($coming as $c) {
         if ($credit >= (int)$c['amount']) { $credit -= (int)$c['amount']; continue; }
-        $out[] = $c + ['label' => dues_charge_label($c)];
+        $out[] = $c + ['label' => dues_charge_label($c, $m)];
     }
     return $out;
 }
@@ -200,7 +207,7 @@ function dues_upcoming_candidates(string $today, ?array $cfg = null, int $limit 
     $cfg = $cfg ?? fees_settings();
     $out = ['due' => [], 'skipped' => ['optedOut' => 0, 'paidAhead' => 0, 'nothingDue' => 0, 'alreadyTold' => 0, 'noContact' => 0], 'scanned' => 0, 'more' => false];
     if (empty($cfg['enabled']) || empty($cfg['noticeEnabled'])) { $out['off'] = true; return $out; }
-    if ((int)$cfg['monthlyDues'] <= 0 && (int)$cfg['membershipFee'] <= 0) return $out;
+    if ((int)$cfg['monthlyDues'] <= 0 && (int)$cfg['membershipFee'] <= 0 && (int)($cfg['onlineMonthly'] ?? 0) <= 0) return $out;
     $where = "status = 'active' AND COALESCE(NULLIF(type,''),'NGG') = 'NGG'"; $args = [];
     if ($centres !== null) { if (!$centres) return $out; $where .= ' AND centre IN (' . implode(',', array_fill(0, count($centres), '?')) . ')'; $args = $centres; }
     foreach (db_all("SELECT * FROM members WHERE $where ORDER BY id LIMIT " . (FEES_SCAN_MAX), $args) as $m) {

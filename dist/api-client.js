@@ -1146,6 +1146,9 @@
       askParent:    () => request('/member/fees.php', { body: { action: 'nudge' } }),
       // The centre's Wi-Fi: sign-in name, whether a password is set, why access is limited or off;
       // the password the member chooses (3 changes a day), in the body, never echoed back.
+      /* NGG Online's Saturday session (domain/online.php): GET the next one; join records attendance and returns the link. */
+      onlineSession: () => request('/member/online.php'),
+      onlineJoin:    () => request('/member/online.php', { body: { action: 'join' } }),
       wifi:         () => request('/member/wifi.php'),
       wifiPassword: (password) => request('/member/wifi.php', { body: { action: 'password', password } }),
       // Their volunteer wallet, when they volunteer with NGG (domain/volunteer-pay.php); null when they don't.
@@ -2161,6 +2164,12 @@
       },
       /* The centres' Wi-Fi (domain/wifi.php): gateways of any platform, the
          access table and profiles (network), and one person's Wi-Fi (people/summer). */
+      /* NGG Online (domain/online.php): the overview, the session settings, mentor pairing. */
+      online: {
+        overview: () => request('/admin/online.php'),
+        settings: (settings) => request('/admin/online.php', { body: { action: 'settings', settings } }),
+        pair: (data) => request('/admin/online.php', { body: Object.assign({ action: 'pair' }, data) }),
+      },
       wifi: {
         overview: () => request('/admin/wifi.php'),
         accessSet: (data) => request('/admin/wifi.php', { body: Object.assign({ action: 'access' }, data) }),

@@ -2076,3 +2076,96 @@ Object.assign(CR_TAB_DEFS, {
     },
   },
 });
+
+/* ══ NGG Online (domain/online.php; docs/ONLINE-MEMBERS-PLAN.md phase 6) ═════════════════════════════════════
+   One screen runs the online programme: who is paid up, who was active this week, who has no mentor, who
+   missed the last online session — and the session's own link, day and time. Mentor pairing goes through
+   admin.online.mentor.pair, which delegates each pairing to the same op a pairing by hand uses. */
+const CR_ONLINE_ERR = {
+  no_online_mentors: "No mentor is at NGG Online yet. Accept a mentor for NGG Online first, under Mentors & volunteers.",
+  bad_mentor: "Choose a mentor at NGG Online.", mentors_full: "Every online mentor is at their limit.",
+  bad_url: "The session link must start with https://", bad_time: "Write the time as HH:MM, for example 08:30.",
+};
+Object.assign(CR_TAB_DEFS, {
+  online: {
+    skeleton: ["kpis", "table"],
+    load: async () => NGGApi.admin.online.overview(),
+    actions: (d, ctx) => d && d.centre && ctx.can("people") && (d.counts || {}).noMentor > 0 ? [{
+      l: "Pair everyone without a mentor", icon: "handshake", primary: true,
+      disabled: !(d.mentors || []).length, why: (d.mentors || []).length ? "" : "No mentor is at NGG Online yet.",
+      run: async () => {
+        const n = (d.counts || {}).noMentor;   // read before the confirm: a refresh underneath cannot change what was agreed
+        if (!(await ctx.confirm({ title: "Pair " + crNum(n) + " online member" + (n === 1 ? "" : "s") + "?", body: "Each goes to the online mentor with the fewest, never past a mentor’s own limit. They are told who their mentor is.", cta: "Pair them" }))) return;
+        try {
+          const r = await NGGApi.admin.online.pair({ auto: true });
+          const bad = (r.results || []).filter(x => !x.ok).length;
+          ctx.toast(crNum(r.paired || 0) + " paired" + (bad ? ", " + crNum(bad) + " not: " + (CR_ONLINE_ERR[(r.results.find(x => !x.ok) || {}).error] || "see the list") : ""), null, !!bad);
+          ctx.reload();
+        } catch (e) { ctx.toast(CR_ONLINE_ERR[e.code] || crErr(e, "Couldn’t pair them."), null, true); }
+      },
+    }] : [],
+    blocks: (d, ctx) => {
+      if (!d.centre) return [{ type: "note", span: 6, icon: "globe", tone: "warn", text: "There is no NGG Online centre.", sub: "Online members need a home: the NGG Online centre is added by the database update. If it was retired, restore it under Members → Centres." }];
+      if (d.scoped) return [{ type: "note", span: 6, icon: "lock", text: "NGG Online is not one of your centres.", sub: "Ask a super admin to add it to your centre scope under Access & roles." }];
+      const c = d.counts || {}, s = d.settings || {}, o = d.offer || {};
+      const money = n => fmtMoney(n);
+      const usd = (u, n) => (u ? "$" + u + " · " : "") + money(n);
+      const mentorOpts = (d.mentors || []).map(m => [m.mentorId, m.name + " (" + crNum(m.load) + (m.max ? " of " + m.max : "") + ")"]);
+      return [
+        { type: "kpis", span: 6, items: [
+          { l: "Online members", v: crNum(c.members || 0), tone: "flat" },
+          { l: "Owing", v: crNum(c.owing || 0), tone: c.owing ? "down" : "flat" },
+          { l: "No mentor", v: crNum(c.noMentor || 0), tone: c.noMentor ? "down" : "flat" },
+          { l: "Missed the last session", v: crNum(c.missedSession || 0), d: d.lastSession ? crDate(d.lastSession) : "", tone: c.missedSession ? "down" : "flat" },
+          { l: "Not active this week", v: crNum(c.inactive || 0), tone: c.inactive ? "down" : "flat" },
+        ] },
+        !s.sessionUrl ? { type: "note", span: 6, icon: "video-camera", tone: "warn", text: "The online session has no link yet.", sub: "Online members press Join in the portal to attend; until a link is set below, Join tells them it isn’t ready." } : null,
+        d.capped ? { type: "note", span: 6, icon: "info", text: "Showing the first " + crNum(d.cap) + " online members.", sub: "The counts above are for these; the server caps the list at " + crNum(d.cap) + "." } : null,
+        { type: "table", span: 6, title: "Online members", cols: ["Member", "Courses", "Mentor", "#Owing", "Last session", "This week"],
+          search: true, filters: ["Mentor", "Last session", "This week"], emptyText: "No online members yet. They join through the application form’s “Online” choice.",
+          sortInit: 0,
+          rows: (d.members || []).map(m => ({ key: m.memberId, cells: [
+            { k: "person", t: m.name, s: m.displayId || "" },
+            { k: "text", t: (m.courses || []).join(", ") || "None chosen" },
+            m.mentor ? { k: "text", t: m.mentor } : { k: "status", t: "No mentor", tone: "warn" },
+            { k: "num", t: m.owing ? money(m.owing) : "—", v: m.owing },
+            d.lastSession ? (m.atSession ? { k: "status", t: "Attended", tone: "ok" } : { k: "status", t: "Missed", tone: "warn" }) : { k: "text", t: "—" },
+            m.activeWeek ? { k: "status", t: "Active", tone: "ok" } : { k: "status", t: "Quiet", tone: "warn" },
+          ], open: () => ctx.go("members", "members", m.memberId) })),
+          bulk: ctx.can("people") ? [{ l: "Pair with a mentor", max: 500, run: async keys => {
+            if (!mentorOpts.length) { ctx.toast("No mentor is at NGG Online yet.", null, true); return false; }
+            const n = keys.length;
+            return ctx.form({ title: "Pair " + crNum(n) + " with a mentor", submit: "Pair", values: { mentorId: "" },
+              fields: [{ id: "mentorId", l: "Mentor", type: "select", opts: mentorOpts, req: 1 }],
+              onSubmit: async v => {
+                const r = await NGGApi.admin.online.pair({ mentorId: v.mentorId, memberIds: keys });
+                const bad = (r.results || []).filter(x => !x.ok).length;
+                ctx.reload();
+                return r;
+              },
+              done: (v, r) => crNum((r && r.paired) || 0) + " paired" + (((r && r.results) || []).some(x => !x.ok) ? "; some were not — see the list" : "") });
+          } }] : [] },
+        ctx.can("settings") ? { type: "form", span: 6, key: "online-settings", title: "The online session and the offer",
+          groups: [
+            { h: "The online Saturday session", help: "Online members attend by pressing Join in the portal while the session is on; that is their attendance. The link is shown to nobody else.", rows: [
+              { id: "sessionUrl", l: "Meeting link", c: "input", value: s.sessionUrl || "", ph: "https://meet.google.com/…", check: v => v && !/^https:\/\/\S+$/i.test(v) ? "The link must start with https://" : "" },
+              { id: "sessionDay", l: "Day", c: "select", opts: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map(x => [x, x]), value: s.sessionDay || "Saturday" },
+              { id: "sessionTime", l: "Starts at (Lagos time)", c: "input", value: s.sessionTime || "08:30", ph: "08:30", check: v => /^([01]?\d|2[0-3]):[0-5]\d$/.test(v || "") ? "" : "Write the time as HH:MM." },
+              { id: "sessionMinutes", l: "Length in minutes", c: "input", type: "number", value: String(s.sessionMinutes || 90) },
+              { id: "joinOpensMinutes", l: "Join opens this many minutes before", c: "input", type: "number", value: String(s.joinOpensMinutes == null ? 15 : s.joinOpensMinutes) },
+            ] },
+            { h: "Joining online", help: "The prices are set under Money → Dues & arrears → Amounts: " + usd(o.monthlyUsd, o.monthly) + " a month" + (o.course ? ", " + usd(o.courseUsd, o.course) + (o.courseBasis === "once" ? " once" : " a month") + " a course" : "") + ".", rows: [
+              { id: "enabled", l: "Offer “Online” on the application form", c: "toggle", value: s.enabled !== false },
+            ] },
+          ],
+          save: async patch => {
+            const out = Object.assign({}, patch);
+            if ("sessionMinutes" in out) out.sessionMinutes = Number(out.sessionMinutes);
+            if ("joinOpensMinutes" in out) out.joinOpensMinutes = Number(out.joinOpensMinutes);
+            try { await NGGApi.admin.online.settings(out); } catch (e) { throw new Error(CR_ONLINE_ERR[e.code] || crErr(e, "Couldn’t save the online settings.")); }
+          },
+          onSaved: () => ctx.reload() } : null,
+      ].filter(Boolean);
+    },
+  },
+});

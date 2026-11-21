@@ -591,6 +591,41 @@ sees any evidence, or anyone else's.
 
 ---
 
+## NGG Online (members who never come to a centre)
+
+Online members belong to **NGG Online**, a centre with no building. No attendance rule, fine or absence
+ever applies to them.
+
+**Joining.** The application form asks *How will your child take part?*: **At a centre** (the scholarship,
+Saturdays in person) or **Online**, with the price beside it. Choosing Online removes the centre question;
+the child is placed at NGG Online. Summer School cannot be joined online. Accepting an online application
+sends the first month's invoice as usual.
+
+**What they pay** (Money → Dues & arrears → Amounts → *NGG Online*):
+- **Online membership**: ₦13,000 a month (said as $10), paid before the month. It is never shortened for a
+  late start, and a mentor is included.
+- **Each course**: ₦6,500 (said as $5), every month it is taken (or once, if set), with an instructor.
+  Only courses from the catalogue are charged.
+- No membership fee, no commitment fee and no training place.
+
+Notices before the 1st, pay-ahead and the family app all show these figures.
+
+**Members → Online** runs the programme:
+- the counts: online members, owing, no mentor, missed the last session, quiet this week;
+- the list, with each child's courses, mentor, balance, last session and this week;
+- **Pair everyone without a mentor**: each goes to the online mentor with the fewest, never past that
+  mentor's limit. **Pair with a mentor** does the same for the children you tick;
+- the **online session**: its meeting link, day, start time (Lagos), length, and how early Join opens;
+- whether the application form offers Online at all.
+
+**Online mentors** apply on the mentor form and choose *Online*. Once accepted they are at NGG Online, and
+the Online page pairs them.
+
+**The online session.** Online members open the **Saturday** screen in their portal and press **Join the
+session** while it is on. That marks them present and opens the meeting link. The link is shown to nobody
+else, and Join is refused outside the session, so "attended" means they joined while it was running. If no
+link is set, Join tells them so and the Online page shows a warning.
+
 ## Centres
 
 **Members → Centres.** A centre is a place. Adding, editing and retiring one
