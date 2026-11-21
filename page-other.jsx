@@ -1476,6 +1476,13 @@ function MembershipPayPage({ setPage }) {
   const [st, setSt] = React.useState({ state: "loading" });
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
+  /* Back from Paystack, but Paystack has not said "success" yet: a transfer, USSD or a slow bank. This
+     page used to show the open invoice and its Pay button straight away, so a family who HAD paid read
+     "Total to pay" and paid again or gave up. Now it waits, asks again every ten seconds for five minutes
+     (the server re-asks Paystack each time), and keeps the reference in the address so a refresh asks
+     too. The family can still say they did not finish, which is the only way to the Pay button here. */
+  const [settle, setSettle] = React.useState(null);
+  const clearRef = () => { try { history.replaceState({ page: "pay" }, "", "/pay/" + encodeURIComponent(token)); } catch (_) {} };
   const load = React.useCallback(() => {
     let ref = "";
     try { const q = new URLSearchParams(window.location.search); ref = q.get("reference") || q.get("trxref") || ""; } catch (_) {}
@@ -1483,13 +1490,29 @@ function MembershipPayPage({ setPage }) {
     const req = ref ? NGGApi.public.membershipVerify(token, ref) : NGGApi.public.membershipInvoice(token);
     req.then(r => {
       setSt({ state: "ready", inv: r.invoice });
-      if (ref) { try { history.replaceState({ page: "pay" }, "", "/pay/" + encodeURIComponent(token)); } catch (_) {} }
+      if (ref && r.invoice.status === "open" && r.paystackStatus === "settling") { setSettle({ ref, left: 30, long: false }); return; }
+      if (ref && r.paystackStatus === "failed") setErr("Paystack says that payment did not go through, so nothing was taken. You can try again.");
+      if (ref) clearRef();
     }).catch(e => {
       if (ref && e.code !== "not_found") { setErr(e.code === "payment_mismatch" ? "Paystack reported a payment that does not match this invoice. Nothing was recorded — contact the centre before paying again." : "We couldn’t confirm the payment yet. If money left your account, do not pay again — refresh this page in a minute."); return NGGApi.public.membershipInvoice(token).then(r => setSt({ state: "ready", inv: r.invoice }), () => setSt({ state: "error", e })); }
       setSt({ state: e.code === "not_found" ? "missing" : "error", e });
     });
   }, [token]);
   React.useEffect(load, [load]);
+  React.useEffect(() => {
+    if (!settle || settle.long) return undefined;
+    const t = setTimeout(() => {
+      NGGApi.public.membershipVerify(token, settle.ref).then(r => {
+        if (r.invoice.status !== "open" || r.paystackStatus !== "settling") {
+          setSettle(null); setSt({ state: "ready", inv: r.invoice }); clearRef();
+          if (r.paystackStatus === "failed") setErr("Paystack says that payment did not go through, so nothing was taken. You can try again.");
+          return;
+        }
+        setSettle(s => s && (s.left <= 1 ? { ...s, left: 0, long: true } : { ...s, left: s.left - 1 }));
+      }, () => setSettle(s => s && (s.left <= 1 ? { ...s, left: 0, long: true } : { ...s, left: s.left - 1 })));
+    }, 10000);
+    return () => clearTimeout(t);
+  }, [settle, token]);
   const pay = async () => {
     setBusy(true); setErr("");
     try { const r = await NGGApi.public.membershipPay(token); if (!nggPaystackUrlOk(r.authorizationUrl)) throw new Error("bad_checkout"); window.location.assign(r.authorizationUrl); }
@@ -1545,6 +1568,17 @@ function MembershipPayPage({ setPage }) {
               </div>
             ) : inv.status === "void" ? (
               <div className="mpay-msg"><p>{inv.purpose === "part" ? "This instalment was replaced: a new amount was asked for, or less is owed now. Open the family account to pay what is owed today." : inv.purpose === "balance" || inv.purpose === "advance" ? "This amount is out of date because the account changed. Open the account again and press Pay online for the current figure." : "This invoice was cancelled. Contact your centre if you think that is a mistake."}</p></div>
+            ) : settle ? (
+              <div className="mpay-note mpay-settle" role="status" aria-live="polite">
+                <b>{settle.long ? "Paystack still hasn’t confirmed this payment." : "Paystack is still confirming your payment."}</b>
+                {settle.long
+                  ? " If money left your account it is applied as soon as Paystack confirms it, and your receipt is emailed then. You can close this page. If nothing arrives within the day, contact your centre with invoice " + inv.invoiceId + "."
+                  : " Transfers and some banks take a few minutes. This page checks again by itself. Please don’t pay again."}
+                <div className="mpay-settle-do">
+                  {settle.long && <button type="button" className="btn btn-ghost" onClick={load}>Check again</button>}
+                  <button type="button" className="btn btn-ghost" onClick={() => { setSettle(null); clearRef(); }}>I didn’t finish paying</button>
+                </div>
+              </div>
             ) : inv.pendingOffline ? (
               <div className="mpay-note" role="status"><b>Your {String(inv.pendingOffline.method || "offline").toLowerCase()} payment is being checked.</b> The centre records it and a second member of staff confirms it against the bank statement; your receipt is emailed as soon as that is done. Please don’t pay again.</div>
             ) : (

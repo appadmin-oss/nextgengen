@@ -7681,3 +7681,28 @@ The owner asked for this "only if you think it is cool". It is, for one concrete
 - Browser probe: 8 checks. A parent pays a ₦2,000 re-entry fine ahead of ₦4,000 older dues; the fine is
   paid on the ledger and the conduct record; ₦4,000 is still owed; no page errors.
 - The plans probe was re-run after the allocator change: 16/16.
+
+## 21 Nov 2026 — Payments that went through and did not show
+
+**Reported:** "Some payments do not reflect that they went through."
+
+**Causes found, all three fixed.**
+1. *The pay page offered Pay again for a payment still settling.* Back from Paystack before it reported
+   `success` (transfer, USSD, a slow bank), `membership_paystack_verify` returned the open invoice and the
+   page drew "Total to pay" and the Pay button. It also dropped `?reference=` from the address, so "refresh
+   in a minute" asked nobody. Now `public.membership.pay.verify` returns `paystackStatus`
+   (`paystack_settle_word`: paid | settling | failed). The page waits, re-asks every 10 s for 5 minutes, and
+   keeps the reference until it settles. Only "I didn't finish paying" returns to the Pay button. The shop
+   order page does the same.
+2. *Nothing asked again when nobody came back.* Settlement depended on the browser or the webhook.
+   `paystack_sweep()` (web-cron job `paystack`, every 10 min) re-verifies unsettled checkouts from 2 minutes
+   to 48 hours old: every invoice checkout (from the `membership.paystack.init` audit rows, so an earlier
+   tab counts), pending shop orders and pending donations. It runs through the same verify functions,
+   newest first, at most 40 Paystack calls a run, with one audit event per run.
+3. *An exact amount test.* Paystack's "pass charges to customer" adds its fee on top, and `!==` refused every
+   such payment. `paystack_amount_ok()` accepts at most what Paystack can add (1.5% + ₦100, capped at
+   ₦2,000). Anything else is still a mismatch for a person. The owner asked whether overpayment opens room
+   for errors: open-ended "at least" would; this ceiling does not.
+
+**Verified.** `run.php`: 16 new checks (settling, overpaid, sweep), run in CI. `node build.js` is clean.
+

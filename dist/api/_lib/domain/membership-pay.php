@@ -889,13 +889,22 @@ function membership_paystack_verify(string $reference): array {
        checkout started before the family bore the charge has none). It may not exceed the invoice itself. */
     $fee = max(0, (int)($d['metadata']['processingFee'] ?? 0));
     if ($fee > (int)$inv['total']) $fee = -1;
-    if ($fee < 0 || (string)($d['reference'] ?? '') !== $reference || (int)($d['amount'] ?? 0) !== ((int)$inv['total'] + max(0, $fee)) * 100
+    /* SHORT of what the checkout was for never settles. Over it settles only by as much as Paystack's own
+       "pass charges to the customer" switch can add (paystack_amount_ok): an exact test refused every such
+       payment while the money left the family's account. Anything more is not that, and goes to a person. */
+    $want = ((int)$inv['total'] + max(0, $fee)) * 100;
+    if ($fee < 0 || (string)($d['reference'] ?? '') !== $reference || !paystack_amount_ok((int)($d['amount'] ?? 0), $want)
         || strtoupper((string)($d['currency'] ?? '')) !== strtoupper((string)$inv['currency'])) {
         audit('membership.paystack.mismatch', null, (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $reference, 'amount' => (int)($d['amount'] ?? 0), 'currency' => (string)($d['currency'] ?? '')]);
         // Money that DID arrive, for an amount the invoice does not match: on the record for a person.
         if ($succeeded && (string)($d['reference'] ?? '') === $reference)
             unapplied_record($reference, 'mismatch', $inv, (int)round(((int)($d['amount'] ?? 0)) / 100), (string)($d['currency'] ?? 'NGN'));
         return ['ok' => false, 'error' => 'payment_mismatch'];
+    }
+    // Paid over what was asked: the extra is what the family paid Paystack, said on the receipt as its charge.
+    if ((int)$d['amount'] > $want) {
+        audit('membership.paystack.overpaid', 'paystack', (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $reference, 'asked' => $want, 'paid' => (int)$d['amount']]);
+        $fee = intdiv((int)$d['amount'], 100) - (int)$inv['total'];
     }
     // The charge is recorded on the invoice (for the receipt), never on the ledger: it is Paystack's, not something owed to NGG.
     db_update('membership_invoices', ['processingFee' => $fee], ['id' => $inv['id']]);
@@ -917,8 +926,99 @@ function public_membership_pay_verify(array $p): array {
         $v = membership_paystack_verify($ref);
         if (empty($v['ok'])) return ['ok' => false, 'error' => $v['error'] ?? 'failed'];
         if ((string)($v['invoice']['invoiceId'] ?? '') !== (string)$inv['invoiceId']) return ['ok' => false, 'error' => 'bad_reference'];
+        /* What Paystack said, when it was not "paid". The page used to get only the invoice back — still open —
+           and so drew the Pay button again for a payment that was merely still settling (a bank transfer, USSD,
+           a slow bank): the family had paid, saw "Total to pay", and paid twice or gave up. With this the page
+           can tell "still confirming" (it waits, and checks again) from "failed" (it says so) from "paid". */
+        $out = public_membership_invoice(['token' => $inv['payToken']]);
+        if (!empty($out['ok']) && (string)($v['status'] ?? '') !== 'paid') $out['paystackStatus'] = paystack_settle_word((string)($v['status'] ?? ''));
+        return $out;
     }
     return public_membership_invoice(['token' => $inv['payToken']]);
+}
+
+/**
+ * Paid enough, and not more than Paystack itself could have added. Amounts in kobo.
+ *
+ * The family cannot change what a checkout asks for — we set it when it starts — so the one honest reason
+ * for a payment to arrive ABOVE it is Paystack's dashboard passing its charge on to the payer, which adds
+ * at most its local-card fee: 1.5% plus ₦100, capped at ₦2,000. An exact test refused every such payment
+ * ("I paid and it does not show"); an open-ended "at least" would wave through an amount nobody can
+ * explain. So the allowance is that ceiling and no more: short, or over by more than Paystack could have
+ * taken, is a mismatch and goes on the record for a person (unapplied_record), exactly as before.
+ */
+const PAYSTACK_PASS_BPS = 150;        // 1.5%
+const PAYSTACK_PASS_FLAT = 100;       // ₦100
+const PAYSTACK_PASS_CAP = 2000;       // ₦2,000
+function paystack_amount_ok(int $paidKobo, int $wantKobo): bool {
+    if ($paidKobo < $wantKobo) return false;
+    $want = intdiv($wantKobo, 100);
+    $most = min(PAYSTACK_PASS_CAP, (int)ceil($want * PAYSTACK_PASS_BPS / 10000) + PAYSTACK_PASS_FLAT);
+    return $paidKobo - $wantKobo <= $most * 100;
+}
+
+/**
+ * Paystack's transaction status in the three words a payer's page needs. `failed` (it said failed or
+ * reversed: nothing to wait for), else `settling` — success not yet reported, which covers `ongoing`,
+ * `pending`, `processing`, `queued`, `abandoned` (a checkout not finished, or a transfer not yet seen)
+ * and no answer at all. A page that is told `settling` waits and asks again; it never offers to take the
+ * money a second time without the payer saying they did not finish.
+ */
+function paystack_settle_word(string $status): string {
+    $s = strtolower(trim($status));
+    if ($s === 'paid' || $s === 'success') return 'paid';
+    return in_array($s, ['failed', 'reversed'], true) ? 'failed' : 'settling';
+}
+
+/* ── The sweep: a payment nobody came back for ───────────────────────────── */
+
+const PAYSTACK_SWEEP_HOURS = 48;   // a checkout older than this was abandoned, not settling
+const PAYSTACK_SWEEP_MAX = 40;     // Paystack verify calls in one run (net time is not ours)
+const PAYSTACK_SWEEP_MIN_AGE = 120; // seconds: leave a live return trip to the family's own page
+
+/**
+ * Ask Paystack again about every recent checkout that has not settled: joining, balance, instalment and
+ * advance invoices, shop orders and donations.
+ *
+ * A Paystack payment settled in exactly two ways: the family's browser coming back to the page, or the
+ * webhook. A family who paid by transfer or in a banking app and closed the tab, on a day the webhook was
+ * refused (a key changed, the dashboard pointing at an old address, the host down for a minute), had paid
+ * and stayed unpaid for good, with nothing on any screen to say so. This is the third way, from the
+ * scheduler, settling through the SAME verify functions — so the amount, currency and reference checks
+ * are the ones every other path applies, and a payment can be settled only once whoever gets there first.
+ * Newest first, PAYSTACK_SWEEP_MAX calls a run; one audit event per run that settled anything.
+ */
+function paystack_sweep(): array {
+    if (paystack_secret() === '') return ['ok' => true, 'checked' => 0, 'settled' => 0];
+    $from = gmdate('Y-m-d\TH:i:s\Z', time() - PAYSTACK_SWEEP_HOURS * 3600);
+    $to = gmdate('Y-m-d\TH:i:s\Z', time() - PAYSTACK_SWEEP_MIN_AGE);
+    $todo = [];
+    /* Every invoice checkout, not only each invoice's latest: a family who opened Paystack twice and paid
+       in the first tab has paid. The references are in the start-of-checkout audit rows. */
+    foreach (db_all("SELECT meta FROM audit_log WHERE event = 'membership.paystack.init' AND at >= ? AND at <= ? ORDER BY id DESC LIMIT 400", [$from, $to]) as $a) {
+        $m = json_decode((string)$a['meta'], true);
+        $ref = (string)($m['reference'] ?? ''); $iid = (string)($m['invoiceId'] ?? '');
+        if ($ref === '' || $iid === '' || isset($todo[$ref])) continue;
+        $inv = membership_invoice_by('invoiceId', $iid);
+        if ($inv && (string)$inv['status'] === 'open') $todo[$ref] = 'membership';
+    }
+    if (function_exists('shop_paystack_verify'))
+        foreach (db_all("SELECT paystackRef FROM shop_orders WHERE status = 'pending' AND paystackRef <> '' AND createdAt >= ? AND createdAt <= ? ORDER BY id DESC LIMIT 200", [$from, $to]) as $o)
+            $todo[(string)$o['paystackRef']] = 'shop';
+    foreach (db_all("SELECT reference FROM donations WHERE status = 'pending' AND createdAt >= ? AND createdAt <= ? ORDER BY id DESC LIMIT 200", [$from, $to]) as $d)
+        $todo[(string)$d['reference']] = 'donation';
+
+    $checked = 0; $settled = [];
+    foreach ($todo as $ref => $kind) {
+        if ($checked >= PAYSTACK_SWEEP_MAX) break;
+        $checked++;
+        try {
+            $v = match ($kind) { 'membership' => membership_paystack_verify($ref), 'shop' => shop_paystack_verify($ref), default => donation_verify($ref) };
+        } catch (Throwable $e) { continue; }
+        if (!empty($v['ok']) && (string)($v['status'] ?? '') === 'paid' && empty($v['already'])) $settled[] = $kind . ':' . $ref;
+    }
+    if ($settled) audit('paystack.sweep.settled', 'system', '', ['count' => count($settled), 'references' => $settled, 'checked' => $checked]);
+    return ['ok' => true, 'checked' => $checked, 'settled' => count($settled), 'more' => count($todo) > $checked];
 }
 
 /* ── Staff ───────────────────────────────────────────────────────────────── */

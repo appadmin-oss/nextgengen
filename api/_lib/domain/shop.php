@@ -180,7 +180,7 @@ function shop_paystack_verify(string $reference): array {
     $o = $oid !== '' ? shop_order_by('orderId', $oid) : shop_order_by('paystackRef', $reference);
     if (!$o) return ['ok' => false, 'error' => 'not_found'];
     $ok = !empty($r['status']) && ($d['status'] ?? '') === 'success';
-    if (!$ok) return ['ok' => true, 'status' => (string)$o['status'], 'order' => $o];
+    if (!$ok) return ['ok' => true, 'status' => (string)$o['status'], 'order' => $o, 'paystack' => (string)($d['status'] ?? '')];
     if ((string)$o['status'] !== 'pending') {
         $appliedHere = (string)$o['paystackRef'] === $reference && (string)$o['paidAt'] !== '';
         if (!$appliedHere && function_exists('unapplied_record'))
@@ -188,11 +188,16 @@ function shop_paystack_verify(string $reference): array {
         return ['ok' => true, 'status' => (string)$o['status'], 'order' => $o];
     }
     $fee = max(0, (int)($d['metadata']['processingFee'] ?? 0));
-    if ($fee > (int)$o['total'] || (string)($d['reference'] ?? '') !== $reference || (int)($d['amount'] ?? 0) !== ((int)$o['total'] + $fee) * 100
+    // Short never pays; over pays only by what Paystack's "pass charges" could add (paystack_amount_ok).
+    if ($fee > (int)$o['total'] || (string)($d['reference'] ?? '') !== $reference || !paystack_amount_ok((int)($d['amount'] ?? 0), ((int)$o['total'] + $fee) * 100)
         || strtoupper((string)($d['currency'] ?? '')) !== 'NGN' || ($oid !== '' && $oid !== (string)$o['orderId'])) {
         audit('shop.paystack.mismatch', null, (string)$o['orderId'], ['reference' => $reference, 'amount' => (int)($d['amount'] ?? 0)]);
         if (function_exists('unapplied_record')) unapplied_record($reference, 'mismatch', ['invoiceId' => (string)$o['orderId'], 'memberId' => ''], (int)round(((int)($d['amount'] ?? 0)) / 100), (string)($d['currency'] ?? 'NGN'));
         return ['ok' => false, 'error' => 'payment_mismatch'];
+    }
+    if ((int)$d['amount'] > ((int)$o['total'] + $fee) * 100) {
+        audit('shop.paystack.overpaid', 'paystack', (string)$o['orderId'], ['reference' => $reference, 'asked' => ((int)$o['total'] + $fee) * 100, 'paid' => (int)$d['amount']]);
+        $fee = intdiv((int)$d['amount'], 100) - (int)$o['total'];
     }
     // One writer wins: only a still-pending order becomes paid, so a webhook and the return page cannot both take stock off.
     $won = db_exec("UPDATE shop_orders SET status = 'paid', paidAt = ?, processingFee = ?, updatedAt = ? WHERE orderId = ? AND status = 'pending'",
@@ -242,6 +247,9 @@ function public_shop_order_get(array $p): array {
         if (empty($v['ok'])) return ['ok' => false, 'error' => $v['error'] ?? 'failed'];
         if ((string)($v['order']['orderId'] ?? '') !== (string)$o['orderId']) return ['ok' => false, 'error' => 'bad_reference'];
         $o = shop_order_by('token', (string)$o['token']);
+        // Still pending after Paystack answered: say whether to wait or to give up (paystack_settle_word).
+        if ((string)$o['status'] === 'pending')
+            return ['ok' => true, 'order' => shop_order_public($o), 'paystackStatus' => paystack_settle_word((string)($v['paystack'] ?? ''))];
     }
     return ['ok' => true, 'order' => shop_order_public($o)];
 }

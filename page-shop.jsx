@@ -386,7 +386,7 @@ function ShopProductCard({ p, maxQty, inCart, onAdd }) {
    the page never decides that anything is paid. */
 const SHOP_STEPS = [["paid", "Paid"], ["ready", "Ready"], ["completed", "Done"]];
 const SHOP_STATUS_TEXT = {
-  pending: ["Waiting for payment", "We haven’t received the payment for this order. If you paid, refresh this page in a minute — do not pay again. If you didn’t finish paying, order again from the shop: an unpaid order holds nothing back and needs no cancelling."],
+  pending: ["Waiting for payment", "We haven’t received the payment for this order. If you paid, it is marked paid as soon as Paystack confirms it, and we email you — do not pay again. If you didn’t finish paying, order again from the shop: an unpaid order holds nothing back and needs no cancelling."],
   paid: ["Paid — thank you", "We are getting your order ready, and we will email you when it is."],
   ready: ["Ready", ""],
   completed: ["Done", ""],
@@ -396,6 +396,11 @@ function ShopOrderPage({ setPage }) {
   const token = decodeURIComponent(((window.location.pathname || "").split("/").filter(Boolean)[2]) || "");
   const [st, setSt] = React.useState({ state: "loading", o: null, e: null });
   const [warn, setWarn] = React.useState("");
+  /* Back from Paystack while it is still settling (a transfer, USSD): wait and ask again every ten seconds
+     for five minutes, keeping the reference in the address so a refresh asks too. It used to drop the
+     reference and say "refresh in a minute" — a refresh that then asked nobody anything. */
+  const [settle, setSettle] = React.useState(null);
+  const clearRef = () => { try { history.replaceState({ page: "shop-order" }, "", "/shop/order/" + encodeURIComponent(token)); } catch (_) {} };
   const load = React.useCallback(() => {
     let ref = "";
     try { const q = new URLSearchParams(window.location.search); ref = q.get("reference") || q.get("trxref") || ""; } catch (_) {}
@@ -403,7 +408,9 @@ function ShopOrderPage({ setPage }) {
     setSt(s => ({ state: ref ? "confirming" : "loading", o: s.o, e: null }));
     NGGApi.public.shop.get(token, ref).then(r => {
       setSt({ state: "ready", o: r.order, e: null });
-      if (ref) { try { history.replaceState({ page: "shop-order" }, "", "/shop/order/" + encodeURIComponent(token)); } catch (_) {} }
+      if (ref && r.order.status === "pending" && r.paystackStatus === "settling") { setSettle({ ref, left: 30, long: false }); return; }
+      if (ref && r.paystackStatus === "failed") setWarn("Paystack says that payment did not go through, so nothing was taken.");
+      if (ref) clearRef();
     }).catch(e => {
       if (ref && e.code !== "not_found") {
         setWarn(e.code === "payment_mismatch"
@@ -416,6 +423,21 @@ function ShopOrderPage({ setPage }) {
     });
   }, [token]);
   React.useEffect(load, [load]);
+  React.useEffect(() => {
+    if (!settle || settle.long) return undefined;
+    const step = () => setSettle(s => s && (s.left <= 1 ? { ...s, left: 0, long: true } : { ...s, left: s.left - 1 }));
+    const t = setTimeout(() => {
+      NGGApi.public.shop.get(token, settle.ref).then(r => {
+        if (r.order.status !== "pending" || r.paystackStatus !== "settling") {
+          setSettle(null); setSt({ state: "ready", o: r.order, e: null }); clearRef();
+          if (r.paystackStatus === "failed") setWarn("Paystack says that payment did not go through, so nothing was taken.");
+          return;
+        }
+        step();
+      }, step);
+    }, 10000);
+    return () => clearTimeout(t);
+  }, [settle, token]);
   const o = st.o;
   /* The cart that became this order is done with once the order is paid. */
   React.useEffect(() => {
@@ -454,7 +476,11 @@ function ShopOrderPage({ setPage }) {
           </ol>
         )}
         {warn && <div className="shop-err" role="alert">{warn}</div>}
-        <p className="shop-next" role="status">{next}</p>
+        {settle && o.status === "pending"
+          ? <p className="shop-next" role="status" aria-live="polite">{settle.long
+              ? "Paystack still hasn’t confirmed this payment. If money left your account the order is marked paid as soon as it does, and we email you then. You can close this page."
+              : "Paystack is still confirming your payment. Transfers and some banks take a few minutes. This page checks again by itself. Please don’t pay again."}</p>
+          : <p className="shop-next" role="status">{next}</p>}
         {o.note && o.status !== "cancelled" && o.status !== "completed" && <p className="shop-help">{o.note}</p>}
         <table className="shop-sum shop-olines">
           <tbody>

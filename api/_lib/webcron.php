@@ -96,6 +96,7 @@ function web_cron_jobs(): array {
     $add('crm_push',     900,    $has('crm_push_run'), true);
     $add('eng_snapshot', 604800, $has('engagement_snapshot_week'), false);
     if (defined('WIFI_CAC_EVERY')) $add('wifi_cac', WIFI_CAC_EVERY, $has('wifi_cac_tick'), true);
+    $add('paystack',     600,    $has('paystack_sweep'), true);               // membership-pay.php: re-ask Paystack about checkouts nobody came back for
     $add('volpay',       3600,   $has('volpay_tick'), false);
     $add('dirpush',      3600,   $has('dirpush_tick'), true);
     $add('photos_bucket', 3600,  $has('photo_store_to_bucket_tick'), true);   // held photos into the bucket, a batch an hour until none are left

@@ -38841,6 +38841,87 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $after = public_membership_invoice(['token' => $inv2['payToken']])['invoice'] ?? [];
     chk('paystack charge: the paid page shows the charge that was actually taken', ($after['onlineFee'] ?? 0) === 209);
 
+    // ── A payment that went through and did not show (Nov 2026) ──
+    // Three ways: Paystack still settling when the family came back (the page showed the Pay button again),
+    // nobody coming back and no webhook (nothing else asked), and Paystack's own "pass charges" adding to the
+    // amount (an exact check refused it). Each is held here.
+    $psState = 'success'; $psPaid = null; $sent = null;
+    $GLOBALS['__paystack_mock'] = function ($method, $path, $body) use (&$sent, &$psState, &$psPaid) {
+        if (strpos($path, '/transaction/initialize') === 0) { $sent = $body; return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/st1', 'reference' => $body['reference']]]; }
+        $ref = rawurldecode(substr($path, strlen('/transaction/verify/')));
+        $mine = $sent && ($sent['reference'] ?? '') === $ref;
+        $amt = $psPaid ?? ($mine ? $sent['amount'] : 0);
+        if (str_starts_with($ref, 'NGGD-')) { $d = db_row('SELECT amount FROM donations WHERE reference = ?', [$ref]); $amt = $psPaid ?? (int)($d['amount'] ?? 0) * 100; }
+        return ['status' => true, 'data' => ['status' => $psState, 'reference' => $ref, 'amount' => $amt, 'currency' => 'NGN', 'channel' => 'bank_transfer', 'metadata' => $mine ? $sent['metadata'] : ['processingFee' => 0]]];
+    };
+    $pfm = static fn() => db_row("SELECT * FROM members WHERE memberId = 'NGG-PF-1'");
+    fees_post('NGG-PF-1', 'dues', 7000, ['periodKey' => '2026-11', 'note' => 'Monthly dues 2026-11', 'by' => 'accrual']);
+    $bi = membership_balance_invoice($pfm(), 'test'); $inv = membership_invoice_by('invoiceId', (string)$bi['invoiceId']);
+    $in = backend_dispatch('public.membership.pay.init', ['token' => $inv['payToken']]);
+    $psState = 'ongoing';
+    $vv = backend_dispatch('public.membership.pay.verify', ['token' => $inv['payToken'], 'reference' => $in['reference']]);
+    chk('settling: back from Paystack before it settled, the invoice stays open and the page is told to WAIT, not to offer Pay again',
+        ($vv['invoice']['status'] ?? '') === 'open' && ($vv['paystackStatus'] ?? '') === 'settling');
+    $psState = 'abandoned';
+    chk('settling: an unfinished checkout (or a transfer not seen yet) is waited for too; the family says if they did not finish',
+        (backend_dispatch('public.membership.pay.verify', ['token' => $inv['payToken'], 'reference' => $in['reference']])['paystackStatus'] ?? '') === 'settling');
+    $psState = 'failed';
+    $f = backend_dispatch('public.membership.pay.verify', ['token' => $inv['payToken'], 'reference' => $in['reference']]);
+    chk('settling: a FAILED payment is said as failed, and the invoice stays payable', ($f['paystackStatus'] ?? '') === 'failed' && ($f['invoice']['status'] ?? '') === 'open');
+    chk('settling: three words, and nothing but failed/reversed is a failure',
+        paystack_settle_word('success') === 'paid' && paystack_settle_word('reversed') === 'failed' && paystack_settle_word('') === 'settling' && paystack_settle_word('queued') === 'settling');
+
+    // Overpaid: Paystack's dashboard passing its charge on adds to what we asked.
+    $psState = 'success'; $psPaid = (int)$sent['amount'] + 5000 * 100;
+    chk('overpaid: MORE over than Paystack could ever add (1.5% + ₦100, capped at ₦2,000) is not that — it settles nothing and goes to a person',
+        (membership_paystack_verify((string)$in['reference'])['error'] ?? '') === 'payment_mismatch'
+        && (string)membership_invoice_by('invoiceId', (string)$bi['invoiceId'])['status'] === 'open');
+    chk('overpaid: the allowance is exactly Paystack’s ceiling',
+        paystack_amount_ok(720900 + 20900, 720900) && !paystack_amount_ok(720900 + 21000, 720900)
+        && paystack_amount_ok(50000000 + 200000, 50000000) && !paystack_amount_ok(50000000 + 200100, 50000000) && !paystack_amount_ok(720899, 720900));
+    $psPaid = (int)$sent['amount'] + 150 * 100;
+    $v = membership_paystack_verify((string)$in['reference']);
+    $inv2 = membership_invoice_by('invoiceId', (string)$bi['invoiceId']);
+    chk('overpaid: a payment ABOVE the checkout settles the invoice (it was refused as a mismatch while the money left the account)',
+        ($v['status'] ?? '') === 'paid' && (string)$inv2['status'] === 'paid');
+    chk('overpaid: the ledger takes the dues only; the extra is recorded as Paystack’s charge, and audited',
+        (int)db_row("SELECT amount FROM member_ledger WHERE memberId = 'NGG-PF-1' AND kind = 'payment' ORDER BY id DESC LIMIT 1")['amount'] === 7000
+        && (int)$inv2['processingFee'] === intdiv((int)$sent['amount'], 100) + 150 - 7000
+        && db_row("SELECT 1 FROM audit_log WHERE event = 'membership.paystack.overpaid' AND meta LIKE ?", ['%' . $in['reference'] . '%']));
+    $psPaid = null;
+
+    // The sweep: the family never came back and the webhook never landed.
+    fees_post('NGG-PF-1', 'dues', 7000, ['periodKey' => '2026-12', 'note' => 'Monthly dues 2026-12', 'by' => 'accrual']);
+    $bi3 = membership_balance_invoice($pfm(), 'test'); $inv3 = membership_invoice_by('invoiceId', (string)$bi3['invoiceId']);
+    $in3 = backend_dispatch('public.membership.pay.init', ['token' => $inv3['payToken']]);
+    paystack_sweep();
+    chk('sweep: a checkout started a moment ago is left to the family’s own return trip',
+        (string)membership_invoice_by('invoiceId', (string)$bi3['invoiceId'])['status'] === 'open');
+    db_exec("UPDATE audit_log SET at = ? WHERE event = 'membership.paystack.init' AND meta LIKE ?", [gmdate('Y-m-d\TH:i:s\Z', time() - 600), '%' . $in3['reference'] . '%']);
+    db_insert('donations', ['reference' => 'NGGD-SWEEP0000000001', 'email' => 'sweep1@test.invalid', 'name' => 'Sweep One', 'amount' => 5000, 'currency' => 'NGN', 'status' => 'pending', 'message' => '', 'createdAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 900)]);
+    db_insert('donations', ['reference' => 'NGGD-SWEEP0000000002', 'email' => 'sweep2@test.invalid', 'name' => 'Sweep Two', 'amount' => 5000, 'currency' => 'NGN', 'status' => 'pending', 'message' => '', 'createdAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 72 * 3600)]);
+    $sweep = paystack_sweep();
+    $i3 = membership_invoice_by('invoiceId', (string)$bi3['invoiceId']);
+    chk('sweep: ten minutes on, with nobody back and no webhook, the scheduler asks Paystack and the invoice is PAID, with its receipt',
+        (string)$i3['status'] === 'paid' && (string)$i3['receiptNo'] !== '' && ($sweep['settled'] ?? 0) >= 2);
+    chk('sweep: a donation nobody came back for is paid too; one older than the window is left alone (abandoned, not settling)',
+        db_row("SELECT status FROM donations WHERE reference = 'NGGD-SWEEP0000000001'")['status'] === 'paid'
+        && db_row("SELECT status FROM donations WHERE reference = 'NGGD-SWEEP0000000002'")['status'] === 'pending');
+    $ae = db_row("SELECT meta FROM audit_log WHERE event = 'paystack.sweep.settled' ORDER BY id DESC LIMIT 1");
+    chk('sweep: one audit event for the run, naming what it settled', $ae && str_contains((string)$ae['meta'], (string)$in3['reference']));
+    $again = paystack_sweep();
+    chk('sweep: a second run settles nothing twice; one payment, one ledger credit',
+        ($again['settled'] ?? -1) === 0 && count(db_all("SELECT id FROM member_ledger WHERE memberId = 'NGG-PF-1' AND kind = 'payment' AND periodKey = ?", ['minv:' . $bi3['invoiceId']])) === 1);
+    chk('sweep: the scheduler runs it', isset(web_cron_jobs()['paystack']));
+    $psState = 'ongoing';
+    fees_post('NGG-PF-1', 'dues', 7000, ['periodKey' => '2027-01', 'note' => 'Monthly dues 2027-01', 'by' => 'accrual']);
+    $bi4 = membership_balance_invoice($pfm(), 'test'); $inv4 = membership_invoice_by('invoiceId', (string)$bi4['invoiceId']);
+    $in4 = backend_dispatch('public.membership.pay.init', ['token' => $inv4['payToken']]);
+    db_exec("UPDATE audit_log SET at = ? WHERE event = 'membership.paystack.init' AND meta LIKE ?", [gmdate('Y-m-d\TH:i:s\Z', time() - 600), '%' . $in4['reference'] . '%']);
+    paystack_sweep();
+    chk('sweep: still settling at Paystack, it is left open to be asked again; never failed, never paid early',
+        (string)membership_invoice_by('invoiceId', (string)$bi4['invoiceId'])['status'] === 'open');
+
     unset($GLOBALS['__paystack_mock'], $GLOBALS['CONFIG']['paystack']);
     setting_set('fees', is_array($keep) ? $keep : [], 'test');
     db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-PF-1'"); db_exec("DELETE FROM membership_invoices WHERE memberId = 'NGG-PF-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-PF-1'");

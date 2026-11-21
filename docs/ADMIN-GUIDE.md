@@ -1261,6 +1261,28 @@ new figure. A transfer waiting to be verified blocks online payment until it is
 checked, so nobody pays twice. Policy fines on the conduct ledger are not
 included yet; dues, training fees and fines posted to the fees ledger are.
 
+**When a payment "went through" but does not show (from 21 Nov 2026).** Three
+things settle a Paystack payment, and any one of them is enough:
+1. the family's own page, when Paystack sends them back;
+2. Paystack's webhook (`/api/hooks/paystack.php`, set in the Paystack dashboard);
+3. **a re-check every 10 minutes** that asks Paystack again about every checkout
+   from the last 48 hours that has not settled: invoices, shop orders and donations.
+
+So a family who paid by transfer and closed the tab is settled within about ten
+minutes even if the webhook never arrives. When the family comes back before
+Paystack has finished, the pay page says **"Paystack is still confirming your
+payment… please don't pay again"** and checks again by itself. It no longer shows
+the Pay button straight away. A payment Paystack marks *failed* is said as failed.
+
+**Amounts.** A payment for less than the checkout never settles. A payment for
+*more* settles only if the extra is no more than Paystack itself can add when
+its dashboard passes charges to the customer (1.5% + ₦100, capped at ₦2,000).
+The extra is recorded as Paystack's charge, not NGG money, and the event is
+audited (`membership.paystack.overpaid`). Anything outside that range is not
+settled; it is put on the record for a person, exactly like an underpayment.
+Each run of the re-check that settles anything writes one audit event,
+`paystack.sweep.settled`, naming the references.
+
 **Paystack's charge is paid by the family (from 3 Nov 2026).** Paying online,
 the family pays what is owed **plus Paystack's charge**, worked out so that
 after Paystack takes its cut NGG receives the whole amount. The figure is shown

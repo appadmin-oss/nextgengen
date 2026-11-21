@@ -270,7 +270,8 @@ function donation_verify(string $reference): array {
     /* Paystack's answer must be for THIS donation: its reference, the amount
        pledged (in kobo) and the currency. A cheaper transaction is not the
        donation the thank-you and the total report. */
-    if ($paid && ((string)($r['data']['reference'] ?? '') !== $reference || (int)($r['data']['amount'] ?? 0) !== (int)$d['amount'] * 100
+    // Short of the pledge is not this donation; over it only by what Paystack's "pass charges" could add (paystack_amount_ok).
+    if ($paid && ((string)($r['data']['reference'] ?? '') !== $reference || !paystack_amount_ok((int)($r['data']['amount'] ?? 0), (int)$d['amount'] * 100)
         || strtoupper((string)($r['data']['currency'] ?? '')) !== strtoupper((string)($d['currency'] ?: 'NGN')))) {
         audit('donation.mismatch', 'paystack', $reference, ['amount' => (int)($r['data']['amount'] ?? 0), 'currency' => (string)($r['data']['currency'] ?? ''), 'expected' => (int)$d['amount']]);
         return ['ok' => false, 'error' => 'payment_mismatch'];

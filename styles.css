@@ -7541,6 +7541,7 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 .mpay-bank dt { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-500); }
 .mpay-bank dd { margin: 2px 0 0; font-weight: 700; overflow-wrap: anywhere; }
 .mpay-bank p { margin: 12px 0 0; color: var(--ink-700); font-size: 13.5px; line-height: 1.5; }
+.mpay-settle-do { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .mpay-note { margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: rgba(245,176,38,.14); border: 1px solid rgba(245,176,38,.4); font-size: 14px; line-height: 1.55; color: var(--ink-900); }
 .mpay-err { margin-top: 14px; padding: 12px 16px; border-radius: 12px; background: rgba(255,90,60,.1); border: 1px solid rgba(255,90,60,.3); color: #a3331c; font-size: 14px; font-weight: 500; }
 .mpay-done { margin-top: 18px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; font-size: 15px; }
