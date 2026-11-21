@@ -1662,7 +1662,10 @@ function policy_apply_session(string $personId, string $type, array $cfg, string
         if (in_array($cover, ['approved', 'academic', 'open'], true)) continue;
         [$a] = policy_session_bounds($personId, $d); $halves[$a][] = $d;
     }
-    foreach ($halves as $a => $ds) { foreach ($ds as $i => $d) if ($i % 2 === 1) $bySession[$a][] = $d; sort($bySession[$a]); }
+    /* A session with one half-day and no unexcused absence adds nothing, and
+       sort() on the key it never created is a TypeError that took the whole
+       fresh-start preview down with it. */
+    foreach ($halves as $a => $ds) { foreach ($ds as $i => $d) if ($i % 2 === 1) $bySession[$a][] = $d; if (isset($bySession[$a])) sort($bySession[$a]); }
     foreach ($bySession as $start => $days) {
         $times = min(9, intdiv(count($days), $every));
         for ($j = 1; $j <= $times; $j++) {
@@ -2358,8 +2361,15 @@ function policy_relift(string $personId, string $type, bool $keepPaid = false): 
     /* Absence-day fines (tier 500000 + the day) are issued `pending` and may
        have been paid, so they are read in those states too — they used to be
        skipped, and voiding a wrong absence left its ₦1,000 on the account. */
+    /* Suspensions FIRST. A re-entry fee holds exactly while its suspension
+       does (policy_rulebook_holds reads the suspension's status), so the fee
+       must be judged after the suspension has been. Unordered, this relied on
+       SQLite's rowid order — the suspension is inserted just before its fee —
+       and on MySQL, where InnoDB may return the rows by an index instead,
+       voiding an absence lifted the suspension and left its ₦5,000 fee owed. */
     foreach (db_all("SELECT * FROM sanctions WHERE personId = ? AND issuedBy = 'system'
-                     AND (status IN ('active','proposed') OR (kind = 'fine' AND tier >= 500000 AND status IN ('pending','paid')) OR (kind = 'corrective' AND status = 'pending'))", [$personId]) as $s) {
+                     AND (status IN ('active','proposed') OR (kind = 'fine' AND tier >= 500000 AND status IN ('pending','paid')) OR (kind = 'corrective' AND status = 'pending'))
+                     ORDER BY CASE WHEN kind = 'suspension' THEN 0 ELSE 1 END, id", [$personId]) as $s) {
         $tier = (int)$s['tier'];
         $kind = (string)$s['kind'];
         $holds = true;

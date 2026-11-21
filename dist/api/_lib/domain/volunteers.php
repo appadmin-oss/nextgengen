@@ -41,7 +41,7 @@ function volunteer_display_id(string $code = 'VOL'): string {
 
 function admin_hierarchy_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
-    return ['ok' => true, 'tiers' => db_all("SELECT tierId, name, code, color, rank, status FROM vol_tiers ORDER BY rank, name")];
+    return ['ok' => true, 'tiers' => db_all("SELECT tierId, name, code, color, `rank`, status FROM vol_tiers ORDER BY `rank`, name")];
 }
 
 function admin_hierarchy_upsert(array $p): array {

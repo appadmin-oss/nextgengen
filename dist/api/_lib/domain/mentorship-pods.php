@@ -1025,6 +1025,16 @@ function admin_ms_relcheck_save(array $p): array {
     if (!in_array($resp, ['mentor', 'mentee', 'guardian'], true)) return ['ok' => false, 'error' => 'bad_respondent'];
     return ms_relcheck_write($x, $resp, (array)($p['answers'] ?? []), (string)$g['requester']['memberId'], ms_today($p), (string)($p['note'] ?? ''));
 }
+/** Close the earliest open task of one kind on a match.
+ *  Two statements, not `UPDATE mentor_tasks … WHERE id = (SELECT id FROM
+ *  mentor_tasks …)`: MySQL refuses a subquery on the table being updated
+ *  (error 1093) while SQLite runs it, so the one-statement form completed the
+ *  task in every test and threw on every MySQL deployment. The `status = 'open'`
+ *  guard on the update keeps it single-use if two requests race. */
+function ms_task_close_earliest(string $matchId, string $kind, string $at, string $by): void {
+    $t = db_row("SELECT id FROM mentor_tasks WHERE matchId = ? AND kind = ? AND status = 'open' ORDER BY dueOn LIMIT 1", [$matchId, $kind]);
+    if ($t) db_exec("UPDATE mentor_tasks SET status = 'done', doneAt = ?, doneBy = ? WHERE id = ? AND status = 'open'", [$at, $by, (int)$t['id']]);
+}
 function ms_relcheck_write(array $x, string $resp, array $a, string $by, string $today, string $note = ''): array {
     $q = [];
     for ($i = 1; $i <= 4; $i++) {
@@ -1036,8 +1046,7 @@ function ms_relcheck_write(array $x, string $resp, array $a, string $by, string 
     $term = ms_term($today);
     db_upsert('mentor_relationship_checks', ['matchId' => $x['matchId'], 'respondent' => $resp, 'term' => $term] + $q + ['avg' => $avg, 'note' => mb_substr(trim($note), 0, 1000), 'byId' => $by, 'createdAt' => now_iso()],
         ['matchId', 'respondent', 'term'], $q + ['avg' => $avg, 'byId' => $by]);
-    db_exec("UPDATE mentor_tasks SET status = 'done', doneAt = ?, doneBy = ? WHERE id = (SELECT id FROM mentor_tasks WHERE matchId = ? AND kind = 'relationship_check' AND status = 'open' ORDER BY dueOn LIMIT 1)",
-        [now_iso(), $by, $x['matchId']]);
+    ms_task_close_earliest((string)$x['matchId'], 'relationship_check', now_iso(), $by);
     return ['ok' => true, 'avg' => $avg, 'term' => $term];
 }
 
@@ -1476,8 +1485,7 @@ function member_ms_onetoone(array $p): array {
         'agreed' => mb_substr(trim((string)($p['agreed'] ?? '')), 0, 2000), 'concern' => !empty($p['concern']) ? 1 : 0,
         'centre' => (string)$x['centre'], 'createdAt' => $now, 'updatedAt' => $now]);
     // Complete the earliest open one-to-one; keep one due a fortnight on.
-    db_exec("UPDATE mentor_tasks SET status = 'done', doneAt = ?, doneBy = ? WHERE id = (SELECT id FROM mentor_tasks WHERE matchId = ? AND kind = 'one_to_one' AND status = 'open' ORDER BY dueOn LIMIT 1)",
-        [$now, (string)$o['mentor']['mentorId'], $x['matchId']]);
+    ms_task_close_earliest((string)$x['matchId'], 'one_to_one', $now, (string)$o['mentor']['mentorId']);
     if (!db_row("SELECT 1 FROM mentor_tasks WHERE matchId = ? AND kind = 'one_to_one' AND status = 'open'", [$x['matchId']])) {
         db_insert('mentor_tasks', ['matchId' => $x['matchId'], 'memberId' => $x['memberId'], 'mentorId' => $x['mentorId'], 'centre' => $x['centre'],
             'kind' => 'one_to_one', 'owner' => 'mentor', 'dueOn' => ms_add_days($metOn, 14), 'status' => 'open', 'doneAt' => '', 'doneBy' => '', 'note' => '', 'createdAt' => $now]);

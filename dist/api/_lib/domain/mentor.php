@@ -807,7 +807,7 @@ function admin_mentors_duplicates(array $p): array {
 
     $emails = array_map(static fn($r) => (string)$r['e'], $groups);
     $in = '(' . implode(',', array_fill(0, count($emails), '?')) . ')';
-    $rows = db_all("SELECT mentorId, fullName, email, centre, department, rank, programme,
+    $rows = db_all("SELECT mentorId, fullName, email, centre, department, `rank`, programme,
                            memberId, volunteerId, source, createdAt
                     FROM mentors WHERE status = 'active' AND lower(email) IN $in ORDER BY lower(email), id", $emails);
 

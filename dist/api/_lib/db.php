@@ -6854,8 +6854,10 @@ function db_centre_mirror(string $table, array $data): array {
 /* A column whose name MySQL reserves (`signal`, on lesson_feedback) is a syntax
    error there unquoted, while SQLite takes it either way — so it was only ever
    found on MySQL. Backticks quote it on both drivers. Only listed names are
-   quoted, so every other statement stays exactly as it was. */
-const DB_RESERVED_COLUMNS = ['signal'];
+   quoted, so every other statement stays exactly as it was. `rank` (mentors,
+   vol_tiers, mentor_match_offers) has been reserved since MySQL 8.0.2; a
+   hand-written query naming it must quote or qualify it too (`mentors.rank`). */
+const DB_RESERVED_COLUMNS = ['signal', 'rank'];
 function db_ident(string $col): string { return in_array(strtolower($col), DB_RESERVED_COLUMNS, true) ? '`' . $col . '`' : $col; }
 
 /* A counter every write moves. A derived value computed in a read-only

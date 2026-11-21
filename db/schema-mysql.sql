@@ -8,6 +8,14 @@
 -- Column names match the camelCase API fields exactly (same as SQLite). Keep
 -- this in lockstep with the $migrations array in api/_lib/db.php and bump the
 -- schema_version INSERT at the bottom when NGG_SCHEMA_TARGET changes.
+--
+-- Two things SQLite takes and MySQL 8 refuses, each of which made a whole
+-- CREATE TABLE fail on MySQL 8 while MariaDB applied it (run.php guards both):
+--   * a reserved word as a column (`rank`, `signal`) must be in backticks here
+--     AND in every query that names it (db_ident() quotes DB_RESERVED_COLUMNS);
+--     never rename it — the names are the SPA's;
+--   * TEXT / BLOB cannot carry a literal DEFAULT (error 1101): declare it
+--     nullable with no default, and have the writer supply the value.
 
 SET NAMES utf8mb4;
 
@@ -488,13 +496,13 @@ CREATE TABLE IF NOT EXISTS vol_tiers (
   name VARCHAR(80) NOT NULL,
   code VARCHAR(8) NOT NULL,
   color VARCHAR(16) DEFAULT '#00225F',
-  rank INT DEFAULT 0,
+  `rank` INT DEFAULT 0,
   status VARCHAR(16) DEFAULT 'active',
   createdAt VARCHAR(40), updatedAt VARCHAR(40),
   UNIQUE KEY idx_vol_tiers_code (code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO vol_tiers (tierId, name, code, color, rank) VALUES
+INSERT INTO vol_tiers (tierId, name, code, color, `rank`) VALUES
   ('VT-admin',      'Admin / Ops', 'ADM', '#00225F', 1),
   ('VT-mentor',     'Mentor',      'MEN', '#1B7F5A', 2),
   ('VT-instructor', 'Instructor',  'INS', '#B0143C', 3)
@@ -1197,12 +1205,12 @@ CREATE TABLE IF NOT EXISTS ops_events (
 -- 68: lead mentors, and the link from a mentor record back to the account or
 -- card the person actually signs in with. Email-only matching breaks the
 -- moment somebody signs in with an ID card, which carries no email.
-ALTER TABLE mentors ADD COLUMN rank VARCHAR(16) DEFAULT 'mentor';
+ALTER TABLE mentors ADD COLUMN `rank` VARCHAR(16) DEFAULT 'mentor';
 ALTER TABLE mentors ADD COLUMN memberId VARCHAR(64) DEFAULT '';
 ALTER TABLE mentors ADD COLUMN volunteerId VARCHAR(64) DEFAULT '';
 CREATE INDEX idx_mentors_member ON mentors(memberId);
 CREATE INDEX idx_mentors_volunteer ON mentors(volunteerId);
-CREATE INDEX idx_mentors_centre_rank ON mentors(centre, rank);
+CREATE INDEX idx_mentors_centre_rank ON mentors(centre, `rank`);
 
 -- 69: self-registration, and the desk that checks it. `kind` splits one link
 -- type into three doors — desk, self (public, no password) and review (its own
@@ -2582,7 +2590,7 @@ CREATE TABLE IF NOT EXISTS courage_marks (
   subjectType VARCHAR(24) NOT NULL DEFAULT 'member',
   score INT NOT NULL,
   prompt VARCHAR(160) DEFAULT '',
-  evidence TEXT NOT NULL DEFAULT '',
+  evidence TEXT NULL,
   markedById VARCHAR(64) NOT NULL,
   markedByName VARCHAR(190) DEFAULT '',
   centre VARCHAR(80) DEFAULT '',
@@ -2677,7 +2685,7 @@ CREATE TABLE IF NOT EXISTS member_promotions (
   memberId VARCHAR(64) NOT NULL,
   fromStage VARCHAR(24) NOT NULL DEFAULT 'NGG',
   toStage VARCHAR(24) NOT NULL DEFAULT 'NGV',
-  evidence TEXT NOT NULL DEFAULT '',
+  evidence TEXT NULL,
   readiness TEXT,
   volunteerId VARCHAR(40) DEFAULT '',
   byId VARCHAR(64) NOT NULL,
@@ -2777,7 +2785,7 @@ CREATE TABLE IF NOT EXISTS admin_approvals (
   id INT AUTO_INCREMENT PRIMARY KEY,
   approvalId VARCHAR(40) NOT NULL UNIQUE,
   op VARCHAR(80) NOT NULL,
-  args MEDIUMTEXT NOT NULL DEFAULT '',
+  args MEDIUMTEXT NULL,
   summary VARCHAR(500) NOT NULL DEFAULT '',
   requesterId VARCHAR(64) NOT NULL,
   status VARCHAR(16) NOT NULL DEFAULT 'pending',
@@ -3032,7 +3040,7 @@ INSERT INTO schema_version (version) VALUES (133) ON DUPLICATE KEY UPDATE versio
 CREATE TABLE IF NOT EXISTS contact_replies (
   id INT AUTO_INCREMENT PRIMARY KEY,
   messageId INT NOT NULL,
-  body TEXT NOT NULL DEFAULT '',
+  body TEXT NULL,
   sentBy VARCHAR(64) NOT NULL DEFAULT '',
   sentByName VARCHAR(255) NOT NULL DEFAULT '',
   sentAt VARCHAR(32) NOT NULL DEFAULT '',
@@ -3050,7 +3058,7 @@ CREATE TABLE IF NOT EXISTS membership_invoices (
   memberId VARCHAR(64) NOT NULL,
   applicationId INT NOT NULL DEFAULT 0,
   payToken VARCHAR(64) NOT NULL UNIQUE,
-  items TEXT NOT NULL DEFAULT '[]',
+  items TEXT NULL,
   total INT NOT NULL DEFAULT 0,
   currency VARCHAR(8) NOT NULL DEFAULT 'NGN',
   startDate VARCHAR(16) NOT NULL DEFAULT '',
@@ -3108,8 +3116,8 @@ CREATE TABLE IF NOT EXISTS photo_framing (
   urlKey CHAR(40) NOT NULL UNIQUE,
   url VARCHAR(500) NOT NULL DEFAULT '',
   status VARCHAR(16) NOT NULL DEFAULT 'none',
-  geomJson TEXT NOT NULL DEFAULT '',
-  adjustJson TEXT NOT NULL DEFAULT '',
+  geomJson TEXT NULL,
+  adjustJson TEXT NULL,
   model VARCHAR(80) NOT NULL DEFAULT '',
   error VARCHAR(80) NOT NULL DEFAULT '',
   createdAt VARCHAR(32) NOT NULL DEFAULT '',
@@ -3147,7 +3155,7 @@ CREATE TABLE IF NOT EXISTS mentor_match_offers (
   id INT AUTO_INCREMENT PRIMARY KEY,
   matchId VARCHAR(191) NOT NULL,
   mentorId VARCHAR(191) NOT NULL,
-  rank INT NOT NULL DEFAULT 1,
+  `rank` INT NOT NULL DEFAULT 1,
   fit INT NOT NULL DEFAULT 0,
   why TEXT NULL,
   status VARCHAR(191) NOT NULL DEFAULT 'open'

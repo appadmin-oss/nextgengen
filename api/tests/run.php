@@ -1053,7 +1053,7 @@ chk('a lead mentor can be stepped down in the editor, and a made-up rank is refu
     $up = backend_dispatch('admin.mentors.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['mentorId' => $id, 'rank' => 'lead']]);
     $down = backend_dispatch('admin.mentors.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['mentorId' => $id, 'rank' => 'mentor']]);
     $bad = backend_dispatch('admin.mentors.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['mentorId' => $id, 'rank' => 'boss']]);
-    return !empty($up['ok']) && !empty($down['ok']) && db_row('SELECT rank FROM mentors WHERE mentorId = ?', [$id])['rank'] === 'mentor' && ($bad['error'] ?? '') === 'bad_rank';
+    return !empty($up['ok']) && !empty($down['ok']) && db_row('SELECT `rank` FROM mentors WHERE mentorId = ?', [$id])['rank'] === 'mentor' && ($bad['error'] ?? '') === 'bad_rank';
 })());
 $mz = db_row("SELECT mentorId FROM mentors WHERE email='mz@example.com'")['mentorId'];
 backend_dispatch('admin.mentor.assign', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0001', 'mentorId' => $mz]);
@@ -1301,7 +1301,7 @@ chk('mysql mirror: a column whose type differs from its CREATE is changed with M
         }
     }
     $bad = [];
-    preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(?:IF NOT EXISTS\s+)?(\w+)\s+([^;]+);/i', $sql, $a, PREG_SET_ORDER);
+    preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(?:IF NOT EXISTS\s+)?`?(\w+)`?\s+([^;]+);/i', $sql, $a, PREG_SET_ORDER);
     foreach ($a as $m) {
         $k = $m[1] . '.' . $m[2];
         if (!isset($create[$k])) continue;                       // genuinely a new column: fine
@@ -1315,11 +1315,142 @@ chk('mysql mirror: a column whose type differs from its CREATE is changed with M
 
 chk('mysql mirror: every column a SQLite migration adds with ALTER is added by an ALTER in db/schema-mysql.sql (a CREATE TABLE alone never reaches an existing table)', (function () {
     preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(\w+)/', (string)file_get_contents(__DIR__ . '/../_lib/db.php'), $a, PREG_SET_ORDER);
-    preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(?:IF NOT EXISTS\s+)?(\w+)/i', (string)file_get_contents(__DIR__ . '/../../db/schema-mysql.sql'), $b, PREG_SET_ORDER);
+    preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(?:IF NOT EXISTS\s+)?`?(\w+)`?/i', (string)file_get_contents(__DIR__ . '/../../db/schema-mysql.sql'), $b, PREG_SET_ORDER);
     $have = array_flip(array_map(fn($m) => $m[1] . '.' . $m[2], $b));
     $miss = array_values(array_unique(array_filter(array_map(fn($m) => $m[1] . '.' . $m[2], $a), fn($k) => !isset($have[$k]))));
     if ($miss) fwrite(STDERR, '  missing in mysql mirror: ' . implode(', ', $miss) . "\n");
     return !$miss;
+})());
+
+/* Two kinds of statement in the MySQL mirror that SQLite would have taken and
+   MySQL 8 refuses outright — so on the only engine they fail on, the replay
+   logs a line and carries on with the table or column simply not there.
+
+   · A RESERVED WORD as a bare column name. `rank` became reserved in MySQL
+     8.0.2 (window functions). vol_tiers.rank, mentors.rank and
+     mentor_match_offers.rank were each a 1064, which also took down the seed
+     INSERT for vol_tiers, the mentors index and the mentor_match_offers unique
+     key that hang off them. Quote it with backticks; never rename it — the
+     column names are the SPA's (CLAUDE.md §3).
+   · A literal DEFAULT on TEXT/BLOB/JSON. MySQL answers 1101 and the whole
+     CREATE TABLE fails, so courage_marks, member_promotions, admin_approvals,
+     contact_replies, membership_invoices and photo_framing did not exist on a
+     MySQL 8 deployment — and every ALTER after them was a 1146. MariaDB
+     accepts the literal, which is why this went unseen where the mirror was
+     last verified. The house form is a nullable TEXT with no default.
+
+   The list is every word MySQL 8.0.46's INFORMATION_SCHEMA.KEYWORDS marks
+   RESERVED=1, copied from a live server rather than typed from memory:
+     SELECT LOWER(WORD) FROM INFORMATION_SCHEMA.KEYWORDS WHERE RESERVED = 1; */
+const NGG_MYSQL8_RESERVED_COLUMN_WORDS = [
+    'accessible', 'add', 'all', 'alter', 'analyze', 'and', 'as', 'asc', 'asensitive', 'before', 'between', 'bigint',
+    'binary', 'blob', 'both', 'by', 'call', 'cascade', 'case', 'change', 'char', 'character', 'check', 'collate',
+    'column', 'condition', 'constraint', 'continue', 'convert', 'create', 'cross', 'cube', 'cume_dist', 'current_date',
+    'current_time', 'current_timestamp', 'current_user', 'cursor', 'database', 'databases', 'day_hour',
+    'day_microsecond', 'day_minute', 'day_second', 'dec', 'decimal', 'declare', 'default', 'delayed', 'delete',
+    'dense_rank', 'desc', 'describe', 'deterministic', 'distinct', 'distinctrow', 'div', 'double', 'drop', 'dual',
+    'each', 'else', 'elseif', 'empty', 'enclosed', 'escaped', 'except', 'exists', 'exit', 'explain', 'false', 'fetch',
+    'first_value', 'float', 'float4', 'float8', 'for', 'force', 'foreign', 'from', 'fulltext', 'function', 'generated',
+    'get', 'grant', 'group', 'grouping', 'groups', 'having', 'high_priority', 'hour_microsecond', 'hour_minute',
+    'hour_second', 'if', 'ignore', 'in', 'index', 'infile', 'inner', 'inout', 'insensitive', 'insert', 'int', 'int1',
+    'int2', 'int3', 'int4', 'int8', 'integer', 'intersect', 'interval', 'into', 'io_after_gtids', 'io_before_gtids',
+    'is', 'iterate', 'join', 'json_table', 'key', 'keys', 'kill', 'lag', 'last_value', 'lateral', 'lead', 'leading',
+    'leave', 'left', 'like', 'limit', 'linear', 'lines', 'load', 'localtime', 'localtimestamp', 'lock', 'long',
+    'longblob', 'longtext', 'loop', 'low_priority', 'master_bind', 'master_ssl_verify_server_cert', 'match',
+    'maxvalue', 'mediumblob', 'mediumint', 'mediumtext', 'middleint', 'minute_microsecond', 'minute_second', 'mod',
+    'modifies', 'natural', 'no_write_to_binlog', 'not', 'nth_value', 'ntile', 'null', 'numeric', 'of', 'on',
+    'optimize', 'optimizer_costs', 'option', 'optionally', 'or', 'order', 'out', 'outer', 'outfile', 'over',
+    'partition', 'percent_rank', 'precision', 'primary', 'procedure', 'purge', 'range', 'rank', 'read', 'read_write',
+    'reads', 'real', 'recursive', 'references', 'regexp', 'release', 'rename', 'repeat', 'replace', 'require',
+    'resignal', 'restrict', 'return', 'revoke', 'right', 'rlike', 'row', 'row_number', 'rows', 'schema', 'schemas',
+    'second_microsecond', 'select', 'sensitive', 'separator', 'set', 'show', 'signal', 'smallint', 'spatial',
+    'specific', 'sql', 'sql_big_result', 'sql_calc_found_rows', 'sql_small_result', 'sqlexception', 'sqlstate',
+    'sqlwarning', 'ssl', 'starting', 'stored', 'straight_join', 'system', 'table', 'terminated', 'then', 'tinyblob',
+    'tinyint', 'tinytext', 'to', 'trailing', 'trigger', 'true', 'undo', 'union', 'unique', 'unlock', 'unsigned',
+    'update', 'usage', 'use', 'using', 'utc_date', 'utc_time', 'utc_timestamp', 'values', 'varbinary', 'varchar',
+    'varcharacter', 'varying', 'virtual', 'when', 'where', 'while', 'window', 'with', 'write', 'xor', 'year_month',
+    'zerofill'];
+function ngg_mysql_mirror_offences(string $sql): array {
+    $sql = preg_replace('#/\*.*?\*/#s', '', $sql);
+    $sql = (string)preg_replace('#--[^\n]*#', '', (string)$sql);
+    $reserved = array_flip(NGG_MYSQL8_RESERVED_COLUMN_WORDS);
+    $bad = [];
+    foreach (db_split_sql($sql) as $stmt) {
+        $defs = [];   // [table, column token as written, rest of definition]
+        if (preg_match('/^CREATE TABLE(?:\s+IF NOT EXISTS)?\s+`?(\w+)`?\s*\((.*)\)[^)]*$/is', $stmt, $m)) {
+            foreach (ngg_split_top_commas($m[2]) as $frag) {
+                $frag = trim($frag);
+                if ($frag === '' || preg_match('/^(PRIMARY|UNIQUE|KEY|INDEX|CONSTRAINT|FOREIGN|FULLTEXT|CHECK)\b/i', $frag)) continue;
+                if (preg_match('/^(`?\w+`?)\s*(.*)$/s', $frag, $cm)) $defs[] = [$m[1], $cm[1], $cm[2]];
+            }
+        } elseif (preg_match('/^ALTER TABLE\s+`?(\w+)`?\s+(.*)$/is', $stmt, $m)) {
+            foreach (ngg_split_top_commas($m[2]) as $frag) {
+                if (preg_match('/^\s*(?:ADD|MODIFY)\s+COLUMN\s+(?:IF NOT EXISTS\s+)?(`?\w+`?)\s*(.*)$/is', $frag, $cm)) $defs[] = [$m[1], $cm[1], $cm[2]];
+            }
+        }
+        foreach ($defs as [$t, $tok, $def]) {
+            if ($tok[0] !== '`' && isset($reserved[strtolower($tok)])) $bad[] = "$t.$tok: a MySQL 8 reserved word, unquoted";
+            if (preg_match('/^(TINY|MEDIUM|LONG)?(TEXT|BLOB)\b|^JSON\b/i', ltrim($def))
+                && preg_match("/\\bDEFAULT\\s+(?!\\()('[^']*'|[-\\w.]+)/i", $def)) $bad[] = trim($t . '.' . $tok, '`') . ': TEXT/BLOB with a literal DEFAULT';
+        }
+        /* Reserved words that are not definitions: an index's column list and an
+           INSERT's column list are statements of their own and fail the same way. */
+        if (preg_match('/^(?:CREATE (?:UNIQUE )?INDEX\s+\w+\s+ON\s+\w+|INSERT INTO\s+\w+)\s*\(([^)]*)\)/i', $stmt, $m)) {
+            foreach (array_map('trim', explode(',', $m[1])) as $c) {
+                if ($c !== '' && $c[0] !== '`' && isset($reserved[strtolower($c)])) $bad[] = substr(preg_replace('/\s+/', ' ', $stmt), 0, 60) . "…: $c unquoted";
+            }
+        }
+    }
+    return array_values(array_unique($bad));
+}
+chk('mysql mirror: no MySQL 8 reserved word is an unquoted column, and no TEXT/BLOB column carries a literal DEFAULT', (function () {
+    $bad = ngg_mysql_mirror_offences((string)file_get_contents(__DIR__ . '/../../db/schema-mysql.sql'));
+    if ($bad) fwrite(STDERR, "  mysql mirror would fail on MySQL 8:\n    - " . implode("\n    - ", $bad) . "\n");
+    return !$bad;
+})());
+/* The same reserved words in the QUERIES. The mirror can be perfect and the
+   column still unreachable: `SELECT ... rank FROM mentors` is a 1064 on MySQL 8
+   and fine on SQLite, so mentoring_leads(), the instructor directory, the
+   mentor list and the volunteer tiers all failed there while every SQLite test
+   passed. db_insert/db_update quote DB_RESERVED_COLUMNS through db_ident(); a
+   hand-written query must backtick the name or qualify it (`mentors.rank`).
+   DDL is skipped: the SQLite ladder is SQLite-only and the mirror has its own
+   guard above. Reads string literals with the tokenizer, so prose that happens
+   to say "rank" is not mistaken for SQL unless it also reads as a statement. */
+function ngg_reserved_column_queries(string $src, string $label): array {
+    $bad = [];
+    foreach (token_get_all($src) as $t) {
+        if (!is_array($t) || !in_array($t[0], [T_CONSTANT_ENCAPSED_STRING, T_ENCAPSED_AND_WHITESPACE], true)) continue;
+        $s = $t[1];
+        if (preg_match('/^\W*\s*(CREATE|ALTER)\s/i', $s)) continue;
+        if (!preg_match('/\b(SELECT\s.+\sFROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|ORDER\s+BY|GROUP\s+BY)\b/is', $s)) continue;
+        foreach (DB_RESERVED_COLUMNS as $w) {
+            if (preg_match('/(?<![.`\w$])' . preg_quote($w, '/') . '(?![`\w])/i', $s)) $bad[] = "$label:{$t[2]} bare $w";
+        }
+    }
+    return $bad;
+}
+chk('mysql: no hand-written query in api/ names a reserved column (DB_RESERVED_COLUMNS) bare', (function () {
+    $bad = [];
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__DIR__), FilesystemIterator::SKIP_DOTS));
+    foreach ($it as $f) {
+        $f = (string)$f;
+        if (substr($f, -4) !== '.php' || strpos($f, DIRECTORY_SEPARATOR . 'tests' . DIRECTORY_SEPARATOR) !== false) continue;
+        $bad = array_merge($bad, ngg_reserved_column_queries((string)file_get_contents($f), substr($f, strlen(dirname(__DIR__)) + 1)));
+    }
+    if ($bad) fwrite(STDERR, "  bare reserved column in SQL (a 1064 on MySQL 8):\n    - " . implode("\n    - ", $bad) . "\n");
+    $planted = ngg_reserved_column_queries('<?php db_all("SELECT a, rank FROM m WHERE `rank` = 1 AND m.rank = 2 ORDER BY rank"); db_all("CREATE TABLE x (rank INT)"); $s = "the rank of the class";', 'p');
+    return !$bad && count($planted) === 1 && in_array('rank', DB_RESERVED_COLUMNS, true);
+})());
+chk('mysql mirror guard: it names each offence it exists for, and passes the quoted / nullable forms', (function () {
+    $planted = "CREATE TABLE IF NOT EXISTS t1 (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  rank INT DEFAULT 0,\n  body TEXT NOT NULL DEFAULT '',\n  args MEDIUMTEXT NOT NULL DEFAULT '{}',\n  ok TEXT NULL,\n  `lead` VARCHAR(8) DEFAULT 'x',\n  note VARCHAR(16) DEFAULT 'text'\n) ENGINE=InnoDB;\n"
+             . "ALTER TABLE t1 ADD COLUMN signal VARCHAR(8) DEFAULT '';\nALTER TABLE t1 ADD COLUMN `rows` INT DEFAULT 0;\n"
+             . "CREATE INDEX i1 ON t1(id, rank);\nINSERT INTO t1 (id, rank) VALUES (1, 2);\nINSERT INTO t1 (id, `rank`) VALUES (1, 2);\n";
+    $bad = implode("\n", ngg_mysql_mirror_offences($planted));
+    $want = ['t1.rank: a MySQL 8', 't1.body: TEXT/BLOB', 't1.args: TEXT/BLOB', 't1.signal: a MySQL 8', 'CREATE INDEX i1', 'INSERT INTO t1 (id, rank)'];
+    foreach ($want as $w) if (strpos($bad, $w) === false) return false;
+    return strpos($bad, 'lead') === false && strpos($bad, 'rows') === false && strpos($bad, 't1.ok') === false
+        && strpos($bad, 't1.note') === false && strpos($bad, '`rank`)') === false;
 })());
 chk('summer signup: Apply finds the live public sign-up link — the centre\'s own, else the all-centres one, never an expired or desk link', (function () {
     db_exec("UPDATE gate_links SET status = 'revoked' WHERE kind = 'self'");
@@ -14236,13 +14367,13 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
      * pairs two people who share a mailbox, and matches nobody at all when
      * they sign in with a card. */
     chk('…with the promotion recording who they are, not just their email', (function () {
-        $m = db_row("SELECT memberId, volunteerId, rank, centre FROM mentors WHERE memberId='NGG-2025-0810'");
+        $m = db_row("SELECT memberId, volunteerId, `rank`, centre FROM mentors WHERE memberId='NGG-2025-0810'");
         return $m && (string)$m['volunteerId'] === '' && (string)$m['rank'] === 'mentor' && (string)$m['centre'] === 'Egbeda';
     })());
     chk('promoting the same person again updates rather than minting a second record', (function () {
         backend_dispatch('admin.mentor.promote', ['requesterId' => 'NGG-2025-0099', 'personId' => 'NGG-2025-0810', 'rank' => 'lead']);
         return (int)db_row("SELECT COUNT(*) c FROM mentors WHERE memberId='NGG-2025-0810'")['c'] === 1
-            && (string)db_row("SELECT rank FROM mentors WHERE memberId='NGG-2025-0810'")['rank'] === 'lead';
+            && (string)db_row("SELECT `rank` FROM mentors WHERE memberId='NGG-2025-0810'")['rank'] === 'lead';
     })());
 
     // A summer volunteer, promoted by their volunteer id and no member account.
@@ -31156,7 +31287,16 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_insert('saturday_formation', ['blockKey' => 'a', 'sort' => 0, 'startTime' => '08:00', 'endTime' => '08:30', 'title' => 'A', 'forJson' => '{"admin":["Gate open with the check-in desk staffed by 7:50."]}']);
     db_insert('saturday_formation', ['blockKey' => 'b', 'sort' => 1, 'startTime' => '13:45', 'endTime' => '14:00', 'title' => 'B', 'forJson' => '{"admin":["Announcements out; the site is closed by 2:15."]}']);
     db_insert('saturday_formation', ['blockKey' => 'c', 'sort' => 2, 'startTime' => '23:30', 'endTime' => '23:45', 'title' => 'C', 'forJson' => '']);
-    foreach (array_filter(array_map('trim', explode(';', NGG_FORMATION_HOUR_LATER))) as $q) db_exec($q);
+    /* The migration as THIS driver runs it: the SQLite ladder's statements use
+       printf/GLOB/strftime, which MySQL does not have, so on MySQL the shift is
+       the NGG_MYSQL_ROW_FIXUPS pair, marker-guarded — the marker is cleared so
+       the run under test is a first run. */
+    if (db_driver() === 'mysql') {
+        db_exec("DELETE FROM settings WHERE settingKey = 'migration.formation_hour_later'");
+        foreach (['saturday_formation.hour_later.start', 'saturday_formation.hour_later.mark'] as $fx) db_exec(NGG_MYSQL_ROW_FIXUPS[$fx]);
+    } else {
+        foreach (array_filter(array_map('trim', explode(';', NGG_FORMATION_HOUR_LATER))) as $q) db_exec($q);
+    }
     $mv = array_column(db_all('SELECT blockKey, startTime, endTime, forJson FROM saturday_formation'), null, 'blockKey');
     chk('formation · migration 213 moves every block an hour later, as the site had it, and the typed staff times with them',
         $mv['a']['startTime'] === '09:00' && $mv['a']['endTime'] === '09:30' && $mv['b']['startTime'] === '14:45' && $mv['b']['endTime'] === '15:00'
@@ -34137,7 +34277,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && in_array('Graphic Design', $st['dropped'], true) && !in_array('Media', $st['dropped'], true));
     // Every division defaults to its major when the record names the division and no course.
     $mk('PL-MEDIA', 'Media'); $mk('PL-BIZ', 'Business'); $mk('PL-TECH2', 'Tech'); $mk('PL-DIVONLY', '', '');
-    db_update('members', ['division' => 'Creative & Performing Arts'], ['memberId' => 'PL-DIVONLY']);
+    /* The id, as every writer stores it (admin.php normalises a name to its id;
+       members.division is VARCHAR(24) on MySQL, and this display name is 26
+       characters — a row the platform cannot hold, which strict MySQL refused). */
+    db_update('members', ['division' => 'arts'], ['memberId' => 'PL-DIVONLY']);
     members_courses_backfill();
     $prop = fn($id) => member_courses_state($row($id));
     chk('placement: each division alone proposes its major — Tech → Coding, Media → Video Production, Business → Project Management, Arts → Music — unflagged',
@@ -38436,7 +38579,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && !fees_is_duplicate(new \PDOException('SQLSTATE[HY000]: General error: 1205 Lock wait timeout exceeded'))
         && !fees_is_duplicate(new \PDOException("SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'periodKey'")));
     chk('ledger · the schema is at 220 and the ledger is indexed by date', NGG_SCHEMA_TARGET >= 220
-        && (bool)db_row("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_mledg_created'"));
+        && (bool)(db_driver() === 'mysql'
+            ? db_row("SELECT 1 FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'member_ledger' AND index_name = 'idx_mledg_created' LIMIT 1")
+            : db_row("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_mledg_created'")));
     if ($keep === null) db_exec("DELETE FROM settings WHERE settingKey = 'fees'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'fees'", [$keep]);
     if ($keepCur === null) db_exec("DELETE FROM settings WHERE settingKey = 'fees_accrue_cursor'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'fees_accrue_cursor'", [$keepCur]);
     foreach (['member_ledger', 'member_status_log', 'members'] as $t) db_exec("DELETE FROM $t WHERE memberId IN ('SUM-ACC-1','NGG-ACC-2','NGG-ACC-3')");
@@ -38952,8 +39097,12 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $day = strtotime(gmdate('Y-m-d') . 'T10:00:00Z');   // 11:00 Lagos
     $mk = fn($title, $dueTs) => staff_assignments_save($ins + ['data' => ['title' => $title, 'track' => 'Coding', 'instructions' => 'Do it.', 'status' => 'published', 'proof' => 'text', 'points' => 10,
         'dueAt' => gmdate('Y-m-d\TH:i:s\Z', $dueTs)]])['assignmentId'] ?? '';
-    $late = $mk('Late one', $day - 5 * 3600);
-    $marked = $mk('Marked one', time() + 3600);
+    // Dates relative to NOW, not to a fixed hour: 05:00 UTC "today" is still in the future
+    // between midnight and five, and time()+1h is next week late on a Sunday in Lagos.
+    // Overdue before both now and the 11:00 reminder run; marked work due at the last minute
+    // of today in Lagos, which is always still to come and always this week.
+    $late = $mk('Late one', min($day - 5 * 3600, time() - 2 * 3600));
+    $marked = $mk('Marked one', strtotime(gmdate('Y-m-d', time() + 3600) . 'T22:59:00Z'));
     assignment_submit(['memberId' => 'ASGX-A', 'assignmentId' => $marked, 'text' => 'A PRIVATE ANSWER']);
     staff_assignment_grade($ins + ['submissionId' => (string)db_row("SELECT submissionId FROM assignment_submissions WHERE assignmentId = ? AND memberId = 'ASGX-A'", [$marked])['submissionId'], 'grade' => 9, 'feedback' => 'Well argued.']);
     $w = family_ward(['guardianId' => 'G-ASGX-1', 'linkId' => 'GW-ASGX-A']);
