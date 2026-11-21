@@ -38882,6 +38882,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     paystack_rescue_failed();
     $rescueMails = static fn() => array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains($m['subject'], 'didn’t go through')));
     chk('rescue: no email in the first half hour; the family may still be retrying', count($rescueMails()) === 0);
+    // Forty minutes on: the checkout started before it failed, as it does in life (a checkout "after" the
+    // failure reads as the family trying again, which the guard below rightly waits for).
+    db_exec("UPDATE audit_log SET at = ? WHERE event = 'membership.paystack.init' AND meta LIKE ?", [gmdate('Y-m-d\TH:i:s\Z', time() - 2500), '%' . $in['reference'] . '%']);
     db_exec("UPDATE audit_log SET at = ? WHERE event = 'membership.paystack.failed' AND meta LIKE ?", [gmdate('Y-m-d\TH:i:s\Z', time() - 2400), '%' . $in['reference'] . '%']);
     $n1 = paystack_rescue_failed();
     $rm = $rescueMails();
