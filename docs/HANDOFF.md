@@ -7704,5 +7704,10 @@ The owner asked for this "only if you think it is cool". It is, for one concrete
    ₦2,000). Anything else is still a mismatch for a person. The owner asked whether overpayment opens room
    for errors: open-ended "at least" would; this ceiling does not.
 
-**Verified.** `run.php`: 16 new checks (settling, overpaid, sweep), run in CI. `node build.js` is clean.
+4. *A payment that did not go through left no trace.* The owner asked about these next. A Paystack
+   `failed`/`reversed` answer is now audited once per checkout (`membership.paystack.failed`, with
+   `gateway_response`). The staff invoice list shows the latest one on the open invoice, in one grouped
+   query. The family's wording no longer claims "nothing was taken": a bank may debit and reverse.
+
+**Verified.** `run.php`: 17 new checks (settling, failed, overpaid, sweep), run in CI. `node build.js` is clean.
 

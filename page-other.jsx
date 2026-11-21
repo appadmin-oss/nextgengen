@@ -1491,7 +1491,7 @@ function MembershipPayPage({ setPage }) {
     req.then(r => {
       setSt({ state: "ready", inv: r.invoice });
       if (ref && r.invoice.status === "open" && r.paystackStatus === "settling") { setSettle({ ref, left: 30, long: false }); return; }
-      if (ref && r.paystackStatus === "failed") setErr("Paystack says that payment did not go through, so nothing was taken. You can try again.");
+      if (ref && r.paystackStatus === "failed") setErr("Paystack says that payment did not go through. If your bank took the money anyway, the bank returns it, usually within 24 hours. If it has not come back after two working days, contact your centre with invoice " + (r.invoice.invoiceId || "") + ". You can try again now.");
       if (ref) clearRef();
     }).catch(e => {
       if (ref && e.code !== "not_found") { setErr(e.code === "payment_mismatch" ? "Paystack reported a payment that does not match this invoice. Nothing was recorded — contact the centre before paying again." : "We couldn’t confirm the payment yet. If money left your account, do not pay again — refresh this page in a minute."); return NGGApi.public.membershipInvoice(token).then(r => setSt({ state: "ready", inv: r.invoice }), () => setSt({ state: "error", e })); }
@@ -1505,7 +1505,7 @@ function MembershipPayPage({ setPage }) {
       NGGApi.public.membershipVerify(token, settle.ref).then(r => {
         if (r.invoice.status !== "open" || r.paystackStatus !== "settling") {
           setSettle(null); setSt({ state: "ready", inv: r.invoice }); clearRef();
-          if (r.paystackStatus === "failed") setErr("Paystack says that payment did not go through, so nothing was taken. You can try again.");
+          if (r.paystackStatus === "failed") setErr("Paystack says that payment did not go through. If your bank took the money anyway, the bank returns it, usually within 24 hours. If it has not come back after two working days, contact your centre with invoice " + (r.invoice.invoiceId || "") + ". You can try again now.");
           return;
         }
         setSettle(s => s && (s.left <= 1 ? { ...s, left: 0, long: true } : { ...s, left: s.left - 1 }));

@@ -884,7 +884,17 @@ function membership_paystack_verify(string $reference): array {
         if ($succeeded) return ['ok' => false, 'error' => 'not_open', 'detail' => 'This invoice was cancelled after the payment started. The payment is recorded and the centre will refund or apply it.'];
         return ['ok' => true, 'status' => (string)$inv['status'], 'invoice' => $inv];
     }
-    if (!$succeeded) return ['ok' => true, 'status' => (string)($d['status'] ?? 'pending'), 'invoice' => $inv];
+    if (!$succeeded) {
+        /* A payment that did NOT go through is put on the record once per checkout, with Paystack's own
+           reason ("Declined", "Insufficient funds"). It used to leave no trace at all, so the parent who
+           rings the centre saying "I tried to pay and it failed — did my bank take the money?" met a desk
+           that could see nothing. The staff invoice list shows the latest one. */
+        if (paystack_settle_word((string)($d['status'] ?? '')) === 'failed' && (string)($d['reference'] ?? '') === $reference
+            && !db_row("SELECT id FROM audit_log WHERE event = 'membership.paystack.failed' AND meta LIKE ? LIMIT 1", ['%"' . $reference . '"%']))
+            audit('membership.paystack.failed', 'paystack', (string)$inv['memberId'], ['invoiceId' => (string)$inv['invoiceId'], 'reference' => $reference,
+                'reason' => mb_substr((string)($d['gateway_response'] ?? ''), 0, 120), 'channel' => (string)($d['channel'] ?? ''), 'amount' => (int)($d['amount'] ?? 0)]);
+        return ['ok' => true, 'status' => (string)($d['status'] ?? 'pending'), 'invoice' => $inv];
+    }
     /* The charge this checkout carried, from the transaction's own metadata (we set it at initialise; a
        checkout started before the family bore the charge has none). It may not exceed the invoice itself. */
     $fee = max(0, (int)($d['metadata']['processingFee'] ?? 0));
@@ -1097,6 +1107,18 @@ function admin_membership_invoices(array $p): array {
     }
     $me = (string)$g['requester']['memberId'];
     $out = array_map(static fn($r) => membership_invoice_row($r, $members, $pending, $me), $rows);
+    /* Failed online attempts on the open invoices drawn, in ONE query (never one per row): the latest
+       reason and how many, so the desk can answer "I tried to pay and it failed". */
+    $openIds = array_flip(array_map(static fn($r) => (string)$r['invoiceId'], array_filter($rows, static fn($r) => (string)$r['status'] === 'open')));
+    if ($openIds && $ids) {
+        $failed = [];
+        foreach (db_all("SELECT at, meta FROM audit_log WHERE event = 'membership.paystack.failed' AND subject IN (" . implode(',', array_fill(0, count($ids), '?')) . ') ORDER BY id', $ids) as $a) {
+            $m = json_decode((string)$a['meta'], true); $k = (string)($m['invoiceId'] ?? '');
+            if (!isset($openIds[$k])) continue;
+            $failed[$k] = ['at' => (string)$a['at'], 'reason' => (string)($m['reason'] ?? ''), 'reference' => (string)($m['reference'] ?? ''), 'count' => ($failed[$k]['count'] ?? 0) + 1];
+        }
+        foreach ($out as &$o) $o['onlineFailed'] = $failed[$o['invoiceId']] ?? null; unset($o);
+    }
     /* Money that arrived and could not be applied (a Paystack payment for an
        invoice since voided or paid another way, or an amount that does not
        match) — never silently dropped. In scope only. */

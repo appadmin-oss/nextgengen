@@ -1274,6 +1274,16 @@ Paystack has finished, the pay page says **"Paystack is still confirming your
 payment… please don't pay again"** and checks again by itself. It no longer shows
 the Pay button straight away. A payment Paystack marks *failed* is said as failed.
 
+**When a payment does not go through.** If Paystack reports an online payment as
+*failed* (declined card, insufficient funds, a transfer that never arrived), the
+invoice stays open and the family is told it did not go through. If their bank
+debited them anyway, the bank returns the money, usually within 24 hours; after
+two working days they are told to contact the centre with the invoice number.
+The attempt is recorded once, with Paystack's reason. In **Money → Membership
+invoices** the open invoice shows *Online payment failed · date · Paystack:
+reason · ref*, so the desk can answer the parent who rings. Look the reference up
+in the Paystack dashboard if the family says money left their account.
+
 **Amounts.** A payment for less than the checkout never settles. A payment for
 *more* settles only if the extra is no more than Paystack itself can add when
 its dashboard passes charges to the customer (1.5% + ₦100, capped at ₦2,000).

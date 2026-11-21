@@ -409,7 +409,7 @@ function ShopOrderPage({ setPage }) {
     NGGApi.public.shop.get(token, ref).then(r => {
       setSt({ state: "ready", o: r.order, e: null });
       if (ref && r.order.status === "pending" && r.paystackStatus === "settling") { setSettle({ ref, left: 30, long: false }); return; }
-      if (ref && r.paystackStatus === "failed") setWarn("Paystack says that payment did not go through, so nothing was taken.");
+      if (ref && r.paystackStatus === "failed") setWarn("Paystack says that payment did not go through. If your bank took the money anyway, the bank returns it, usually within 24 hours. If it has not come back after two working days, contact NGG with order " + (r.order.orderId || "") + ".");
       if (ref) clearRef();
     }).catch(e => {
       if (ref && e.code !== "not_found") {
@@ -430,7 +430,7 @@ function ShopOrderPage({ setPage }) {
       NGGApi.public.shop.get(token, settle.ref).then(r => {
         if (r.order.status !== "pending" || r.paystackStatus !== "settling") {
           setSettle(null); setSt({ state: "ready", o: r.order, e: null }); clearRef();
-          if (r.paystackStatus === "failed") setWarn("Paystack says that payment did not go through, so nothing was taken.");
+          if (r.paystackStatus === "failed") setWarn("Paystack says that payment did not go through. If your bank took the money anyway, the bank returns it, usually within 24 hours. If it has not come back after two working days, contact NGG with order " + (r.order.orderId || "") + ".");
           return;
         }
         step();

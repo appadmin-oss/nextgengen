@@ -38868,6 +38868,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $psState = 'failed';
     $f = backend_dispatch('public.membership.pay.verify', ['token' => $inv['payToken'], 'reference' => $in['reference']]);
     chk('settling: a FAILED payment is said as failed, and the invoice stays payable', ($f['paystackStatus'] ?? '') === 'failed' && ($f['invoice']['status'] ?? '') === 'open');
+    backend_dispatch('public.membership.pay.verify', ['token' => $inv['payToken'], 'reference' => $in['reference']]);
+    $fa = db_all("SELECT meta FROM audit_log WHERE event = 'membership.paystack.failed' AND meta LIKE ?", ['%' . $in['reference'] . '%']);
+    chk('failed: a payment that did not go through is on the record ONCE per checkout, naming the invoice, so the desk can answer the parent who rings',
+        count($fa) === 1 && str_contains((string)$fa[0]['meta'], (string)$bi['invoiceId']));
     chk('settling: three words, and nothing but failed/reversed is a failure',
         paystack_settle_word('success') === 'paid' && paystack_settle_word('reversed') === 'failed' && paystack_settle_word('') === 'settling' && paystack_settle_word('queued') === 'settling');
 
