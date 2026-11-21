@@ -39762,7 +39762,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && !isset($sessionSigs[mlb_item_sig($wit)]) && !isset($w['item']['key']) && !isset($w['item']['steps']) && str_starts_with((string)$w['say'], 'Start here'));
     $t1 = mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'answer' => '123456789']);
     chk('walk · a wrong try climbs one rung and gives no answer (AI off: the rung\'s own words)', !empty($t1['ok']) && $t1['rung'] === 1 && (empty($t1['done']) ? !isset($t1['answer']) : $t1['rungs'] === 2) && $t1['source'] === 'guide');
-    $t2 = mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'message' => 'I still don\'t get it']);
+    // The question is drawn at random, and one with two rungs is finished by the first wrong try: asking a finished
+    // walk for more is refused (guide_done), so the walk carries forward rather than failing one run in a few.
+    $t2 = !empty($t1['done']) ? $t1 : mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'message' => 'I still don\'t get it']);
     chk('walk · asking for more climbs another rung', ($t2['rung'] ?? 0) === 2 || !empty($t2['done']));
     $before = mlb_states('NGG-WK-1')['MC-012'] ?? [];
     $t3 = !empty($t2['done']) ? $t2 : mlb_walk(['memberId' => 'NGG-WK-1', 'sessionId' => $s['sessionId'], 'step' => 'turn', 'answer' => $wit['key']]);
