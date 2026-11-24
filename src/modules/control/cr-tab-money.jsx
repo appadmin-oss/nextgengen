@@ -974,7 +974,7 @@ function crMoRemindBlocks(d, ctx) {
     act: { l: p ? "Refresh" : "See who would be reminded", run: () => crMoRemindPreview(ctx) } });
   if (p) {
     const s = p.skipped || {};
-    const why = [[s.nothingPayable, "nothing payable"], [s.tooSoon, "reminded recently"], [s.optedOut, "asked not to be reminded"], [s.underMinimum, "under the minimum balance"], [s.noContact, "no way to reach the family (no app account, email or phone)"]]
+    const why = [[s.nothingPayable, "nothing payable"], [s.tooSoon, "reminded recently"], [s.paidRecently, "paid an instalment recently"], [s.optedOut, "asked not to be reminded"], [s.underMinimum, "under the minimum balance"], [s.noContact, "no way to reach the family (no app account, email or phone)"]]
       .filter(x => x[0] > 0).map(x => crNum(x[0]) + " " + x[1]).join(" · ");
     out.push({ type: "note", span: 6, icon: p.count ? "paper-plane-tilt" : "check-circle", tone: p.count ? "gold" : "ok",
       text: crPlural(p.count, "family", "families") + " due a reminder now.",
@@ -1035,6 +1035,10 @@ function crMoAmountsForm(cfg, B, defaults) {
         { id: "payFeeFlat", l: "Plus a flat charge of (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.payFeeFlat), check: int(0, B.payFeeFlatMax) },
         { id: "payFeeFlatUnder", l: "…waived on payments under (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.payFeeFlatUnder), check: int(0, B.payFeeCapMax * 100) },
         { id: "payFeeCap", l: "Paystack’s charge is capped at (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.payFeeCap), check: int(0, B.payFeeCapMax), help: "0 means no cap." },
+      ] },
+      { h: "Instalment plans", help: "Every plan waits for approval in Money → Instalment plans before it runs.", rows: [
+        { id: "planMaxDays", l: "Longest plan, first instalment to last (days)", c: "input", type: "number", im: "numeric", value: String(cfg.planMaxDays || 183), check: int(B.planMaxDaysMin || 14, B.planMaxDaysMax || 365),
+          help: "A longer plan is refused, whether a family or staff set it up. Between " + (B.planMaxDaysMin || 14) + " and " + (B.planMaxDaysMax || 365) + " days." },
       ] },
       { h: "Arrears reminders", rows: [
         { id: "remindEnabled", l: "Remind guardians about arrears", c: "toggle", value: !!cfg.remindEnabled },
@@ -1607,5 +1611,150 @@ Object.assign(CR_TAB_DEFS, {
       return out;
     },
     facts: d => "Volunteer pay " + (d.settings.enabled ? "on, " + fmtMoney(d.settings.amount) + " a day, paid " + (d.frequencies[d.settings.frequency] || "").toLowerCase() : "off") + ". " + d.period.label + ": " + fmtMoney((d.period.totals || {}).unpaid || 0) + " to pay.",
+  },
+});
+
+/* ── Instalment plans (domain/payment-plans.php) ─────────────────────────────
+   An agreed schedule for clearing a balance, and whether it is being kept. Every
+   figure is the server's: progress is read from the ledger, so a payment taken at
+   the desk moves a plan as surely as one made online. Broken plans first. */
+const CR_PP_HEALTH = { pending: ["Waiting for approval", "warn"], declined: ["Not approved", "neutral"], on_track: ["On track", "ok"], behind: ["Behind", "warn"], broken: ["Lapsed", "bad"], completed: ["Completed", "ok"], cancelled: ["Ended", "neutral"] };
+const CR_PP_FILTERS = [["pending", "Waiting for approval"], ["open", "Running"], ["broken", "Lapsed"], ["behind", "Behind"], ["on_track", "On track"], ["completed", "Completed"], ["cancelled", "Ended"], ["", "All"]];
+const CR_PP_FREQ = [["weekly", "Every week"], ["fortnightly", "Every two weeks"], ["monthly", "Every month"]];
+const CR_PP_EVENT = { approved: "Approved", declined: "Not approved", created: "Agreed", reminded: "Reminder sent", missed: "Instalment missed", paid: "Instalment covered", broken: "Plan lapsed", completed: "Completed", cancelled: "Ended by staff", note: "Note" };
+const CR_PP_ITEM = { paid: "Paid", part: "Part paid", due: "Not yet due", late: "Late" };
+function crPpDay(d) { return d ? crDate(d) : "—"; }
+function crPpServer(health) {
+  return { fetch: async ({ q, page, pageSize }) => {
+    const r = await NGGApi.admin.payplans.list({ health, q: q || "", page, pageSize });
+    return { total: r.total, rows: (r.rows || []).map(x => {
+      const h = CR_PP_HEALTH[x.health] || [x.health, "neutral"];
+      return { key: x.planId, open: () => crPpOpen(crMoCtx.current, x.planId), cells: [
+        { k: "person", t: x.fullName, s: [x.displayId || x.memberId, x.centre].filter(Boolean).join(" · ") },
+        { k: "status", t: h[0] + (x.daysLate ? " · " + x.daysLate + "d" : ""), tone: h[1] },
+        { k: "progress", pct: x.total ? Math.round(100 * x.paid / x.total) : 0, tone: h[1] === "neutral" ? "ok" : h[1], t: fmtMoney(x.paid) + " of " + fmtMoney(x.total) },
+        { k: "text", t: x.next ? fmtMoney(x.next.left) : "—", s: x.next ? "instalment " + x.next.seq + " · " + crPpDay(x.next.dueDate) : "" },
+        { k: "num", t: x.overdue ? fmtMoney(x.overdue) : "—", v: x.overdue },
+        { k: "text", t: x.agreedBy, s: (x.source === "staff" ? "with staff" : "in the family app") + " · " + crPpDay(x.createdAt) },
+      ] };
+    }) };
+  } };
+}
+async function crPpOpen(ctx, planId) {
+  let r;
+  try { r = await NGGApi.admin.payplans.get(planId); }
+  catch (e) { ctx.toast(crErr(e, "Couldn’t open that plan."), null, true); return; }
+  const p = r.plan, m = r.member || {}, h = CR_PP_HEALTH[p.health] || [p.health];
+  const live = p.status === "active" || p.status === "pending";
+  ctx.drawer({
+    title: m.fullName || p.memberId, name: m.fullName || "?", sub: p.planId + " · " + h[0],
+    stats: [["Paid", fmtMoney(p.paid) + " of " + fmtMoney(p.total)], ["Overdue", p.overdue ? fmtMoney(p.overdue) : "Nothing"], ["Left", fmtMoney(p.remaining)]],
+    fields: [["Agreed by", p.agreedBy], ["When", crDate(p.agreedAt || p.createdAt, true)], ["How", p.source === "staff" ? "With a member of staff" : "In the family app"],
+      ["Schedule", p.instalments + " instalments, " + ((CR_PP_FREQ.find(f => f[0] === p.frequency) || [0, p.frequency])[1] || "").toLowerCase()],
+      ["Terms", "Version " + (r.termsVersion || "—")], ["Member", [m.displayId || p.memberId, m.centre].filter(Boolean).join(" · ")],
+      p.cancelReason ? ["Why it ended", p.cancelReason] : null, p.completedAt ? ["Completed", crDate(p.completedAt)] : null].filter(Boolean),
+    sections: [
+      { h: "Instalments", list: p.items.map(it => ({ icon: it.status === "paid" ? "check-circle" : it.status === "late" ? "warning-circle" : "circle-dashed",
+        t: "Instalment " + it.seq + " · " + fmtMoney(it.amount), s: crPpDay(it.dueDate) + " · " + CR_PP_ITEM[it.status] + (it.status === "part" || it.status === "late" ? " · " + fmtMoney(it.left) + " left" : "") + (it.daysLate ? " · " + it.daysLate + " days late" : "") })) },
+      { h: "What the family agreed to", text: r.terms },
+      { h: "Record", empty: "Nothing recorded yet.", list: (r.events || []).map(e => ({ icon: e.kind === "note" ? "note" : e.kind === "missed" || e.kind === "broken" ? "warning" : e.kind === "reminded" ? "bell" : "clock",
+        t: (CR_PP_EVENT[e.kind] || e.kind) + (e.seq ? " · instalment " + e.seq : "") + (e.amount ? " · " + fmtMoney(e.amount) : ""), s: [e.detail, e.actor && e.actor !== "system" ? "by " + e.actor : ""].filter(Boolean).join(" · "), m: crDate(e.at, true) })) },
+    ],
+    actions: [
+      p.status === "pending" ? { l: "Approve", icon: "check", primary: true, run: () => crPpDecide(ctx, p, true) } : null,
+      p.status === "pending" ? { l: "Decline", run: () => crPpDecide(ctx, p, false) } : null,
+      { l: "Add a note", icon: "note", primary: p.status === "active", run: () => crPpNote(ctx, p) },
+      live ? { l: "End the plan", run: () => crPpCancel(ctx, p) } : null,
+      { l: "Open their account", run: () => { ctx.closeDrawer(); ctx.go("money", "fees", "account/" + encodeURIComponent(p.memberId)); } },
+    ].filter(Boolean),
+  });
+}
+/** Approve or decline a plan a family asked for (or staff set up). A decline needs a sentence the family reads. */
+function crPpDecide(ctx, p, approve) {
+  ctx.form({ title: (approve ? "Approve " : "Decline ") + p.planId, submit: approve ? "Approve the plan" : "Decline the plan", busyLabel: "Saving…",
+    intro: approve ? fmtMoney(p.total) + " in " + p.instalments + " instalments. If the first date has already passed, every date moves to start today — same amounts, same gaps. The family is told."
+      : "The family is told, with your reason, and the balance is owed as normal. They can ask for a different plan.",
+    values: { reason: "" }, fields: approve ? [] : [{ id: "reason", l: "Why it is not approved", type: "textarea", rows: 3, req: true, max: 600, help: "The family reads this.", check: v => v.trim().length < 8 ? "Say why, in a sentence the family can read." : "" }],
+    onSubmit: async v => { await NGGApi.admin.payplans.decide(p.planId, approve ? "approve" : "decline", (v.reason || "").trim()); },
+    done: () => { ctx.closeDrawer(); ctx.reload(); return approve ? "Plan approved. The family has been told." : "Plan declined. The family has been told why."; } });
+}
+function crPpNote(ctx, p) {
+  ctx.form({ title: "Note on " + p.planId, submit: "Add the note", busyLabel: "Saving…",
+    intro: "A call made, a promise given, a hardship explained. It goes on the plan’s record with your name.",
+    values: { text: "" }, fields: [{ id: "text", l: "Note", type: "textarea", rows: 3, req: true, max: 600, ph: "Called Mrs Bello; she will pay instalment 2 on Friday." }],
+    onSubmit: async v => { await NGGApi.admin.payplans.note(p.planId, v.text.trim()); },
+    done: () => { crPpOpen(ctx, p.planId); ctx.reload(); return "Note added."; } });
+}
+function crPpCancel(ctx, p) {
+  ctx.form({ title: "End plan " + p.planId, submit: "End the plan", busyLabel: "Ending…",
+    intro: "The family is told, with your reason, and the balance is owed as normal. This can’t be undone; make a new plan if you agree another.",
+    values: { reason: "" }, fields: [{ id: "reason", l: "Why it is ending", type: "textarea", rows: 3, req: true, max: 600, help: "The family reads this.", check: v => v.trim().length < 8 ? "Say why, in a sentence the family can read." : "" }],
+    onSubmit: async v => { await NGGApi.admin.payplans.cancel(p.planId, v.reason.trim()); },
+    done: () => { ctx.closeDrawer(); ctx.reload(); return "Plan ended. The family has been told."; } });
+}
+function crPpNew(ctx) {
+  const t = new Date(); const iso = d => d.toISOString().slice(0, 10);
+  const first = new Date(t.getTime() + 7 * 86400000);
+  ctx.form({ title: "New instalment plan", submit: "Create the plan", busyLabel: "Creating…",
+    intro: "For a plan agreed with a parent by phone, in person or in writing. It covers the child’s whole balance today; families can also set one up themselves in the family app.",
+    values: { member: "", agreedBy: "", how: "by phone", instalments: "3", frequency: "monthly", firstDue: iso(first), note: "" },
+    fields: [
+      { id: "member", l: "Member", req: true, ph: "Member ID or printed number, e.g. 026-014", max: 40 },
+      { id: "agreedBy", l: "Parent or guardian who agreed", req: true, max: 160, ph: "Their full name" },
+      { id: "how", l: "How they agreed", type: "chips", req: true, opts: [["by phone", "By phone"], ["in person", "In person"], ["in writing", "In writing"]] },
+      { id: "instalments", l: "Instalments", type: "select", req: true, opts: ["2", "3", "4", "5", "6"].map(n => [n, n]) },
+      { id: "frequency", l: "How often", type: "select", req: true, opts: CR_PP_FREQ },
+      { id: "firstDue", l: "First instalment due", type: "date", req: true },
+      { id: "note", l: "Note (staff only)", type: "textarea", rows: 2, max: 600 },
+    ],
+    onSubmit: async v => {
+      try { return await NGGApi.admin.payplans.create({ memberId: v.member.trim(), agreedBy: v.agreedBy.trim(), how: v.how, instalments: parseInt(v.instalments, 10), frequency: v.frequency, firstDue: v.firstDue, note: v.note.trim() }); }
+      catch (e) {
+        const c = e && ((e.data && e.data.error) || e.code);
+        if (c === "not_found") return { fieldErrors: { member: "No member with that ID or number." } };
+        if (["bad_date", "date_past", "date_too_far"].indexOf(c) !== -1) return { fieldErrors: { firstDue: crErr(e, "Choose another day.") } };
+        throw e;
+      }
+    },
+    done: (v, r) => { ctx.reload(); if (r && r.plan) crPpOpen(ctx, r.plan.planId); return "Plan created."; } });
+}
+Object.assign(CR_TAB_DEFS, {
+  payplans: {
+    skeleton: ["kpis", "table"],
+    load: async ctx => {
+      crMoCtx.current = ctx;
+      const r = await NGGApi.admin.payplans.list({ health: "", pageSize: 1 });
+      const servers = {};
+      CR_PP_FILTERS.forEach(([k]) => { servers[k || "all"] = crPpServer(k); });
+      return { counts: r.counts || {}, sums: r.sums || {}, grace: r.graceDays || 14, servers, rev: Date.now() };
+    },
+    actions: (d, ctx) => [{ l: "New plan", icon: "plus", primary: true, run: () => crPpNew(ctx) }],
+    blocks: (d, ctx) => {
+      crMoCtx.current = ctx;
+      // "" is "All", carried in the URL as "all"; no sub means the running plans.
+      const f = ctx.sub === "all" ? "" : ctx.sub && CR_PP_FILTERS.some(x => x[0] && x[0] === ctx.sub) ? ctx.sub : "open";
+      const c = d.counts, s = d.sums;
+      return [
+        { type: "kpis", span: 6, items: [
+          { l: "Waiting for approval", v: crNum(c.pending || 0), tone: c.pending ? "down" : "flat", s: c.pending ? "open one to approve or decline" : "nothing to decide" },
+          { l: "Running", v: crNum((c.on_track || 0) + (c.behind || 0) + (c.broken || 0)), s: crNum(c.on_track || 0) + " on track · " + crNum(c.behind || 0) + " behind" },
+          { l: "Lapsed", v: crNum(c.broken || 0), tone: c.broken ? "down" : "flat", s: "an instalment over " + d.grace + " days late" },
+          { l: "Owed on running plans", v: fmtMoney(s.owed || 0), s: fmtMoney(s.overdue || 0) + " of it overdue" },
+          { l: "Collected through plans", v: fmtMoney(s.collected || 0), s: crNum(c.completed || 0) + " completed" },
+        ] },
+        { type: "note", span: 6, icon: "calendar-check", text: "Any payment to the account counts towards its plan, however it is made, so the desk records money as usual.",
+          sub: "Families are reminded " + "before each instalment, when one is late, and when a plan lapses. A family keeping a plan is not sent the general arrears reminder as well." },
+        { type: "custom", span: 6, render: (c2, phone) => (
+          <div className={phone ? "cr-pchips" : "cr-wrap"} role="group" aria-label="Show plans">
+            {CR_PP_FILTERS.map(([k, l]) => <button key={k || "all"} type="button" className="cr-chip" aria-pressed={f === k} onClick={() => ctx.setSub(k || "all")}>{l}</button>)}
+          </div>
+        ) },
+        { type: "table", span: 6, key: "pp-" + (f || "all"), server: d.servers[f || "all"], reloadKey: d.rev, nosel: true,
+          search: "Member, number, plan or the parent who agreed",
+          cols: ["Member", "Health", { l: "Paid", sort: false }, { l: "Next instalment", sort: false }, { l: "Overdue", num: true, sort: false }, { l: "Agreed by", sort: false }],
+          emptyText: f === "open" ? "No plans are running. Families set one up from Fees in the family app, or you can make one with New plan." : "No plans here." },
+      ];
+    },
+    facts: d => crNum((d.counts.on_track || 0) + (d.counts.behind || 0) + (d.counts.broken || 0)) + " instalment plans running, " + crNum(d.counts.broken || 0) + " lapsed; " + fmtMoney(d.sums.owed || 0) + " owed on them, " + fmtMoney(d.sums.overdue || 0) + " overdue.",
   },
 });

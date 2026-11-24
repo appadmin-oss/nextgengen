@@ -36,7 +36,7 @@
    family says they were never told" has an answer in Money → Reminders.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const DUES_NOTICE_KINDS = ['upcoming', 'arrears', 'claim_ack', 'claim_decided', 'claim_staff'];
+const DUES_NOTICE_KINDS = ['upcoming', 'arrears', 'claim_ack', 'claim_decided', 'claim_staff', 'plan_due', 'plan_late', 'plan_broken', 'plan_ended', 'plan_approved', 'plan_declined'];
 /** Members looked at per pass for upcoming notices. A pass that fills it does
  *  not mark the day done, so the next tick carries on where it stopped. */
 const DUES_UPCOMING_BATCH = 400;
@@ -104,7 +104,7 @@ function dues_notice_send(array $m, string $kind, string $refKey, array $msg, ?a
             $went['app']++;
             // Which child it is about (the family inbox links it to that ward); money owed files with the alerts, beside fines.
             db_exec('UPDATE guardian_notices SET memberId = ?, cat = ? WHERE guardianId = ? AND kind = ? AND refId = ?',
-                [$mid, $kind === 'arrears' ? 'alert' : 'centre', $gid, 'dues-' . $kind, $kind . ':' . $refKey . ':' . $mid]);
+                [$mid, in_array($kind, ['arrears', 'plan_late', 'plan_broken'], true) ? 'alert' : 'centre', $gid, 'dues-' . $kind, $kind . ':' . $refKey . ':' . $mid]);
         }
     }
     /* The member sees it in their own portal too — in words for them (`member` => ['title', 'text']),
@@ -327,6 +327,8 @@ function dues_notices_run(?string $today = null, bool $force = false): array {
         $out['skipped'] = $c['skipped'];
         if (empty($c['more'])) setting_set('dues_notices_state', ['doneOn' => $today, 'at' => now_iso(), 'told' => $out['upcoming']], 'cron');
     }
+    // Instalment plans: reminders before each instalment, when one is late, and when a plan lapses (payment-plans.php).
+    if (function_exists('plan_reminders_run')) $out['plans'] = plan_reminders_run($today);
     $out['staff'] = dues_claims_staff_nudge($today, $cfg);
     if ($out['upcoming'] || $out['staff']) audit('dues.notices.run', 'cron', 'fees', $out, '');
     return $out;

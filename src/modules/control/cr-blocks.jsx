@@ -418,7 +418,8 @@ function crCellNode(c, col) {
   if (typeof c !== "object") return <span className="cr-c-text"><span>{String(c)}</span></span>;
   if (c.k === "person") return <span className="cr-person"><CrAvatar name={c.t} photo={c.photo}/><span className="cr-person-t"><b>{c.t}</b>{c.s && <span>{c.s}</span>}</span></span>;
   if (c.k === "status") return <CrPill tone={c.tone} t={c.t}/>;
-  if (c.k === "progress") { const p = Number(c.pct) || 0; return <span className="cr-prog"><span className="cr-prog-track"><span className={"cr-prog-fill" + (p < 60 ? " is-low" : p < 80 ? " is-mid" : "")} style={{ width: Math.max(0, Math.min(100, p)) + "%" }}/></span><span>{c.t != null ? c.t : p + "%"}</span></span>; }
+  /* A cell may say its own tone (ok | warn | bad): a plan a quarter paid and on time is not "low". */
+  if (c.k === "progress") { const p = Number(c.pct) || 0; const lvl = c.tone ? ({ bad: " is-low", warn: " is-mid" })[c.tone] || "" : p < 60 ? " is-low" : p < 80 ? " is-mid" : ""; return <span className="cr-prog"><span className="cr-prog-track"><span className={"cr-prog-fill" + lvl} style={{ width: Math.max(0, Math.min(100, p)) + "%" }}/></span><span>{c.t != null ? c.t : p + "%"}</span></span>; }
   if (c.k === "mono") return <span className="cr-c-mono">{c.t}</span>;
   /* A figure may carry how it was reached under it ("3 × ₦500 standard"). */
   if (c.k === "num") return c.s ? <span className="cr-c-text is-num"><span className="cr-c-num">{c.t}</span><span>{c.s}</span></span> : <span className="cr-c-num">{c.t}</span>;

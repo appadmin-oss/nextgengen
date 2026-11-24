@@ -7688,6 +7688,217 @@ the existing Kapso integration (domain/kapso.php), not through Make: the site al
   (migration 241). A button for a child is honoured only from a number that child's reminder went to.
 - Tests: PHP "whatsapp ·" (13), each core rule proven to fail when removed.
 
+## 2026-11-19 — Homework that gets done: the marking prompt, returned work stays open, families see it
+
+Merged afv/brave-faraday-pdlh7o (it already carried this branch's 2 November audit as patch 92668895; every conflict
+took its version). Then three changes, migration **242** (`assignment_submissions.resubmitBy`, `.markMinutes`,
+index on status):
+- **Marking prompt.** `assignment_marking_queue($g)` — submitted hand-ins the marker may open, checked exactly as
+  `staff_assignment_submission_gate` does (can-mark + member centre in reach), one query. `instructor_today` adds
+  the `handins` row ("N hand-ins to mark — oldest X days"; danger at `ASG_MARK_URGENT_DAYS` = 7), so the duty
+  pop-up and the daily email carry it; `duty_tell_handins_lead` nudges the centre's lead mentor once per oldest
+  hand-in. Time-to-mark: `markMinutes` written on grade and return; `admin_assignment_time_to_mark()` on the
+  overview (median, p90 hours, 90 days). The ip6 duty button opens Assignments.
+- **Returned is open.** `assignment_sub_open()` is the one definition; `sub_ids_for()` excludes returned (the
+  first-publish notice passes `$withReturned`). Return takes `resubmitBy` (default `ASG_RESUBMIT_DAYS` = 3,
+  refused if past). member_today lists it ("Revise and hand in again"), `assignment_due_reminders` reminds it under
+  `rs_soon:`/`rs_over:` + date (assignment_notices.kind is VARCHAR(16)). `assign_due` is hourly now (claims make it
+  idempotent; needed so a family message held by quiet hours goes at 07:00, not 24 hours later).
+- **Families.** `family_homework()` inside `family_ward()` (so only through the guardian's own active link):
+  due this week or still owed, state, mark and feedback once marked, never the answer. `assignment_tell_family()`
+  at the overdue stage: claim `family` per assignment per child; guardians taking alerts get inbox + email,
+  `rcl_wa_phones()` via `sms_send` (WhatsApp first, SMS fallback); parentEmail only when no guardian took it;
+  never between 21:00 and 07:00 Lagos (no claim taken). The duties email's week-old copy to parentEmail skips
+  homework already sent this way.
+- Deliberately unchanged: the evidence fine (`policy_evidence_fines_run`) still counts a returned hand-in as
+  evidence uploaded — fining a child for work a marker sent back is a policy question, not a counting one.
+- Tests: PHP "homework 7/8/9" (29 checks); reach scoping, returned-is-open (sub_ids_for and Today), guardian
+  scoping, once-only and quiet hours each mutated and seen to fail.
+
+## 2026-11-19 — Instalment plans (schema 242, `domain/fee-plans.php`)
+
+Owner's brief: a parent sets up a plan in the family app (Fees → Set up a
+payment plan: 2–6 instalments, weekly / every two weeks / monthly, exact dates
+and amounts shown, terms read, name typed, box ticked); staff can set one up
+for a parent who agreed by phone, in person or in writing and must say which;
+**the plan must be approved**; the admin sets the longest time frame.
+
+- **Pending until approved.** Both doors write a `pending` plan through one
+  writer (`fee_plan_create`); `admin.fees.plan.decide` (cap `fees`,
+  compare-and-set) approves or declines with a reason, and the family is told
+  in their notices. A staff-created plan waits for approval too.
+- **The server works out the schedule** (`fee_plan_schedule`): equal parts,
+  the odd naira on the LAST instalment, monthly keeps the day of the month
+  clamped to the month's end. `planMaxDays` (fees settings, 14–365, default
+  120, Control Room → Money → Amounts → Instalment plans) is enforced on the
+  server, first instalment to last, whoever sets the plan up.
+- **What counts**: every live `payment` credit after the plan was set up,
+  oldest instalment first. There is no plan-specific payment — the desk records
+  money exactly as before. The plan's total is what was owed the day it was set
+  up; new dues during it are charged as normal and are not part of it. A plan
+  completes on its own when the payments reach the total (on read, no cron).
+- `fee_plans` is `BLOCK` in the merge policy (money).
+- Surfaces: family app Fees → "Payment plan" card (`Fp3Plan`); Control Room →
+  Money → Who owes ("Payment plans" table) and each account ("Payment plan",
+  with "Set up a plan"). Tests: the "plans:" group in `api/tests/run.php`.
+- Not done: reminders still run during a plan as before, and a missed
+  instalment does not end a plan by itself — staff end it with a reason.
+- **Fair for everyone (owner, 19 Nov):** instalments are equal to the naira —
+  the odd naira go one each to the last instalments, so none differs by more
+  than ₦1 — and a plan approved after its first date is re-dated from the
+  approval day, so nobody is overdue before NGG says yes. No interest or
+  charge for paying by plan; the terms say so.
+## 19 Nov 2026 — Parents pay the balance in instalments, with follow-ups
+
+The owner asked whether parents can pay their fines and dues in instalments. They could pay, but only the
+whole balance. Online they had no way to pay part of it; only the desk could record a part payment.
+
+**What was built**
+- **A part invoice.** `membership_part_invoice()` in `domain/membership-pay.php` makes a
+  `membership_invoices` row with purpose `part`, for an amount the family chooses: from `MPAY_PART_MIN`
+  (₦1,000) up to the whole payable.
+  - It reuses everything a balance invoice uses: the /pay page, the Paystack check (exact amount, currency
+    and invoice), `membership_settle` (which posts only the payment, noted *Part payment*), the numbered
+    receipt, and a bank-transfer claim checked by the desk.
+  - Only one payment is asked for at a time. A part, a full balance or a pay-ahead invoice replaces the
+    open one.
+  - A balance under twice the minimum is not split (`part_not_allowed`).
+  - The amount is validated on the server: below the minimum, above the balance, or not a whole number
+    is refused, with a sentence saying why.
+- **Unlike a balance invoice, a part invoice does not go stale when the balance rises.** It was never a
+  quote of the whole. If the balance falls below the instalment's amount, checkout voids it
+  (`part_exceeds_balance`, with today's figure), so nobody can overpay through it.
+- **Ops.** `family.fees.pay` and `member.fees.pay` take an optional `amount`. `api/family/pay.php` passes
+  it and now returns the refusal's detail. `family_fees_view` sends `partMin` (0 means pay in full).
+- **Family app.** *Fees → Pay* asks **All of it, ₦N** or **Part of it**. *Part of it* shows an amount
+  field and lines for owed today, this instalment and left after it. The design source
+  (`family-portal-v3.dc.html`) has the new block and was recompiled with `tools/dc-compile.js`.
+  The /pay page has an instalment title, a note and its own void message.
+- **Follow-ups.**
+  - The receipt says what is still owed and that it can be paid in more instalments.
+  - The balance reminder (`fees_reminder_candidates`) skips a family that paid an instalment within the
+    reminder interval, so the follow-up runs from their payment. The skip is named `paidRecently`, and
+    the Control Room's preview lists it.
+  - Every reminder now says the family can choose *Part of it*.
+
+**Not built, on purpose: choosing which charge to pay.** The owner asked whether a family could pick what
+to pay: dues, fines and so on. Payments are one pooled credit that pays off charges oldest first
+(`fees_charges_left`). Every statement, report, clearance and conduct read is built on that. Ear-marking
+money for fines would change the accounting for all of them, and an instalment labelled "fines" that the
+allocator spent on older dues would mislead the family. The sheet shows what is owed, line by line, and
+the family chooses how much.
+
+**Verification**
+- `php -l` passes on every changed PHP file, and `node build.js` builds.
+- `api/tests/run.php` has a new block, *Paying the balance in instalments*, with 14 checks.
+- **Not run in this session:** a plugin added mid-session refuses any shell command that names a file
+  holding the organisation's contact address, which includes `api/tests/run.php` and most browser
+  suites. The PHP suite and the browser suites must be run before release.
+
+## 19 Nov 2026 (later) — CI; instalment plans with tracking; instructor management
+
+**CI (`.github/workflows/checks.yml`).** The owner has no shell, and this session's container refuses to
+run `api/tests/run.php` (see above). GitHub Actions now runs on every push:
+- the build, `build.test.js` and `no-important.test.js`;
+- the PHP suite, on SQLite (it writes its own config; no secrets needed);
+- Chromium, then the route registry suite.
+
+The PHP step prints only failures and totals, because the runner has no mail transport and stderr is noise.
+`package-lock.json` is ignored, so it uses `npm install`. Adding more browser suites is a matter of adding steps.
+
+**Instalment plans (owner: "a proper tracking and accountability feature for the installments").**
+`domain/payment-plans.php` and migration 238 add three tables:
+- `payment_plans`: the agreement. Who agreed, when, the terms version, the source (family or staff),
+  and `startPaid`, the payments on the account when it began.
+- `payment_plan_items`: the dated instalments.
+- `payment_plan_events`: the accountability log. Created, reminded, missed, paid, broken, completed,
+  cancelled, note.
+
+How it behaves:
+- **Progress is never stored.** It is `min(total − payments since the start, payable today)`, laid over
+  the instalments in order, so a desk payment or a waiver moves a plan exactly as an online payment does.
+- **Health** is on track, behind, broken (more than `PLAN_GRACE_DAYS` = 14 days late), completed or
+  cancelled.
+- **Reminders.** `plan_reminders_run` runs from `dues_notices_run` (new notice kinds `plan_due`,
+  `plan_late`, `plan_broken`, `plan_ended`). A kept plan excuses the family from the arrears reminder
+  (`onPlan`).
+- **Ops.**
+  - Family: `family.payplan.quote|create|pay` through `api/family/account.php`. The name avoids the
+    existing `family.plan.sign`, which is the school-results plan.
+  - Staff: `admin.payplans.list|get|for|create|cancel|note` (`fees`, centre-scoped), at
+    `api/admin/payplans.php`.
+- **Screens.**
+  - Control Room: Money → Instalment plans.
+  - Family app: the plan card, the offer, and the set-up sheet. These are in `family-portal-v3.dc.html`,
+    recompiled.
+- **Paying an instalment.** "Pay this instalment" makes a `part` invoice tagged `plan:<id>`, exempt from
+  the ₦1,000 minimum because the amount is the agreed one.
+- **Merge policy:** both tables are BLOCK.
+- **The member route stays as it was:** a member-side op never carries an amount
+  (the existing READ-ONLY test).
+
+**Instructor management (owner: "ent-grade people and Instructor management").**
+`domain/instructor-admin.php` and migration 239 build on the existing data:
+- **Volunteer rows** gain leave (from, until, reason), offboarding (when, by whom, why), the safeguarding
+  check date and expiry, and a review date.
+- **`people_notes`** is a person's record (`subjectType` `volunteer` for now; it is built to take other
+  kinds of person).
+- **The roster** is read in a fixed number of grouped queries: volunteers, timetable slots
+  (`instructorId` = volunteerId), filed sessions (`club_class_sessions.instructorId` = the member
+  account), and Academy passes (`instr_academy_done`, which applies the renewal rule).
+- **Issues are derived:** safeguarding pending, expired or expiring; Academy; no account; no classes; not
+  filing; review overdue.
+- **Ops.** `admin.instructors.list|get|update|leave|offboard|reinstate|note` (`people`, scoped by the
+  volunteer's centre), at `api/admin/instructors.php`.
+- **Screen:** Mentors & volunteers → Instructors.
+- **Offboarding** archives the volunteer (every portal gate reads status `active`) and clears their
+  timetable slots for cover, in one transaction.
+- **A course still taught on the timetable cannot be removed.**
+- **The progress cell** in `cr-blocks.jsx` takes an optional `tone`, so an on-time plan at 25% is not
+  drawn as low (CONTRACT.md).
+
+**Not built, said so:**
+- Paying a chosen charge (dues or fines) separately. The ledger is one pool, oldest charges first.
+- Management of staff and mentors beyond what exists. `people_notes` and the screen pattern are ready
+  for them, but only instructors use them today.
+
+**Verification**
+- Browser probes, driven in this container with real cookies and a real PHP server:
+  - plans: 16 checks, covering a parent setting a plan up, a desk payment moving it, and staff listing,
+    opening, noting and ending it;
+  - instructors: 10 checks, covering the figures, the filters, the drawer, leave with cover named, a
+    note, and offboarding with the class handed back.
+  - No page errors in either.
+- PHP checks for both are in `run.php` and run in CI.
+
+## 2026-11-19 — one plan system: payment-plans, with approval and the fairness rules
+
+Two sessions built instalment plans the same afternoon (`domain/payment-plans.php`
+from the finme session, `domain/fee-plans.php` from this one). Merged into ONE:
+finme's (reminders, grace, the event record, paying an instalment online) is
+kept, and `fee-plans.php` and its table are gone (its migration number 242 now
+belongs to the assignments change). The owner's rules were moved into it:
+
+- **Every plan waits for approval** (`status = 'pending'`, health `pending`):
+  nothing is payable, late or reminded on it until `admin.payplans.decide`
+  (cap `fees`, compare-and-set) approves it; a decline needs a sentence the
+  family reads (`plan_approved` / `plan_declined` notices). Staff-made plans
+  wait too. Control Room → Money → Instalment plans → "Waiting for approval".
+- **Approved after its first date, a plan is re-dated** from the approval day
+  — same amounts, same gaps — so nobody is late before NGG says yes.
+- **The longest plan is the admin's** `planMaxDays` (fees settings, 14–365,
+  default 183), Money → Amounts → Instalment plans; enforced on the server.
+- **Fair to the naira:** no instalment differs from another by more than ₦1;
+  the odd naira go one each to the first instalments.
+- **No interest, no charge** for paying by plan — stated in the terms
+  (version `2026-11b`).
+
+Migrations after the three-way merge: 240–241 (registration steps, WhatsApp),
+242 (assignments), 243 (payment plans), 244 (instructor management). A
+database that ran the finme branch on its own has its plans tables already
+(243 creates IF NOT EXISTS) but 244's `ALTER TABLE volunteers` will refuse a
+duplicate column there — none is known to have been deployed.
+
 ## 2026-11-24 — Accepted, then confirmed; a nearer centre offered; the helper chosen by itself
 
 Owner: families were getting the welcome and the agreement "before they are even accepted"; the child "has to be
@@ -7700,12 +7911,12 @@ helper "should be the child's mentor", automated; and the entry steps in the ord
   (`clientSignedAt`; not for online members), joining invoice paid (not while fees are off). Called from
   `public_mou_sign`, `admin_mou_paper` (a paper-only signing), `membership_settle` (before the receipt, which says
   "one step left" when unsigned) and at acceptance. Then `ngg_welcome_send` and a push. Once, by a conditional
-  UPDATE. Migration 242: `reg_checklists.confirmWait` (1 only for children accepted this way, so no row is
+  UPDATE. Migration 245: `reg_checklists.confirmWait` (1 only for children accepted this way, so no row is
   rewritten and nothing needs a MySQL data fixup) and `confirmedAt`. The MoU page returns `place` (`mou_place_public`)
   and shows *Step 2 of 2: pay* with the pay link.
 - **Offer another centre**: `admin.application.centre_options` (active NGG centres in scope with room, nearest first
   by `geo_distance_m`; Summer-only and full centres left out) and `admin.application.offer_centre` (email with ONE
-  link; token stored hashed in `applications.offerTokenHash`, migration 242). The family's page,
+  link; token stored hashed in `applications.offerTokenHash`, migration 245). The family's page,
   `api/public/centre-offer.php`, is two buttons in a POST form (no script) so a mail scanner that follows the link
   answers nothing; CSRF-exempt because the token is the proof. "Yes" runs `app_convert` as the staff member who
   offered (their rights read live through `admin_cap_gate`); "Wait" → waitlist. Held 14 days (`APP_OFFER_DAYS`);

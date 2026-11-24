@@ -50,6 +50,12 @@ const ASG_BULK_MAX   = 500;
  * strict MySQL refuses a longer value outright (they were 32 and 64). */
 const ASG_CENTRE_MAX = 80;
 const ASG_TRACK_MAX  = 80;
+/* Returned work is OPEN work. A hand-in sent back to revise is not handed in:
+ * it is counted on the member's Today, reminded, and escalated to the family
+ * exactly like work that was never handed in — against its own "resubmit by"
+ * date, which the marker sets when returning it (default ASG_RESUBMIT_DAYS). */
+const ASG_RESUBMIT_DAYS = 3;
+const ASG_MARK_URGENT_DAYS = 7;   // a hand-in waiting this long for a mark is urgent on the instructor's Today, and goes to their lead
 
 /* ── Who gets it ─────────────────────────────────────────────────────────── */
 
@@ -297,7 +303,32 @@ function assignment_public_sub(?array $sub): ?array {
         'files' => $files, 'linkUrl' => $link, 'linkKind' => $link !== '' ? assignment_link_kind($link) : '',
         'steps' => array_values(array_map('intval', json_decode((string)($sub['stepsJson'] ?? ''), true) ?: [])),
         'grade' => ($sub['grade'] === null || $sub['grade'] === '') ? null : (int)$sub['grade'],
-        'feedback' => $sub['feedback'] ?: '', 'submittedAt' => $sub['submittedAt'] ?: '', 'gradedAt' => $sub['gradedAt'] ?: ''];
+        'feedback' => $sub['feedback'] ?: '', 'submittedAt' => $sub['submittedAt'] ?: '', 'gradedAt' => $sub['gradedAt'] ?: '',
+        'resubmitBy' => (string)$sub['status'] === 'returned' ? assignment_resubmit_by($sub) : ''];
+}
+
+/**
+ * Is this hand-in still the member's to do? No hand-in, or one sent back to
+ * revise. The one definition of "open" — Today, the duties email, the
+ * reminders, the family's view and its alert all ask it, so a returned
+ * hand-in cannot read as done in one place and as owed in another.
+ */
+function assignment_sub_open(?array $sub): bool {
+    return !$sub || (string)($sub['status'] ?? '') === 'returned';
+}
+
+/** The date a returned hand-in is due again: what the marker set, else three days after it was returned. */
+function assignment_resubmit_by(array $sub): string {
+    $d = trim((string)($sub['resubmitBy'] ?? ''));
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) return $d;
+    $at = strtotime((string)($sub['gradedAt'] ?? '')) ?: time();
+    return gmdate('Y-m-d', $at + 3600 + ASG_RESUBMIT_DAYS * 86400);
+}
+
+/** The deadline that applies to this member now: the resubmit date for returned work, else the assignment's own. */
+function assignment_open_due_ts(array $a, ?array $sub): int {
+    if ($sub && (string)($sub['status'] ?? '') === 'returned') return assignment_due_ts(['dueAt' => assignment_resubmit_by($sub)]);
+    return assignment_due_ts($a);
 }
 
 function assignment_list_for_member(array $p): array {
@@ -584,7 +615,8 @@ function staff_assignment_grade(array $p): array {
     $grade = (int)$p['grade'];
     if ($grade < 0 || ($max > 0 && $grade > $max)) return ['ok' => false, 'error' => 'grade_out_of_range', 'detail' => 'Between 0 and ' . $max . '.'];
     $feedback = mb_substr(trim((string)($p['feedback'] ?? '')), 0, 4000);
-    db_update('assignment_submissions', ['status' => 'graded', 'grade' => $grade, 'feedback' => $feedback, 'gradedBy' => $g['me'], 'gradedAt' => now_iso()], ['id' => $row['id']]);
+    db_update('assignment_submissions', ['status' => 'graded', 'grade' => $grade, 'feedback' => $feedback, 'gradedBy' => $g['me'], 'gradedAt' => now_iso(),
+        'markMinutes' => (string)$row['status'] === 'submitted' ? assignment_mark_minutes($row) : $row['markMinutes']], ['id' => $row['id']]);
     push_notification((string)$row['memberId'], ['kind' => 'announcement', 'title' => 'Assignment marked: ' . $a['title'],
         'body' => 'You scored ' . $grade . ($max ? '/' . $max : '') . '. Tap to see the feedback.', 'linkPage' => 'dashboard']);
     if (!empty($p['email'])) {
@@ -607,11 +639,52 @@ function staff_assignment_return(array $p): array {
     ['g' => $g, 'row' => $row, 'a' => $a] = $x;
     $feedback = mb_substr(trim((string)($p['feedback'] ?? '')), 0, 4000);
     if ($feedback === '') return ['ok' => false, 'error' => 'feedback_required', 'detail' => 'Say what to change, so they can.'];
-    db_update('assignment_submissions', ['status' => 'returned', 'feedback' => $feedback, 'gradedBy' => $g['me'], 'gradedAt' => now_iso()], ['id' => $row['id']]);
+    $today = gmdate('Y-m-d', time() + 3600);   // Lagos
+    $by = trim((string)($p['resubmitBy'] ?? ''));
+    if ($by === '') $by = gmdate('Y-m-d', strtotime($today . 'T12:00:00Z') + ASG_RESUBMIT_DAYS * 86400);
+    elseif (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $by) || !strtotime($by . 'T12:00:00Z')) return ['ok' => false, 'error' => 'bad_date', 'detail' => 'A date, like 2026-11-24.'];
+    elseif ($by < $today) return ['ok' => false, 'error' => 'date_past', 'detail' => 'The resubmit date cannot be in the past.'];
+    db_update('assignment_submissions', ['status' => 'returned', 'feedback' => $feedback, 'gradedBy' => $g['me'], 'gradedAt' => now_iso(),
+        'resubmitBy' => $by, 'markMinutes' => assignment_mark_minutes($row)], ['id' => $row['id']]);
     push_notification((string)$row['memberId'], ['kind' => 'announcement', 'title' => 'Revise and resubmit: ' . $a['title'],
-        'body' => 'Feedback: ' . mb_substr($feedback, 0, 140) . ' Tap to resubmit.', 'linkPage' => 'dashboard']);
-    audit('assignment.return', $g['me'], (string)$row['submissionId'], ['by' => $g['who']], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
+        'body' => 'Hand it in again by ' . gmdate('D j M', strtotime($by . 'T12:00:00Z')) . '. Feedback: ' . mb_substr($feedback, 0, 140), 'linkPage' => 'dashboard']);
+    audit('assignment.return', $g['me'], (string)$row['submissionId'], ['by' => $g['who'], 'resubmitBy' => $by], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'resubmitBy' => $by];
+}
+
+/**
+ * Time-to-mark, in minutes: from the hand-in's latest submission to now. A
+ * re-mark of something already marked keeps the first figure (the grade
+ * branch), so the measure is how long a member waited for an answer, not how
+ * often a mark was changed.
+ */
+function assignment_mark_minutes(array $row): ?int {
+    $t = strtotime((string)($row['submittedAt'] ?? ''));
+    return $t ? max(0, (int)floor((time() - $t) / 60)) : null;
+}
+
+/**
+ * Hand-ins waiting for this marker: status `submitted` (a resubmission
+ * included), on assignments they may mark, from members in their centre
+ * reach — exactly the rows staff_assignment_submission_gate would let them
+ * grade, so the count never names work they cannot open. One query.
+ * Returns ['count', 'oldestAt', 'oldestDays', 'oldestId'].
+ */
+function assignment_marking_queue(array $g, ?int $now = null): array {
+    $now = $now ?? time();
+    $n = 0; $oldest = null;
+    foreach (db_all("SELECT s.submissionId, s.submittedAt, s.memberId, a.assignmentId, a.track, a.centre, m.centre memberCentre
+                     FROM assignment_submissions s JOIN assignments a ON a.assignmentId = s.assignmentId
+                     LEFT JOIN members m ON m.memberId = s.memberId
+                     WHERE s.status = 'submitted' ORDER BY s.submittedAt") as $r) {
+        if (!(assignment_can_mark($g, $r) || $g['who'] === 'admin')) continue;
+        if ($g['centres'] !== null && !assignment_centre_in_scope($g, (string)$r['memberCentre'])) continue;
+        $n++;
+        if ($oldest === null) $oldest = $r;
+    }
+    $at = $oldest ? (string)$oldest['submittedAt'] : '';
+    $ts = $at !== '' ? (strtotime($at) ?: $now) : $now;
+    return ['count' => $n, 'oldestAt' => $at, 'oldestDays' => $oldest ? max(0, (int)floor(($now - $ts) / 86400)) : 0, 'oldestId' => $oldest ? (string)$oldest['submissionId'] : ''];
 }
 
 /**
@@ -843,38 +916,127 @@ function assignment_remind_push(array $a, string $memberId): void {
 
 const ASG_DUE_SOON_WINDOW = 129600;   // 36 h: a daily run always meets a deadline inside it at least once
 const ASG_OVERDUE_WINDOW  = 604800;   // a week after the deadline it is staff's call, not the job's
+const ASG_FAMILY_QUIET = ['quiet' => true, 'quietFrom' => '21:00', 'quietTo' => '07:00'];   // the push quiet hours (push.php), applied to a family's phone and inbox
+
+/** Which reminder, if any, a deadline is due now: due_soon, overdue, or ''. */
+function assignment_reminder_kind(int $due, int $now): string {
+    if (!$due) return '';
+    if ($due > $now && $due - $now <= ASG_DUE_SOON_WINDOW) return 'due_soon';
+    if ($due <= $now && $now - $due <= ASG_OVERDUE_WINDOW) return 'overdue';
+    return '';
+}
 
 /**
- * The daily job (web-cron 'assign_due'): members who have not handed in a
+ * The job (web-cron 'assign_due', hourly): members with OPEN work on a
  * published assignment are reminded once when it is due within the next day
  * and a half ('due_soon') and once when it is overdue, for up to a week
- * ('overdue'). Once per member, assignment and kind — assignment_notices is
- * the claim — so the job may run as often as it likes. An assignment staff
- * reminded by hand in the last day waits for the next run.
+ * ('overdue'). Open means not handed in, or handed in and RETURNED — whose
+ * deadline is the resubmit date, reminded under its own kinds (`rs_soon:`,
+ * `rs_over:` + the date, so a second return is a second round). Once per
+ * member, assignment and kind — assignment_notices is the claim — so the job
+ * may run as often as it likes. An assignment staff reminded by hand in the
+ * last day waits for the next run.
+ *
+ * At the overdue stage the family is told too (assignment_tell_family): once
+ * per assignment per child, never in the 21:00–07:00 quiet hours (the claim
+ * is not taken then, so the next hourly run after seven sends it).
  */
 function assignment_due_reminders(?int $now = null): array {
     $now = $now ?? time();
-    $sent = 0; $touched = [];
-    foreach (db_all("SELECT * FROM assignments WHERE status = 'published' AND COALESCE(dueAt, '') <> ''") as $a) {
-        $due = assignment_due_ts($a);
-        if (!$due) continue;
-        $kind = ($due > $now && $due - $now <= ASG_DUE_SOON_WINDOW) ? 'due_soon' : (($due <= $now && $now - $due <= ASG_OVERDUE_WINDOW) ? 'overdue' : '');
-        if ($kind === '') continue;
-        if ((strtotime((string)($a['remindedAt'] ?? '')) ?: 0) > $now - ASG_REMIND_QUIET) continue;
-        $handed = sub_ids_for((string)$a['assignmentId']);
-        foreach (assignment_audience($a) as $m) {
+    $sent = 0; $families = 0; $touched = [];
+    $quiet = function_exists('push_in_quiet') ? push_in_quiet(ASG_FAMILY_QUIET, $now) : false;
+    foreach (db_all("SELECT * FROM assignments WHERE status = 'published'") as $a) {
+        $aid = (string)$a['assignmentId'];
+        $subs = [];
+        foreach (db_all('SELECT * FROM assignment_submissions WHERE assignmentId = ?', [$aid]) as $r) $subs[(string)$r['memberId']] = $r;
+        $returned = array_filter($subs, static fn($r) => (string)$r['status'] === 'returned');
+        $baseKind = assignment_reminder_kind(assignment_due_ts($a), $now);
+        $handByHand = (strtotime((string)($a['remindedAt'] ?? '')) ?: 0) > $now - ASG_REMIND_QUIET;
+        $todo = [];   // memberId => [kind, overdue?]
+        if ($baseKind !== '' && !$handByHand) foreach (assignment_audience($a) as $m) {
             $mid = (string)$m['memberId'];
-            if (isset($handed[$mid]) || !assignment_notice_claim((string)$a['assignmentId'], $mid, $kind)) continue;
-            assignment_remind_push($a, $mid);
-            $sent++; $touched[(string)$a['assignmentId']] = $kind;
+            if (isset($subs[$mid])) continue;   // handed in (done), or returned (its own deadline, below)
+            $todo[$mid] = [$baseKind, $baseKind === 'overdue'];
+        }
+        foreach ($returned as $mid => $r) {
+            $by = assignment_resubmit_by($r);
+            $k = assignment_reminder_kind(assignment_due_ts(['dueAt' => $by]), $now);
+            if ($k === '') continue;
+            $todo[$mid] = [($k === 'overdue' ? 'rs_over:' : 'rs_soon:') . str_replace('-', '', substr($by, 2)), $k === 'overdue'];
+        }
+        foreach ($todo as $mid => [$kind, $overdue]) {
+            $mid = (string)$mid;
+            if (assignment_notice_claim($aid, $mid, $kind)) {
+                assignment_remind_push(isset($returned[$mid]) ? ['title' => $a['title'], 'dueAt' => assignment_resubmit_by($returned[$mid])] : $a, $mid);
+                $sent++; $touched[$aid] = $kind;
+            }
+            if ($overdue && !$quiet) $families += assignment_tell_family($a, $mid, $returned[$mid] ?? null);
         }
     }
-    if ($sent) audit('assignment.remind_auto', 'webcron', '', ['count' => $sent, 'assignments' => $touched], '');
-    return ['ok' => true, 'reminded' => $sent, 'assignments' => count($touched)];
+    if ($sent || $families) audit('assignment.remind_auto', 'webcron', '', ['count' => $sent, 'families' => $families, 'assignments' => $touched], '');
+    return ['ok' => true, 'reminded' => $sent, 'assignments' => count($touched), 'families' => $families, 'quiet' => $quiet];
 }
 
-function sub_ids_for(string $assignmentId): array {
-    return array_flip(array_column(db_all('SELECT memberId FROM assignment_submissions WHERE assignmentId = ?', [$assignmentId]), 'memberId'));
+/**
+ * Tell a child's family that a piece of work is overdue — once per
+ * assignment per child (the `family` claim in assignment_notices), by the
+ * channels the registration checklist uses: the family account's inbox and
+ * email for each linked guardian who takes alerts (else the parent email on
+ * the record), and WhatsApp-first text to rcl_wa_phones(). The message
+ * carries the child's first name, the assignment's title and its date —
+ * nothing else about the child. Returns how many messages went.
+ */
+function assignment_tell_family(array $a, string $memberId, ?array $returnedSub = null): int {
+    $m = db_row('SELECT memberId, fullName, parentEmail, type, status FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$m || !member_is_ngg($m)) return 0;
+    if (!assignment_notice_claim((string)$a['assignmentId'], $memberId, 'family')) return 0;
+    $first = function_exists('rcl_first') ? (rcl_first((string)$m['fullName']) ?: 'Your child') : (explode(' ', trim((string)$m['fullName']))[0] ?: 'Your child');
+    $due = $returnedSub ? assignment_due_ts(['dueAt' => assignment_resubmit_by($returnedSub)]) : assignment_due_ts($a);
+    $when = $due ? gmdate('l j F', $due + 3600) : '';
+    $what = $returnedSub ? 'was sent back to improve and has not been handed in again' : 'has not been handed in';
+    $title = $first . '’s homework is overdue';
+    $body = '“' . (string)$a['title'] . '” ' . $what . ($when !== '' ? ' — it was due ' . $when : '') . '. ' . $first
+          . ' can hand it in from their NGG dashboard. A word of encouragement at home usually does it.';
+    $n = 0; $emailed = [];
+    foreach (db_all("SELECT g.guardianId, g.email, w.notify FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId
+                     WHERE w.memberId = ? AND w.status = 'active' AND g.status = 'active'", [$memberId]) as $gr) {
+        $prefs = function_exists('family_notify_prefs') ? family_notify_prefs((string)($gr['notify'] ?? '')) : ['alerts' => true];
+        if (empty($prefs['alerts'])) continue;
+        if (function_exists('family_notice_add')) family_notice_add((string)$gr['guardianId'], 'homework', (string)$a['assignmentId'] . ':' . $memberId, $title, $body, 'NGG');
+        $to = strtolower(trim((string)$gr['email']));
+        if ($to !== '' && filter_var($to, FILTER_VALIDATE_EMAIL) && !isset($emailed[$to]) && function_exists('family_mail')) {
+            family_mail($to, $title, ['title' => $title, 'intro' => $body,
+                'ctaLabel' => 'See this week’s homework', 'ctaUrl' => (function_exists('family_origin') ? family_origin() : '') . '/family',
+                'footNote' => 'You get this because you look after ' . $first . ' in your NGG family account and alerts are on. Once per piece of work.']);
+            $emailed[$to] = true; $n++;
+        }
+    }
+    // No guardian account taking alerts: the parent email on the record, as before.
+    if (!$emailed && filter_var((string)($m['parentEmail'] ?? ''), FILTER_VALIDATE_EMAIL) && function_exists('family_mail')) {
+        family_mail((string)$m['parentEmail'], $title, ['title' => $title, 'intro' => $body,
+            'ctaLabel' => 'Open the family account', 'ctaUrl' => (function_exists('family_origin') ? family_origin() : '') . '/family',
+            'footNote' => 'You get this because you are the parent on ' . $first . '’s NGG record. Once per piece of work.']);
+        $n++;
+    }
+    if (function_exists('rcl_wa_phones') && function_exists('sms_send') && function_exists('sms_enabled') && sms_enabled()) {
+        foreach (rcl_wa_phones($memberId) as $e164) {
+            try { $r = sms_send($e164, 'NGG: ' . $body); if (!empty($r['ok'])) $n++; } catch (\Throwable $e) {}
+        }
+    }
+    return $n;
+}
+
+/**
+ * Members who have DONE this assignment, as a set: handed in and not sent
+ * back. A returned hand-in is open work (assignment_sub_open), so it is not
+ * here and its member is reminded. `$withReturned` is for the one caller
+ * that asks a different question — "has this member ever handed in?" — the
+ * first-publish notice, which must not tell somebody about work they have
+ * already handed in once.
+ */
+function sub_ids_for(string $assignmentId, bool $withReturned = false): array {
+    $sql = 'SELECT memberId FROM assignment_submissions WHERE assignmentId = ?' . ($withReturned ? '' : " AND COALESCE(status, '') <> 'returned'");
+    return array_flip(array_column(db_all($sql, [$assignmentId]), 'memberId'));
 }
 
 /** staff.assignments.status — publish, back to draft, close, or delete one never handed in. One audit event. */
@@ -914,7 +1076,7 @@ function notify_assignment_published(string $assignmentId, bool $alsoEmail): int
     if (!$a) return 0;
     /* Told once: a member who has handed in, or who was told when it was
      * first published, is not told again when it is re-published. */
-    $handed = sub_ids_for($assignmentId);
+    $handed = sub_ids_for($assignmentId, true);
     $targets = array_values(array_filter(assignment_audience($a), fn($m) => !isset($handed[$m['memberId']])
         && assignment_notice_claim($assignmentId, (string)$m['memberId'], 'published')));
     $due = ($t = assignment_due_ts($a)) ? (' Due ' . gmdate('D j M', $t) . '.') : '';

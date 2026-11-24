@@ -157,7 +157,7 @@ function fp3Ward(link, d, today) {
     achievements: d.achievements || { items: [], next: [] },
     charges: (d.charges || []).map(c => ({ id: c.entryId, label: fp3Note(c.note) + " · " + "₦" + Number(c.amount).toLocaleString("en"), when: fp3Date(c.createdAt) })),
     fees: fees3 ? {
-      enabled: true, payable: fees3.payable, outstanding: fees3.outstanding, payOnline: fees3.payOnline, payFee: fees3.payFee || 0, offlinePending: fees3.offlinePending,
+      enabled: true, payable: fees3.payable, outstanding: fees3.outstanding, payOnline: fees3.payOnline, payFee: fees3.payFee || 0, partMin: fees3.partMin || 0, plan: fees3.plan || null, planOffer: fees3.planOffer || null, offlinePending: fees3.offlinePending,
       lines: (fees3.lines || []).map(l => ({ label: l.label, detail: l.detail || "", amount: l.amount, kind: l.kind, n: l.n || 1, periods: l.periods || [] })), next: fees3.next.map(x => ({ label: x.label, when: fp3Date(x.date), amount: x.amount })),
       joining: fees3.joining ? { invoiceId: fees3.joining.invoiceId, start: fp3Date(fees3.joining.start), items: fees3.joining.items, total: fees3.joining.total || 0 } : null,
       entries: fees3.entries.map((e, i) => ({ id: e.id || "E" + i, when: fp3Date(e.date), month: e.month, kind: e.kind, note: fp3Note(e.note), amount: e.amount, dir: e.dir, void: e.void, balance: e.balance })),
@@ -168,6 +168,11 @@ function fp3Ward(link, d, today) {
     } : { enabled: false, payable: 0, outstanding: 0, lines: [], next: [], entries: [], joining: null, programme: { phase: "starting" }, terms: {}, bank: null, ahead: null, asked: null, claim: null },
     learning: { completed: L.completed || 0, total: L.total || 0, pct: L.pct || 0, overdue: L.overdue || 0,
       next: (L.next || []).slice(0, 4).map(u => ({ title: u.title, course: u.course || (m.track || "Lessons"), week: u.week, due: u.dueDate ? "due " + fp3Date(u.dueDate) : "no due date", overdue: u.overdueDays > 0, status: u.status })) },
+    // This week's homework (family_homework): read-only; the mark and feedback once released.
+    homework: { open: (d.homework || {}).open || 0, overdue: (d.homework || {}).overdue || 0,
+      items: ((d.homework || {}).items || []).map(h => ({ id: h.assignmentId, title: h.title, course: h.course || "", state: h.state, returned: !!h.returned,
+        due: h.dueOn ? fp3Date(h.dueOn) : "", handedIn: h.handedInOn ? fp3Date(h.handedInOn) : "", late: !!h.late,
+        mark: h.mark === null || h.mark === undefined ? null : h.mark, outOf: h.outOf || 0, feedback: h.feedback || "" })) },
     companion: comp ? { rating: comp.rating || "none", summary: comp.summary || "", by: "NGG companion", period: comp.period || "" } : { rating: "none", summary: "", by: "", period: "" },
     requests: rq,
     excuses: d.excuses || null,   // {used, max, left, label}: two a session (POLICY §1.1)

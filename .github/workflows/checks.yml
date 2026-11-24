@@ -1,0 +1,69 @@
+# Build and the PHP suite on every push and pull request.
+#
+# The owner has no shell on the host and no way to run the suites by hand, so
+# this is where "did the tests pass?" is answered for every change. The PHP
+# suite runs on a throwaway SQLite database (api/tests/run.php writes its own
+# config), so it needs no secrets. The browser suites need the dev container's
+# Chromium and are run there; this job covers the build and the server.
+name: checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-php:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_sqlite, sqlite3, mbstring, intl, gd, curl
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No lock file is committed (package-lock.json is ignored), so this installs
+      # from package.json; the only dependencies are the build and test tools.
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Build
+        run: node build.js
+
+      - name: Build checks
+        run: |
+          node tests/build.test.js
+          node tests/no-important.test.js
+
+      # Runs whether or not a step above failed, so one failure never hides another.
+      - name: PHP suite (SQLite)
+        if: ${{ !cancelled() }}
+        # Mail has no transport on the runner, so stderr is a stream of "sendmail not found"; keep the
+        # results (each check, and the failures by name) and fail the step on any failure.
+        run: |
+          code=0
+          php api/tests/run.php > php-results.log 2> php-stderr.log || code=$?
+          grep -E "✗|❌|✅" php-results.log || tail -n 40 php-results.log
+          exit $code
+
+      - name: Browser for the UI suites
+        if: ${{ !cancelled() }}
+        run: npx playwright-core install --with-deps chromium
+
+      - name: Route registry
+        if: ${{ !cancelled() }}
+        run: node tests/route-registry.test.js

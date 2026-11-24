@@ -18262,7 +18262,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         $pv = $p2['preview'];
         foreach (['due', 'count', 'skipped', 'everyDays', 'enabled'] as $k) if (!array_key_exists($k, $pv)) return false;
         // Every exclusion is NAMED — "it will send 4 of 60" is not checkable.
-        foreach (['off', 'optedOut', 'nothingPayable', 'underMinimum', 'tooSoon', 'noContact'] as $k) {
+        foreach (['off', 'optedOut', 'nothingPayable', 'underMinimum', 'tooSoon', 'paidRecently', 'onPlan', 'noContact'] as $k) {
             if (!array_key_exists($k, $pv['skipped'])) return false;
         }
         // A preview does not send: the stamp is untouched by looking.
@@ -31879,6 +31879,367 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $wipe();
 })();
 
+// ── Paying the balance in instalments (owner, 19 Nov 2026) ───────────────────
+(function () {
+    $now = now_iso();
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'membership_invoices' => 'memberId', 'member_ledger' => 'memberId', 'guardian_wards' => 'memberId', 'dues_notices' => 'memberId', 'guardian_notices' => 'memberId'] as $t => $c) {
+            try { db_exec("DELETE FROM $t WHERE $c LIKE 'INS-%'"); } catch (Throwable $e) {}
+        }
+        db_exec("DELETE FROM guardians WHERE guardianId LIKE 'INSG-%'");
+    };
+    $wipe();
+    $prevFees = setting_get('fees'); $prevPs = $GLOBALS['CONFIG']['paystack'] ?? null;
+    setting_set('fees', ['enabled' => true, 'remindEnabled' => true] + fees_settings(), 'test');
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    foreach (['INS-1' => 'Ife Instalment', 'INS-2' => 'Tade Small'] as $id => $nm) db_insert('members', ['memberId' => $id, 'fullName' => $nm, 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => 'Egbeda', 'parentEmail' => strtolower(str_replace(' ', '.', $nm)) . '@example.com', 'joinDate' => gmdate('Y-m-d'), 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'INSG-1', 'email' => 'ife.instalment@example.com', 'fullName' => 'Mum', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'INS-LINK', 'guardianId' => 'INSG-1', 'memberId' => 'INS-1', 'status' => 'active', 'notify' => '{}', 'createdAt' => $now]);
+    $m = db_row("SELECT * FROM members WHERE memberId = 'INS-1'");
+    $base = (int)fees_balance($m)['payable'];
+    fees_post('INS-1', 'fine', 4000, ['periodKey' => 'test:ins:1', 'note' => 'Test fine', 'by' => 'test']);
+    fees_post('INS-1', 'adjustment', 6000, ['periodKey' => 'test:ins:2', 'note' => 'Test charge', 'by' => 'test']);
+    $due = (int)fees_balance($m)['payable'];
+    $pay = fn($amt) => backend_dispatch('family.fees.pay', ['guardianId' => 'INSG-1', 'linkId' => 'INS-LINK'] + ($amt === null ? [] : ['amount' => $amt]));
+
+    chk('instalments · the family account offers them, from the minimum, on a balance worth splitting', (family_fees_view($m)['partMin'] ?? -1) === MPAY_PART_MIN && $due === $base + 10000);
+    $full = $pay(null);
+    $p1 = $pay(3000);
+    $inv = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)($p1['invoiceId'] ?? '')]);
+    chk('instalments · a parent pays the amount they choose: a part invoice for exactly that, and what is left is said',
+        !empty($p1['ok']) && $inv && $inv['purpose'] === 'part' && (int)$inv['total'] === 3000 && (int)$p1['left'] === $due - 3000 && $p1['payUrl'] === '/pay/' . $inv['payToken']);
+    chk('instalments · one payment asked for at a time: the full-balance invoice it replaced is void',
+        db_row('SELECT status FROM membership_invoices WHERE invoiceId = ?', [(string)$full['invoiceId']])['status'] === 'void');
+    chk('instalments · the same amount again is the same invoice', !empty($pay(3000)['existed']));
+    chk('instalments · below the minimum, above the balance, or not a number is refused with the reason',
+        ($pay(500)['error'] ?? '') === 'part_too_small' && ($pay($due + 1)['error'] ?? '') === 'part_too_large' && ($pay('abc')['error'] ?? '') === 'part_too_small'
+        && ($pay(2.5)['error'] ?? '') === 'part_too_small' && str_contains((string)($pay(500)['detail'] ?? ''), '1,000'));
+    chk('instalments · paying all of it is the ordinary balance invoice', (db_row('SELECT purpose FROM membership_invoices WHERE invoiceId = ?', [(string)($pay($due)['invoiceId'] ?? '')])['purpose'] ?? '') === 'balance');
+    // A balance too small to split is paid in full.
+    fees_post('INS-2', 'fine', 1500, ['periodKey' => 'test:ins:3', 'note' => 'Small', 'by' => 'test']);
+    $m2 = db_row("SELECT * FROM members WHERE memberId = 'INS-2'");
+    $smallDue = (int)fees_balance($m2)['payable'];
+    chk('instalments · a balance under twice the minimum is not split', $smallDue >= 2 * MPAY_PART_MIN
+        || ((family_fees_view($m2)['partMin'] ?? -1) === 0 && (backend_dispatch('member.fees.pay', ['memberId' => 'INS-2', 'amount' => 1000])['error'] ?? '') === 'part_not_allowed'));
+
+    // Paystack, exactly as for a balance: the instalment settles as one payment credit.
+    $p1 = $pay(3000); $inv = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)$p1['invoiceId']]);
+    $kobo = 300000;
+    $GLOBALS['__paystack_mock'] = function ($method, $path, $body) use (&$kobo, $inv) {
+        if (strpos($path, '/transaction/initialize') === 0) return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/i1', 'reference' => $body['reference']]];
+        $ref = rawurldecode(substr($path, strlen('/transaction/verify/')));
+        return ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => $kobo, 'currency' => 'NGN', 'channel' => 'card', 'metadata' => ['invoiceId' => $inv['invoiceId']]]];
+    };
+    $pub = backend_dispatch('public.membership.invoice', ['token' => $inv['payToken']]);
+    chk('instalments · the /pay page shows it as an instalment', ($pub['invoice']['purpose'] ?? '') === 'part' && (int)($pub['invoice']['total'] ?? 0) === 3000);
+    // The balance going UP does not make an instalment stale: it was never a quote of the whole.
+    fees_post('INS-1', 'fine', 200, ['periodKey' => 'test:ins:4', 'note' => 'More', 'by' => 'test']);
+    $init = backend_dispatch('public.membership.pay.init', ['token' => $inv['payToken']]);
+    $GLOBALS['__mail_sink'] = [];
+    $ok = backend_dispatch('public.membership.pay.verify', ['token' => $inv['payToken'], 'reference' => (string)($init['reference'] ?? '')]);
+    $credit = db_row("SELECT * FROM member_ledger WHERE memberId = 'INS-1' AND direction = 'credit' AND kind = 'payment' ORDER BY id DESC LIMIT 1");
+    $after = (int)fees_balance($m)['payable'];
+    $rcpt = array_values(array_filter($GLOBALS['__mail_sink'], fn($x) => str_contains((string)$x['subject'], 'payment received')));
+    unset($GLOBALS['__mail_sink']);
+    chk('instalments · Paystack settles it: paid, one 3,000 credit noted as a part payment, the rest still owed',
+        !empty($init['ok']) && ($ok['invoice']['status'] ?? '') === 'paid' && $credit && (int)$credit['amount'] === 3000 && str_starts_with((string)$credit['note'], 'Part payment')
+        && $after === $due + 200 - 3000);
+    chk('instalments · the receipt says what is still owed, and how to pay it', $rcpt && str_contains($rcpt[0]['html'], fees_money_text($after)) && str_contains($rcpt[0]['html'], 'more instalments'));
+
+    // Follow-ups: the reminder for what is left runs from the instalment, and says instalments exist.
+    db_update('members', ['duesRemindedAt' => ''], ['memberId' => 'INS-1']);
+    $cand = fees_reminder_candidates();
+    chk('instalments · a family that just paid an instalment is not reminded the next day (named: paidRecently)',
+        !in_array('INS-1', array_column($cand['due'], 'memberId'), true) && (int)$cand['skipped']['paidRecently'] >= 1);
+    db_exec("UPDATE membership_invoices SET paidAt = ? WHERE memberId = 'INS-1' AND purpose = 'part' AND status = 'paid'", [gmdate('Y-m-d\TH:i:s\Z', time() - 40 * 86400)]);
+    $cand = fees_reminder_candidates();
+    $row = array_values(array_filter($cand['due'], fn($c) => $c['memberId'] === 'INS-1'));
+    $GLOBALS['__mail_sink'] = [];
+    if ($row) fees_reminder_send($row[0]);
+    $rem = array_values(array_filter($GLOBALS['__mail_sink'], fn($x) => str_contains((string)$x['html'], 'Ife')));
+    unset($GLOBALS['__mail_sink']);
+    chk('instalments · once the interval has passed the family is reminded of what is left, and told they can pay part of it',
+        $row && $rem && str_contains($rem[0]['html'], 'Part of it') && str_contains($rem[0]['html'], fees_money_text($after)));
+
+    // An instalment bigger than what is now owed is withdrawn at checkout: a family can never overpay through it.
+    $p2 = $pay(5000); $inv2 = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)$p2['invoiceId']]);
+    fees_post('INS-1', 'payment', $after - 2000, ['periodKey' => 'test:ins:desk', 'note' => 'Cash at the desk', 'method' => 'cash', 'by' => 'test']);
+    $stale = backend_dispatch('public.membership.pay.init', ['token' => $inv2['payToken']]);
+    chk('instalments · paid down at the desk to less than the instalment, the link is withdrawn and says how much is owed now',
+        ($stale['error'] ?? '') === 'part_exceeds_balance' && str_contains((string)($stale['detail'] ?? ''), '2,000')
+        && db_row('SELECT status FROM membership_invoices WHERE invoiceId = ?', [$inv2['invoiceId']])['status'] === 'void');
+    chk('instalments · a stranger cannot ask for an instalment on someone else\'s child', (backend_dispatch('family.fees.pay', ['guardianId' => 'INSG-X', 'linkId' => 'INS-LINK', 'amount' => 1000])['error'] ?? '') === 'not_found');
+
+    unset($GLOBALS['__paystack_mock']);
+    if ($prevPs === null) unset($GLOBALS['CONFIG']['paystack']); else $GLOBALS['CONFIG']['paystack'] = $prevPs;
+    setting_set('fees', is_array($prevFees) ? $prevFees : [], 'test');
+    $wipe();
+})();
+
+// ── Instalment plans: the agreement, the tracking and the record (owner, 19 Nov 2026) ──
+(function () {
+    $now = now_iso(); $ADM = 'NGG-2025-0099';
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'membership_invoices' => 'memberId', 'member_ledger' => 'memberId', 'guardian_wards' => 'memberId', 'dues_notices' => 'memberId',
+                  'guardian_notices' => 'memberId', 'payment_plans' => 'memberId', 'payment_plan_events' => 'memberId'] as $t => $c) {
+            try { db_exec("DELETE FROM $t WHERE $c LIKE 'PLN-%'"); } catch (Throwable $e) {}
+        }
+        try { db_exec("DELETE FROM payment_plan_items WHERE planId NOT IN (SELECT planId FROM payment_plans)"); } catch (Throwable $e) {}
+        db_exec("DELETE FROM guardians WHERE guardianId LIKE 'PLNG-%'");
+    };
+    $wipe();
+    $prevFees = setting_get('fees'); $prevPs = $GLOBALS['CONFIG']['paystack'] ?? null;
+    setting_set('fees', ['enabled' => true, 'remindEnabled' => true] + fees_settings(), 'test');
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    db_insert('members', ['memberId' => 'PLN-1', 'fullName' => 'Pelumi Plan', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'parentEmail' => 'pelumi.parent@example.com', 'joinDate' => gmdate('Y-m-d'), 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'PLNG-1', 'email' => 'pelumi.parent@example.com', 'fullName' => 'Mrs Funmi Plan', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'PLN-LINK', 'guardianId' => 'PLNG-1', 'memberId' => 'PLN-1', 'status' => 'active', 'notify' => '{}', 'createdAt' => $now]);
+    $m = db_row("SELECT * FROM members WHERE memberId = 'PLN-1'");
+    $base = (int)fees_balance($m)['payable'];
+    fees_post('PLN-1', 'adjustment', 24000 - $base, ['periodKey' => 'test:pln:1', 'note' => 'Test balance', 'by' => 'test']);
+    $due = (int)fees_balance($m)['payable'];
+    $today = plan_today();
+    $first = gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') + 7 * 86400);
+    $fam = fn(string $op, array $x = []) => backend_dispatch('family.payplan.' . $op, ['guardianId' => 'PLNG-1', 'linkId' => 'PLN-LINK'] + $x);
+
+    // The schedule.
+    $q = $fam('quote', ['instalments' => 4, 'frequency' => 'monthly', 'firstDue' => $first]);
+    chk('plans · a quote splits the whole balance into equal instalments, the remainder on the first, dates a month apart',
+        $due === 24000 && !empty($q['ok']) && array_column($q['items'], 'amount') === [6000, 6000, 6000, 6000] && $q['items'][1]['dueDate'] === plan_dates($first, 2, 'monthly')[1]
+        && ($q['termsVersion'] ?? '') === PLAN_TERMS_VERSION);
+    chk('plans · fair to the naira: an uneven balance spreads the odd naira ₦1 at a time from the first instalment, never a larger last one',
+        array_column(plan_schedule(10001, 3, 'weekly', $first, $today)['items'], 'amount') === [3334, 3334, 3333]
+        && max(array_column(plan_schedule(1000005, 6, 'weekly', $first, $today)['items'], 'amount')) - min(array_column(plan_schedule(1000005, 6, 'weekly', $first, $today)['items'], 'amount')) <= 1);
+    $keepFees = setting_get('fees');
+    fees_settings_save(['planMaxDays' => 30], 'test');
+    chk('plans · the admin sets the longest plan: past it, a schedule is refused whoever asks', (plan_schedule(24000, 3, 'monthly', $first, $today)['error'] ?? '') === 'too_long'
+        && !empty(plan_schedule(24000, 3, 'fortnightly', $first, $today)['ok']));
+    setting_set('fees', $keepFees, 'test');
+    chk('plans · a monthly date on the 31st falls on the month’s last day', plan_dates('2027-01-31', 2, 'monthly')[1] === '2027-02-28');
+    chk('plans · the limits are refused with a reason: too many, too few, a past day, too far off, instalments under the minimum (six monthly fit in six months)',
+        ($fam('quote', ['instalments' => 7, 'frequency' => 'monthly', 'firstDue' => $first])['error'] ?? '') === 'bad_count'
+        && ($fam('quote', ['instalments' => 1, 'frequency' => 'monthly', 'firstDue' => $first])['error'] ?? '') === 'bad_count'
+        && !empty(plan_schedule(24000, 6, 'monthly', $first, $today)['ok'])
+        && ($fam('quote', ['instalments' => 3, 'frequency' => 'weekly', 'firstDue' => gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') - 86400)])['error'] ?? '') === 'date_past'
+        && ($fam('quote', ['instalments' => 3, 'frequency' => 'weekly', 'firstDue' => gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') + 40 * 86400)])['error'] ?? '') === 'date_too_far'
+        && (plan_schedule(2500, 3, 'weekly', $first, $today)['error'] ?? '') === 'too_small'
+        && ($fam('quote', ['instalments' => 3, 'frequency' => 'daily', 'firstDue' => $first])['error'] ?? '') === 'bad_frequency');
+
+    // The agreement.
+    chk('plans · the family account offers a plan, with the terms to agree to', (family_fees_view($m)['planOffer']['termsVersion'] ?? '') === PLAN_TERMS_VERSION);
+    chk('plans · a plan is not made without accepting the current terms', ($fam('create', ['instalments' => 4, 'frequency' => 'monthly', 'firstDue' => $first, 'agree' => false, 'termsVersion' => PLAN_TERMS_VERSION])['error'] ?? '') === 'terms_required'
+        && ($fam('create', ['instalments' => 4, 'frequency' => 'monthly', 'firstDue' => $first, 'agree' => true, 'termsVersion' => '2020-01'])['error'] ?? '') === 'terms_required');
+    $c = $fam('create', ['instalments' => 4, 'frequency' => 'monthly', 'firstDue' => $first, 'agree' => true, 'termsVersion' => PLAN_TERMS_VERSION]);
+    $pid = (string)($c['plan']['planId'] ?? '');
+    $row = db_row('SELECT * FROM payment_plans WHERE planId = ?', [$pid]);
+    $ev = plan_events($pid);
+    chk('plans · agreeing records who (the guardian by name), when, the terms version, the source and the schedule',
+        !empty($c['ok']) && $row && $row['agreedBy'] === 'Mrs Funmi Plan' && $row['termsVersion'] === PLAN_TERMS_VERSION && $row['source'] === 'family'
+        && $row['createdBy'] === 'guardian:PLNG-1' && (int)$row['total'] === 24000 && count(plan_items($pid)) === 4
+        && $ev && $ev[0]['kind'] === 'created' && str_contains($ev[0]['detail'], 'Mrs Funmi Plan')
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'plan.created' AND subject = 'PLN-1'")['c'] >= 1);
+    chk('plans · a new plan WAITS for approval: nothing is payable or late on it, and only `fees` staff can decide it',
+        $row['status'] === 'pending' && plan_state($row, $m)['health'] === 'pending' && plan_state($row, $m, gmdate('Y-m-d', strtotime($today . ' +90 days')))['overdue'] === 0
+        && ($fam('pay')['error'] ?? '') === 'no_plan'
+        && empty(backend_dispatch('admin.payplans.decide', ['requesterId' => 'PLN-1', 'planId' => $pid, 'decision' => 'approve'])['ok'])
+        && (backend_dispatch('admin.payplans.decide', ['requesterId' => $ADM, 'planId' => $pid, 'decision' => 'decline', 'reason' => 'no'])['error'] ?? '') === 'reason_required');
+    $dec = backend_dispatch('admin.payplans.decide', ['requesterId' => $ADM, 'planId' => $pid, 'decision' => 'approve']);
+    $row = db_row('SELECT * FROM payment_plans WHERE planId = ?', [$pid]);
+    chk('plans · approved, it runs; it is decided once; the family is told', !empty($dec['ok']) && $row['status'] === 'active'
+        && (backend_dispatch('admin.payplans.decide', ['requesterId' => $ADM, 'planId' => $pid, 'decision' => 'approve'])['error'] ?? '') === 'not_pending'
+        && (bool)db_row("SELECT 1 FROM dues_notices WHERE memberId = 'PLN-1' AND kind = 'plan_approved'"));
+    chk('plans · one plan at a time', ($fam('create', ['instalments' => 2, 'frequency' => 'monthly', 'firstDue' => $first, 'agree' => true, 'termsVersion' => PLAN_TERMS_VERSION])['error'] ?? '') === 'plan_exists');
+    $s = plan_state($row, $m);
+    chk('plans · a new plan is on track, nothing paid, and asks for the first instalment', $s['health'] === 'on_track' && $s['paid'] === 0 && $s['payNow'] === 6000 && $s['next']['seq'] === 1);
+    chk('plans · the family account shows the plan instead of the offer', (family_fees_view($m)['plan']['planId'] ?? '') === $pid && family_fees_view($m)['planOffer'] === null);
+
+    // Paying: any payment counts, the ledger is the truth.
+    $pay = $fam('pay');
+    $inv = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)($pay['invoiceId'] ?? '')]);
+    chk('plans · "pay this instalment" makes a payment link for exactly the instalment, named for the plan',
+        !empty($pay['ok']) && $inv && $inv['purpose'] === 'part' && (int)$inv['total'] === 6000 && str_contains($inv['items'], 'Instalment 1 of 4') && str_contains($inv['items'], 'plan:' . $pid));
+    fees_post('PLN-1', 'payment', 6000, ['periodKey' => 'test:pln:pay1', 'note' => 'Cash at the desk', 'method' => 'cash', 'by' => 'test']);
+    $s = plan_sync($row);
+    chk('plans · money taken at the desk counts: instalment 1 paid, the next one asked for, and the record says so once',
+        $s['items'][0]['status'] === 'paid' && $s['paid'] === 6000 && $s['remaining'] === 18000 && $s['payNow'] === 6000 && $s['next']['seq'] === 2
+        && count(array_filter(plan_events($pid), fn($e) => $e['kind'] === 'paid')) === 1 && (plan_sync($row) && count(array_filter(plan_events($pid), fn($e) => $e['kind'] === 'paid')) === 1));
+    fees_post('PLN-1', 'payment', 3000, ['periodKey' => 'test:pln:pay2', 'note' => 'Part', 'method' => 'cash', 'by' => 'test']);
+    $s = plan_state($row, $m);
+    chk('plans · half an instalment is shown as part-paid, with what is left of it', $s['items'][1]['status'] === 'part' && $s['items'][1]['left'] === 3000 && $s['payNow'] === 3000);
+    fees_post('PLN-1', 'fine', 500, ['periodKey' => 'test:pln:newfine', 'note' => 'A new fine', 'by' => 'test']);
+    chk('plans · a new charge after the plan began is not added to the plan', plan_state($row, $m)['remaining'] === 15000);
+
+    // Late, behind, broken.
+    db_exec('UPDATE payment_plan_items SET dueDate = ? WHERE planId = ? AND seq = 2', [gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') - 3 * 86400), $pid]);
+    $s = plan_state($row, $m);
+    chk('plans · an instalment past its day and not covered makes the plan "behind", with the overdue amount and the days late',
+        $s['health'] === 'behind' && $s['items'][1]['status'] === 'late' && $s['items'][1]['daysLate'] === 3 && $s['overdue'] === 3000 && $s['payNow'] === 3000);
+    $GLOBALS['__mail_sink'] = [];
+    $r1 = plan_reminders_run($today); $r2 = plan_reminders_run($today);
+    $late = array_values(array_filter($GLOBALS['__mail_sink'], fn($x) => str_contains((string)$x['subject'], 'is late')));
+    unset($GLOBALS['__mail_sink']);
+    chk('plans · the family is told an instalment is late, once, and the record shows the reminder and the miss',
+        $r1['late'] === 1 && $r2['late'] === 0 && count($late) >= 1 && str_contains($late[0]['html'], fees_money_text(3000))
+        && count(array_filter(plan_events($pid), fn($e) => $e['kind'] === 'missed' && $e['seq'] === 2)) === 1
+        && count(array_filter(plan_events($pid), fn($e) => $e['kind'] === 'reminded' && $e['seq'] === 2)) === 1);
+    chk('plans · a family keeping a plan is not sent the general arrears reminder as well (named: onPlan)',
+        !in_array('PLN-1', array_column(fees_reminder_candidates()['due'], 'memberId'), true) && (int)fees_reminder_candidates()['skipped']['onPlan'] >= 1);
+    db_exec('UPDATE payment_plan_items SET dueDate = ? WHERE planId = ? AND seq = 2', [gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') - (PLAN_GRACE_DAYS + 1) * 86400), $pid]);
+    $GLOBALS['__mail_sink'] = [];
+    $r3 = plan_reminders_run($today);
+    $lapsed = array_values(array_filter($GLOBALS['__mail_sink'], fn($x) => str_contains((string)$x['subject'], 'lapsed')));
+    unset($GLOBALS['__mail_sink']);
+    chk('plans · past the grace period the plan is broken: the family is told once, the record says so, and the arrears reminder resumes',
+        plan_state($row, $m)['health'] === 'broken' && $r3['broken'] === 1 && count($lapsed) >= 1 && plan_reminders_run($today)['broken'] === 0
+        && count(array_filter(plan_events($pid), fn($e) => $e['kind'] === 'broken')) === 1 && !isset(plan_protected_members()['PLN-1']));
+
+    // The Control Room.
+    $list = backend_dispatch('admin.payplans.list', ['requesterId' => $ADM]);
+    $mine = array_values(array_filter($list['rows'] ?? [], fn($x) => $x['planId'] === $pid));
+    chk('plans · staff see the plan in the list, broken first, with what is owed and overdue, and the counts',
+        !empty($list['ok']) && $mine && $mine[0]['health'] === 'broken' && $mine[0]['overdue'] === 3000 && ($list['counts']['broken'] ?? 0) >= 1 && ($list['rows'][0]['health'] ?? '') === 'broken');
+    chk('plans · the list filters by health and by name', count(array_filter(backend_dispatch('admin.payplans.list', ['requesterId' => $ADM, 'health' => 'on_track'])['rows'], fn($x) => $x['planId'] === $pid)) === 0
+        && (backend_dispatch('admin.payplans.list', ['requesterId' => $ADM, 'q' => 'Pelumi'])['total'] ?? 0) >= 1);
+    $get = backend_dispatch('admin.payplans.get', ['requesterId' => $ADM, 'planId' => $pid]);
+    chk('plans · one plan opens with its schedule, the person who agreed, the terms, the reminders sent and the whole record',
+        !empty($get['ok']) && $get['plan']['agreedBy'] === 'Mrs Funmi Plan' && count($get['plan']['items']) === 4 && $get['terms'] === PLAN_TERMS
+        && count($get['notices']) >= 2 && count($get['events']) >= 5);
+    $n = backend_dispatch('admin.payplans.note', ['requesterId' => $ADM, 'planId' => $pid, 'text' => 'Called Mrs Plan; she will pay on Friday.']);
+    chk('plans · a staff note goes on the record with who wrote it', !empty($n['ok']) && $n['events'][0]['kind'] === 'note' && $n['events'][0]['actor'] === $ADM);
+    chk('plans · ending a plan needs a reason', (backend_dispatch('admin.payplans.cancel', ['requesterId' => $ADM, 'planId' => $pid, 'reason' => 'no'])['error'] ?? '') === 'reason_required');
+    $GLOBALS['__mail_sink'] = [];
+    $x = backend_dispatch('admin.payplans.cancel', ['requesterId' => $ADM, 'planId' => $pid, 'reason' => 'Two instalments missed and no reply to calls.']);
+    $ended = array_values(array_filter($GLOBALS['__mail_sink'], fn($y) => str_contains((string)$y['subject'], 'has ended')));
+    unset($GLOBALS['__mail_sink']);
+    $row = db_row('SELECT * FROM payment_plans WHERE planId = ?', [$pid]);
+    chk('plans · an ended plan records who, when and why, tells the family, and cannot be ended twice',
+        !empty($x['ok']) && $row['status'] === 'cancelled' && $row['cancelledBy'] === $ADM && str_contains($row['cancelReason'], 'Two instalments') && count($ended) >= 1
+        && (backend_dispatch('admin.payplans.cancel', ['requesterId' => $ADM, 'planId' => $pid, 'reason' => 'again and again'])['error'] ?? '') === 'not_active');
+    // Staff make one on the family's behalf; it records how the parent agreed.
+    chk('plans · staff must say how the parent agreed', (backend_dispatch('admin.payplans.create', ['requesterId' => $ADM, 'memberId' => 'PLN-1', 'instalments' => 2, 'frequency' => 'fortnightly', 'firstDue' => $first, 'agreedBy' => 'Mrs Funmi Plan'])['error'] ?? '') === 'how_required');
+    $sc = backend_dispatch('admin.payplans.create', ['requesterId' => $ADM, 'memberId' => 'PLN-1', 'instalments' => 2, 'frequency' => 'fortnightly', 'firstDue' => $first, 'agreedBy' => 'Mrs Funmi Plan', 'how' => 'by phone', 'note' => 'Agreed on the call']);
+    $prow = db_row('SELECT * FROM payment_plans WHERE planId = ?', [(string)($sc['plan']['planId'] ?? '')]);
+    chk('plans · a staff-made plan records the staff member, the parent who agreed and how', !empty($sc['ok']) && $prow['source'] === 'staff' && $prow['createdBy'] === $ADM
+        && str_contains(plan_events($prow['planId'])[0]['detail'], 'by phone') && (int)$prow['total'] === (int)fees_balance($m)['payable']);
+    chk('plans · a staff-made plan waits for approval too', $prow['status'] === 'pending');
+    backend_dispatch('admin.payplans.decide', ['requesterId' => $ADM, 'planId' => $prow['planId'], 'decision' => 'approve']);
+    $prow = db_row('SELECT * FROM payment_plans WHERE planId = ?', [$prow['planId']]);
+    // Completing.
+    fees_post('PLN-1', 'payment', (int)$prow['total'], ['periodKey' => 'test:pln:all', 'note' => 'All of it', 'method' => 'transfer', 'by' => 'test']);
+    $done = plan_sync($prow);
+    chk('plans · once nothing is left the plan is completed, with the day, on the record', $done['health'] === 'completed'
+        && db_row('SELECT status, completedAt FROM payment_plans WHERE planId = ?', [$prow['planId']])['status'] === 'completed'
+        && count(array_filter(plan_events($prow['planId']), fn($e) => $e['kind'] === 'completed')) === 1);
+    chk('plans · a stranger cannot see or pay a plan through someone else\'s link', (backend_dispatch('family.payplan.pay', ['guardianId' => 'PLNG-X', 'linkId' => 'PLN-LINK'])['error'] ?? '') === 'not_found');
+    chk('plans · a member of staff without the fees permission cannot read plans', (backend_dispatch('admin.payplans.list', ['requesterId' => 'PLN-1'])['ok'] ?? true) === false);
+
+    if ($prevPs === null) unset($GLOBALS['CONFIG']['paystack']); else $GLOBALS['CONFIG']['paystack'] = $prevPs;
+    setting_set('fees', is_array($prevFees) ? $prevFees : [], 'test');
+    $wipe();
+})();
+
+// ── Instructor management (owner, 19 Nov 2026) ───────────────────────────────
+(function () {
+    $now = now_iso(); $ADM = 'NGG-2025-0099'; $today = instr_today();
+    $day = fn(int $d) => gmdate('Y-m-d', strtotime($today . 'T00:00:00Z') + $d * 86400);
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-IA-%'"); db_exec("DELETE FROM timetable_slots WHERE slotId LIKE 'TT-IA-%'");
+    db_exec("DELETE FROM club_class_sessions WHERE sessionId LIKE 'SES-IA-%'"); db_exec("DELETE FROM people_notes WHERE subjectId LIKE 'VOL-IA-%'");
+    db_exec("DELETE FROM centres WHERE centreId = 'CEN-IA'");
+    db_insert('centres', ['centreId' => 'CEN-IA', 'name' => 'Iyana Test', 'code' => 'IYT', 'color' => '#123456', 'status' => 'active', 'programmes' => 'ngg', 'createdAt' => $now]);
+    $vol = fn(string $id, string $name, array $o) => db_insert('volunteers', array_merge(['volunteerId' => $id, 'fullName' => $name, 'email' => strtolower(str_replace(' ', '.', $name)) . '@example.com',
+        'role' => 'instructor', 'courses' => json_encode(['Piano']), 'centre' => 'Iyana Test', 'status' => 'active', 'safeguarding' => 'cleared', 'createdAt' => $now, 'updatedAt' => $now], $o));
+    // Good: cleared, Academy waived by hand, a class, filing.
+    $vol('VOL-IA-GOOD', 'Grace Good', ['memberId' => 'NGG-IA-GOOD', 'academyClearedAt' => $now, 'safeguardingExpires' => $day(365)]);
+    // Trouble: not cleared, no Academy, no account, no class.
+    $vol('VOL-IA-BAD', 'Bayo Bad', ['safeguarding' => 'pending']);
+    // Lapsed: check expired, has a class, files nothing.
+    $vol('VOL-IA-OLD', 'Ola Old', ['memberId' => 'NGG-IA-OLD', 'academyClearedAt' => $now, 'safeguardingExpires' => $day(-1), 'reviewDue' => $day(-3)]);
+    db_insert('timetable_slots', ['slotId' => 'TT-IA-1', 'centreId' => 'CEN-IA', 'course' => 'Piano', 'weekday' => 6, 'startTime' => '10:00', 'endTime' => '11:00', 'instructorId' => 'VOL-IA-GOOD', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('timetable_slots', ['slotId' => 'TT-IA-2', 'centreId' => 'CEN-IA', 'course' => 'Piano', 'weekday' => 6, 'startTime' => '12:00', 'endTime' => '13:00', 'instructorId' => 'VOL-IA-OLD', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('timetable_slots', ['slotId' => 'TT-IA-3', 'centreId' => 'CEN-IA', 'course' => 'Chess', 'weekday' => 6, 'startTime' => '14:00', 'endTime' => '15:00', 'instructorId' => '', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('club_class_sessions', ['sessionId' => 'SES-IA-1', 'course' => 'Piano', 'centre' => 'Iyana Test', 'date' => $day(-5), 'instructorId' => 'NGG-IA-GOOD', 'instructorName' => 'Grace Good', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('club_class_sessions', ['sessionId' => 'SES-IA-2', 'course' => 'Piano', 'centre' => 'Iyana Test', 'date' => $day(-60), 'instructorId' => 'NGG-IA-OLD', 'instructorName' => 'Ola Old', 'createdAt' => $now, 'updatedAt' => $now]);
+
+    $L = backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Iyana', 'pageSize' => 50]);
+    $by = []; foreach ($L['rows'] ?? [] as $r) $by[$r['volunteerId']] = $r;
+    chk('instructors · the roster lists them with classes, filing in 30 days and the last class filed',
+        !empty($L['ok']) && count($by) === 3 && $by['VOL-IA-GOOD']['classes'] === 1 && $by['VOL-IA-GOOD']['filed30'] === 1 && $by['VOL-IA-OLD']['lastFiled'] === $day(-60));
+    chk('instructors · a cleared, filing instructor with an Academy has no issues', $by['VOL-IA-GOOD']['issues'] === [] && $by['VOL-IA-GOOD']['state'] === 'active');
+    chk('instructors · each problem is named: not cleared, no Academy, no account, not on the timetable',
+        !array_diff(['safeguarding_pending', 'academy', 'no_account', 'no_classes'], $by['VOL-IA-BAD']['issues']));
+    chk('instructors · an expired check, a class with nothing filed in 30 days and an overdue review are named',
+        !array_diff(['safeguarding_expired', 'not_filing', 'review_overdue'], $by['VOL-IA-OLD']['issues']));
+    chk('instructors · the most issues sort first', ($L['rows'][0]['volunteerId'] ?? '') === 'VOL-IA-BAD');
+    chk('instructors · a class on the timetable with nobody to teach it is listed', (bool)array_filter($L['uncovered'], fn($s) => $s['slotId'] === 'TT-IA-3'));
+    chk('instructors · filtering by an issue is done above the page', (backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Iyana', 'issue' => 'safeguarding_expired'])['total'] ?? 0) === 1);
+    chk('instructors · "safeguarding" finds both who are not cleared and whose check expired', (backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Iyana', 'issue' => 'safeguarding'])['total'] ?? 0) === 2);
+    // The Academy, really passed (not waived), counts.
+    $req = academy_required_ids('instructor');
+    foreach ($req as $mod) db_insert('academy_passes', ['track' => 'instructor', 'personId' => 'NGG-IA-BADM', 'moduleId' => $mod, 'passedAt' => $now]);
+    db_update('volunteers', ['memberId' => 'NGG-IA-BADM'], ['volunteerId' => 'VOL-IA-BAD']);
+    $b2 = array_values(array_filter(backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Bayo'])['rows'], fn($r) => $r['volunteerId'] === 'VOL-IA-BAD'))[0] ?? [];
+    chk('instructors · an Academy passed module by module clears the Academy issue, and a linked account clears "no account"',
+        $b2 && !in_array('academy', $b2['issues'], true) && !in_array('no_account', $b2['issues'], true));
+
+    // One record.
+    $G = backend_dispatch('admin.instructors.get', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD']);
+    chk('instructors · one record: their classes, the sessions they filed, and the courses they may be given', !empty($G['ok']) && count($G['classes']) === 1 && count($G['sessions']) === 1 && in_array('Piano', $G['courseOptions'], true));
+    chk('instructors · dropping a course they still teach on the timetable is refused, naming it',
+        (backend_dispatch('admin.instructors.update', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'data' => ['courses' => ['Chess']]])['error'] ?? '') === 'course_has_classes');
+    chk('instructors · a course NGG does not teach is refused', (backend_dispatch('admin.instructors.update', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'data' => ['courses' => ['Piano', 'Basket weaving']]])['error'] ?? '') === 'bad_course');
+    $u = backend_dispatch('admin.instructors.update', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'data' => ['courses' => ['Piano', 'Chess'], 'safeguardingCheckedAt' => $today, 'safeguardingExpires' => $day(730), 'reviewDue' => $day(90)]]);
+    $o = db_row("SELECT * FROM volunteers WHERE volunteerId = 'VOL-IA-OLD'");
+    chk('instructors · courses and compliance dates are saved, and the change is on their record with who made it',
+        !empty($u['ok']) && json_decode($o['courses'], true) === ['Piano', 'Chess'] && $o['safeguardingExpires'] === $day(730)
+        && (bool)db_row("SELECT id FROM people_notes WHERE subjectId = 'VOL-IA-OLD' AND kind = 'change' AND actor = ? AND text LIKE '%Chess%'", [$ADM]));
+    chk('instructors · an expiry before the check is refused', (backend_dispatch('admin.instructors.update', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'data' => ['safeguardingCheckedAt' => $today, 'safeguardingExpires' => $day(-10)]])['error'] ?? '') === 'bad_date');
+
+    // Leave.
+    chk('instructors · leave needs a reason', (backend_dispatch('admin.instructors.leave', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-GOOD', 'from' => $today, 'until' => $day(14), 'reason' => ''])['error'] ?? '') === 'reason_required');
+    $lv = backend_dispatch('admin.instructors.leave', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-GOOD', 'from' => $today, 'until' => $day(14), 'reason' => 'Exams at university']);
+    $g2 = array_values(array_filter(backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Grace'])['rows'], fn($r) => $r['volunteerId'] === 'VOL-IA-GOOD'))[0] ?? [];
+    chk('instructors · on leave: shown as on leave, and the classes that need cover are named', !empty($lv['ok']) && count($lv['needCover']) === 1 && ($g2['state'] ?? '') === 'on_leave');
+    backend_dispatch('admin.instructors.leave', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-GOOD', 'clear' => true]);
+    chk('instructors · back from leave', db_row("SELECT leaveFrom FROM volunteers WHERE volunteerId = 'VOL-IA-GOOD'")['leaveFrom'] === '');
+
+    // Notes, reviews.
+    $n = backend_dispatch('admin.instructors.note', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-GOOD', 'kind' => 'review', 'text' => 'Strong term; children progressing on scales.', 'nextReview' => $day(120)]);
+    chk('instructors · a review goes on the record and sets the next review date', !empty($n['ok']) && db_row("SELECT reviewDue FROM volunteers WHERE volunteerId = 'VOL-IA-GOOD'")['reviewDue'] === $day(120)
+        && (bool)db_row("SELECT id FROM people_notes WHERE subjectId = 'VOL-IA-GOOD' AND kind = 'review'"));
+    chk('instructors · an unknown kind of note is refused', (backend_dispatch('admin.instructors.note', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-GOOD', 'kind' => 'gossip', 'text' => 'Hello there'])['error'] ?? '') === 'bad_kind');
+
+    // Offboarding.
+    chk('instructors · offboarding needs a reason', (backend_dispatch('admin.instructors.offboard', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'reason' => 'gone'])['error'] ?? '') === 'reason_required');
+    $off = backend_dispatch('admin.instructors.offboard', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'reason' => 'Moved to Abuja for work.']);
+    $o = db_row("SELECT * FROM volunteers WHERE volunteerId = 'VOL-IA-OLD'");
+    chk('instructors · offboarded: access ends (archived), the record stays with who, when and why, and their classes are taken off them for cover',
+        !empty($off['ok']) && $o['status'] === 'archived' && $o['offboardedBy'] === $ADM && $o['offboardReason'] === 'Moved to Abuja for work.'
+        && count($off['uncovered']) === 1 && db_row("SELECT instructorId FROM timetable_slots WHERE slotId = 'TT-IA-2'")['instructorId'] === ''
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'instructor.offboard' AND subject = 'VOL-IA-OLD'")['c'] === 1);
+    chk('instructors · an offboarded instructor is out of the default roster, shown under Offboarded, and raises no issues',
+        !array_filter(backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Ola'])['rows'], fn($r) => $r['volunteerId'] === 'VOL-IA-OLD')
+        && (($x = array_values(array_filter(backend_dispatch('admin.instructors.list', ['requesterId' => $ADM, 'q' => 'Ola', 'state' => 'offboarded'])['rows'], fn($r) => $r['volunteerId'] === 'VOL-IA-OLD'))[0] ?? null) && $x['issues'] === []));
+    chk('instructors · offboarding twice is refused', (backend_dispatch('admin.instructors.offboard', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'reason' => 'Again for the record'])['error'] ?? '') === 'already_offboarded');
+    $re = backend_dispatch('admin.instructors.reinstate', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD', 'reason' => 'Back in Lagos and teaching again.']);
+    chk('instructors · reinstated with a reason, on the record; their classes are not handed back by themselves',
+        !empty($re['ok']) && db_row("SELECT status FROM volunteers WHERE volunteerId = 'VOL-IA-OLD'")['status'] === 'active' && db_row("SELECT instructorId FROM timetable_slots WHERE slotId = 'TT-IA-2'")['instructorId'] === ''
+        && (bool)db_row("SELECT id FROM people_notes WHERE subjectId = 'VOL-IA-OLD' AND kind = 'reinstate'"));
+    chk('instructors · the whole record reads back, newest first, with the names of who wrote each line',
+        ($rec = backend_dispatch('admin.instructors.get', ['requesterId' => $ADM, 'volunteerId' => 'VOL-IA-OLD'])['record'] ?? []) && $rec[0]['kind'] === 'reinstate' && $rec[0]['actorName'] !== '');
+
+    // Who may.
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-IA-SCOPED'"); db_exec("DELETE FROM centres WHERE centreId = 'CEN-IA-OTHER'");
+    db_insert('centres', ['centreId' => 'CEN-IA-OTHER', 'name' => 'Other Test', 'code' => 'OTT', 'color' => '#654321', 'status' => 'active', 'programmes' => 'ngg', 'createdAt' => $now]);
+    // centreScope holds centre IDs.
+    db_insert('members', ['memberId' => 'NGG-IA-SCOPED', 'fullName' => 'Scoped Admin', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centreScope' => json_encode(['CEN-IA-OTHER']), 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('instructors · an admin limited to other centres neither sees nor changes them',
+        !array_filter(backend_dispatch('admin.instructors.list', ['requesterId' => 'NGG-IA-SCOPED', 'q' => 'Iyana'])['rows'] ?? [], fn($r) => str_starts_with($r['volunteerId'], 'VOL-IA-'))
+        && (backend_dispatch('admin.instructors.offboard', ['requesterId' => 'NGG-IA-SCOPED', 'volunteerId' => 'VOL-IA-GOOD', 'reason' => 'Should not be allowed'])['error'] ?? '') === 'out_of_scope');
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-IA-SCOPED'");
+})();
+
 // ── Paying ahead, and a child asking their parent ─────────────────────────────
 (function () {
     $now = now_iso();
@@ -38561,9 +38922,130 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM assignment_submissions WHERE assignmentId = ?", [$id]); db_exec("DELETE FROM assignments WHERE assignmentId IN (?, ?)", [$id, $id2]);
 })();
 
+// ── HOMEWORK-DONE-2026-11-19 START — marking prompt, returned work stays open, parents see homework ──
+(function () {
+    // 7 · The marking prompt: an instructor is told how many hand-ins wait — only the ones they may mark.
+    $ins = $GLOBALS['__asgx_ins']; $now = now_iso();
+    $aid = staff_assignments_save($ins + ['data' => ['title' => 'Mark me', 'track' => 'Coding', 'instructions' => 'Build it.', 'status' => 'published', 'proof' => 'text']])['assignmentId'] ?? '';
+    assignment_submit(['memberId' => 'ASGX-A', 'assignmentId' => $aid, 'text' => 'Mine.']);
+    assignment_submit(['memberId' => 'ASGX-C', 'assignmentId' => $aid, 'text' => 'Mine too.']);
+    // Out of reach: a member at another centre on an every-centre assignment, and a course that is not theirs.
+    foreach ([['ASG-HW-ALL', 'Coding', ''], ['ASG-HW-DES', 'Design', 'Egbeda']] as [$id, $tr, $ce])
+        db_insert('assignments', ['assignmentId' => $id, 'title' => $id, 'instructions' => 'x', 'track' => $tr, 'centre' => $ce, 'status' => 'published', 'points' => 10, 'proof' => 'text', 'createdBy' => 'admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('assignment_submissions', ['submissionId' => 'SUB-HW-FAR', 'assignmentId' => 'ASG-HW-ALL', 'memberId' => 'ASGX-FAR', 'answerText' => 'far', 'status' => 'submitted', 'submittedAt' => $now, 'createdAt' => $now]);
+    db_insert('assignment_submissions', ['submissionId' => 'SUB-HW-DES', 'assignmentId' => 'ASG-HW-DES', 'memberId' => 'ASGX-B', 'answerText' => 'des', 'status' => 'submitted', 'submittedAt' => $now, 'createdAt' => $now]);
+    db_exec("UPDATE assignment_submissions SET submittedAt = ? WHERE assignmentId = ? AND memberId = 'ASGX-A'", [gmdate('Y-m-d\TH:i:s\Z', time() - 9 * 86400 - 3600), $aid]);
+    $q = instructor_handins_queue($ins);
+    $gateOk = 0;
+    foreach (db_all("SELECT submissionId FROM assignment_submissions WHERE status = 'submitted' AND memberId LIKE 'ASGX-%'") as $r)
+        if (!empty(staff_assignment_submission_gate($ins + ['submissionId' => $r['submissionId']])['ok'])) $gateOk++;
+    chk('homework 7 · the queue counts exactly the hand-ins the instructor may open and mark (their course, their centre)', $q['count'] === 2 && $gateOk === 2);
+    chk('homework 7 · …and says how long the oldest has waited', $q['oldestDays'] === 9);
+    $t = instructor_today($ins);
+    $row = array_values(array_filter((array)($t['todo'] ?? []), fn($x) => $x['key'] === 'handins'))[0] ?? null;
+    chk('homework 7 · Today says "2 hand-ins to mark — oldest 9 days"', $row && str_contains($row['title'], '2 hand-ins to mark') && str_contains($row['title'], 'oldest 9 days'));
+    chk('homework 7 · …urgent once the oldest has waited a week', $row && $row['tone'] === 'danger');
+    db_exec("UPDATE assignment_submissions SET submittedAt = ? WHERE assignmentId = ? AND memberId = 'ASGX-A'", [gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 86400), $aid]);
+    $row = array_values(array_filter((array)(instructor_today($ins)['todo'] ?? []), fn($x) => $x['key'] === 'handins'))[0] ?? null;
+    chk('homework 7 · …and due, not urgent, before that', $row && $row['tone'] === 'warning');
+    // The duties pop-up and email read the same row, for an instructor who signs in with a member account.
+    db_insert('members', ['memberId' => 'ASGX-INSM', 'fullName' => 'Ola Instructor', 'email' => 'ola.ins@asgx.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'volunteer', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_exec("UPDATE volunteers SET memberId = 'ASGX-INSM' WHERE volunteerId = 'VOL-INS-26-ASGX'");
+    $d = array_values(array_filter(duties_for('ASGX-INSM'), fn($x) => $x['key'] === 'instructor:handins'))[0] ?? null;
+    chk('homework 7 · the instructor\'s duties carry the hand-ins, to the assignments screen', $d && $d['level'] === 'due');
+    // Past a week: the lead mentor of their centre is nudged, once per stuck hand-in.
+    db_insert('mentors', ['mentorId' => 'MEN-ASGX-LEAD', 'fullName' => 'Lead Asgx', 'email' => 'lead@asgx.example', 'status' => 'active', 'centre' => 'egbeda', 'rank' => 'lead', 'createdAt' => $now, 'updatedAt' => $now]);
+    $insM = ['memberId' => 'ASGX-INSM', 'fullName' => 'Ola Instructor'];
+    chk('homework 7 · no nudge to the lead while the oldest is under a week', duty_tell_handins_lead($insM) === false);
+    db_exec("UPDATE assignment_submissions SET submittedAt = ? WHERE assignmentId = ? AND memberId = 'ASGX-A'", [gmdate('Y-m-d\TH:i:s\Z', time() - 8 * 86400), $aid]);
+    $n1 = duty_tell_handins_lead($insM); $n2 = duty_tell_handins_lead($insM);
+    chk('homework 7 · past a week the instructor\'s lead is nudged, once', $n1 === true && $n2 === false
+        && (int)db_row("SELECT COUNT(*) c FROM mentor_nudges WHERE rule = 'J:handinsOverdue' AND mentorId = 'MEN-ASGX-LEAD'")['c'] === 1);
+    // Time-to-mark is recorded when it is marked.
+    db_exec("UPDATE assignment_submissions SET submittedAt = ? WHERE assignmentId = ? AND memberId = 'ASGX-C'", [gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 3600), $aid]);
+    $sidC = (string)db_row("SELECT submissionId FROM assignment_submissions WHERE assignmentId = ? AND memberId = 'ASGX-C'", [$aid])['submissionId'];
+    staff_assignment_grade($ins + ['submissionId' => $sidC, 'grade' => 7, 'feedback' => 'Nice work.']);
+    $mm = (int)db_row('SELECT markMinutes FROM assignment_submissions WHERE submissionId = ?', [$sidC])['markMinutes'];
+    chk('homework 7 · marking records time-to-mark, submission to mark', $mm >= 119 && $mm <= 121);
+    $ttm = admin_assignment_time_to_mark();
+    chk('homework 7 · …and the Control Room reads it back as hours', $ttm['marked'] >= 1 && $ttm['medianHours'] !== null);
+    chk('homework 7 · marked work leaves the queue', instructor_handins_queue($ins)['count'] === 1);
+    db_exec("DELETE FROM mentor_nudges WHERE rule = 'J:handinsOverdue'"); db_exec("DELETE FROM mentors WHERE mentorId = 'MEN-ASGX-LEAD'");
+    db_exec("DELETE FROM assignment_submissions WHERE submissionId IN ('SUB-HW-FAR', 'SUB-HW-DES')"); db_exec("DELETE FROM assignments WHERE assignmentId IN ('ASG-HW-ALL', 'ASG-HW-DES')");
+    db_exec("UPDATE volunteers SET memberId = '' WHERE volunteerId = 'VOL-INS-26-ASGX'"); db_exec("DELETE FROM member_state WHERE memberId = 'ASGX-INSM'");
+    $GLOBALS['__hw_aid'] = $aid;
+})();
+
+(function () {
+    // 8 · Returned work stays open: counted, reminded and due again on its resubmit date.
+    $ins = $GLOBALS['__asgx_ins']; $aid = $GLOBALS['__hw_aid'];
+    $sidA = (string)db_row("SELECT submissionId FROM assignment_submissions WHERE assignmentId = ? AND memberId = 'ASGX-A'", [$aid])['submissionId'];
+    chk('homework 8 · a resubmit date in the past is refused', (staff_assignment_return($ins + ['submissionId' => $sidA, 'feedback' => 'Add a title.', 'resubmitBy' => '2020-01-01'])['error'] ?? '') === 'date_past');
+    $r = staff_assignment_return($ins + ['submissionId' => $sidA, 'feedback' => 'Add a title.']);
+    $lagos = gmdate('Y-m-d', time() + 3600);
+    chk('homework 8 · returning it sets "resubmit by" — three days unless the marker says', ($r['resubmitBy'] ?? '') === gmdate('Y-m-d', strtotime($lagos . 'T12:00:00Z') + 3 * 86400));
+    chk('homework 8 · a returned hand-in is not "handed in"', !isset(sub_ids_for($aid)['ASGX-A']) && isset(sub_ids_for($aid, true)['ASGX-A']));
+    $today = member_today(['memberId' => 'ASGX-A']);
+    $todo = array_values(array_filter((array)($today['todo'] ?? []), fn($x) => $x['key'] === 'asg-' . $aid))[0] ?? null;
+    chk('homework 8 · it is back on the member\'s Today, to revise', $todo && str_contains($todo['title'], 'Revise') && $todo['tone'] === 'warning');
+    db_exec('UPDATE assignment_submissions SET resubmitBy = ? WHERE submissionId = ?', [gmdate('Y-m-d', time() - 2 * 86400), $sidA]);
+    $todo = array_values(array_filter((array)(member_today(['memberId' => 'ASGX-A'])['todo'] ?? []), fn($x) => $x['key'] === 'asg-' . $aid))[0] ?? null;
+    chk('homework 8 · past its resubmit date it is overdue, like work never handed in', $todo && $todo['tone'] === 'danger' && str_contains($todo['subtitle'], 'Overdue'));
+    $dut = array_values(array_filter(duties_for('ASGX-A'), fn($x) => $x['key'] === 'member:asg-' . $aid))[0] ?? null;
+    chk('homework 8 · …so it is in the duties pop-up and email, urgent', $dut && $dut['level'] === 'urgent');
+    $rem = fn() => (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'ASGX-A' AND title = 'Reminder: Mark me'")['c'];
+    $before = $rem(); $day = strtotime(gmdate('Y-m-d') . 'T10:00:00Z');
+    assignment_due_reminders($day); assignment_due_reminders($day + 3600);
+    chk('homework 8 · the reminder job reminds returned work past its date, once', $rem() === $before + 1);
+    $rm = staff_assignments_remind($ins + ['assignmentId' => $aid, 'force' => true]);
+    chk('homework 8 · the desk\'s "remind" reaches the member whose work came back', (bool)db_row("SELECT 1 FROM assignment_notices WHERE assignmentId = ? AND memberId = 'ASGX-A' AND kind LIKE 'rs_over:%'", [$aid]) && ($rm['reminded'] ?? 0) >= 1);
+    assignment_submit(['memberId' => 'ASGX-A', 'assignmentId' => $aid, 'text' => 'Mine, with a title.']);
+    chk('homework 8 · handed in again, it is done: off Today and back in the marking queue', isset(sub_ids_for($aid)['ASGX-A'])
+        && !array_filter((array)(member_today(['memberId' => 'ASGX-A'])['todo'] ?? []), fn($x) => $x['key'] === 'asg-' . $aid) && instructor_handins_queue($ins)['count'] === 1);
+})();
+
+(function () {
+    // 9 · Parents see the week's homework, for their own children only, and are told once when it is overdue.
+    $ins = $GLOBALS['__asgx_ins']; $now = now_iso(); $GLOBALS['__mail_sink'] = [];
+    db_insert('guardians', ['guardianId' => 'G-ASGX-1', 'email' => 'mum.a@asgx.example', 'fullName' => 'Mum A', 'status' => 'active', 'sessionEpoch' => 1, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'G-ASGX-2', 'email' => 'dad.c@asgx.example', 'fullName' => 'Dad C', 'status' => 'active', 'sessionEpoch' => 1, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'GW-ASGX-A', 'guardianId' => 'G-ASGX-1', 'memberId' => 'ASGX-A', 'relationship' => 'parent', 'status' => 'active', 'via' => 'test', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'GW-ASGX-C', 'guardianId' => 'G-ASGX-2', 'memberId' => 'ASGX-C', 'relationship' => 'parent', 'status' => 'active', 'via' => 'test', 'createdAt' => $now, 'updatedAt' => $now]);
+    $day = strtotime(gmdate('Y-m-d') . 'T10:00:00Z');   // 11:00 Lagos
+    $mk = fn($title, $dueTs) => staff_assignments_save($ins + ['data' => ['title' => $title, 'track' => 'Coding', 'instructions' => 'Do it.', 'status' => 'published', 'proof' => 'text', 'points' => 10,
+        'dueAt' => gmdate('Y-m-d\TH:i:s\Z', $dueTs)]])['assignmentId'] ?? '';
+    $late = $mk('Late one', $day - 5 * 3600);
+    $marked = $mk('Marked one', time() + 3600);
+    assignment_submit(['memberId' => 'ASGX-A', 'assignmentId' => $marked, 'text' => 'A PRIVATE ANSWER']);
+    staff_assignment_grade($ins + ['submissionId' => (string)db_row("SELECT submissionId FROM assignment_submissions WHERE assignmentId = ? AND memberId = 'ASGX-A'", [$marked])['submissionId'], 'grade' => 9, 'feedback' => 'Well argued.']);
+    $w = family_ward(['guardianId' => 'G-ASGX-1', 'linkId' => 'GW-ASGX-A']);
+    $hw = array_column($w['homework']['items'] ?? [], null, 'assignmentId');
+    chk('homework 9 · the family sees this week\'s homework: overdue and marked', ($hw[$late]['state'] ?? '') === 'overdue' && ($hw[$marked]['state'] ?? '') === 'marked');
+    chk('homework 9 · …with the mark and the feedback once it is marked', ($hw[$marked]['mark'] ?? null) === 9 && ($hw[$marked]['outOf'] ?? null) === 10 && ($hw[$marked]['feedback'] ?? '') === 'Well argued.');
+    chk('homework 9 · …and never the child\'s own answer', !str_contains(json_encode($w['homework']), 'PRIVATE ANSWER'));
+    chk('homework 9 · a guardian cannot open another family\'s child', (family_ward(['guardianId' => 'G-ASGX-1', 'linkId' => 'GW-ASGX-C'])['error'] ?? '') === 'not_found');
+    $mailsTo = fn($to) => count(array_filter($GLOBALS['__mail_sink'], fn($m) => ($m['to'] ?? '') === $to && str_contains((string)$m['subject'], 'homework is overdue')));
+    // Quiet hours: 22:00 Lagos tells nobody's family, and does not spend the claim.
+    $night = strtotime(gmdate('Y-m-d') . 'T21:00:00Z');
+    $r = assignment_due_reminders($night);
+    chk('homework 9 · in the 21:00–07:00 quiet hours the family is not messaged', !empty($r['quiet']) && $mailsTo('mum.a@asgx.example') === 0
+        && !db_row("SELECT 1 FROM assignment_notices WHERE assignmentId = ? AND kind = 'family'", [$late]));
+    assignment_due_reminders($day); assignment_due_reminders($day + 3600);
+    chk('homework 9 · overdue: the guardian who takes alerts is told, once per piece of work', $mailsTo('mum.a@asgx.example') === 1);
+    chk('homework 9 · …in their family inbox as well', (int)db_row("SELECT COUNT(*) c FROM guardian_notices WHERE guardianId = 'G-ASGX-1' AND kind = 'homework'")['c'] === 1);
+    $mail = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => ($m['to'] ?? '') === 'mum.a@asgx.example'))[0] ?? ['html' => ''];
+    chk('homework 9 · …naming the work and the date, nothing else about the child', str_contains($mail['html'], 'Late one') && !str_contains($mail['html'], 'asgx.example') && !str_contains($mail['html'], 'ASGX-A Name'));
+    chk('homework 9 · another child\'s guardian hears only about their own child', count(array_filter($GLOBALS['__mail_sink'], fn($m) => ($m['to'] ?? '') === 'dad.c@asgx.example' && str_contains($m['html'], 'ASGX-A'))) === 0);
+    foreach (['guardian_wards' => 'linkId', 'guardians' => 'guardianId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'G%-ASGX-%'");
+    db_exec("DELETE FROM guardian_notices WHERE guardianId LIKE 'G-ASGX-%'");
+    db_exec("DELETE FROM assignment_submissions WHERE assignmentId IN (?, ?, ?)", [$late, $marked, $GLOBALS['__hw_aid']]); db_exec("DELETE FROM assignments WHERE assignmentId IN (?, ?, ?)", [$late, $marked, $GLOBALS['__hw_aid']]);
+    unset($GLOBALS['__mail_sink']);
+})();
+// ── HOMEWORK-DONE-2026-11-19 END ──
+
 (function () {
     $ins = $GLOBALS['__asgx_ins']; $aid = $GLOBALS['__asgx_aid'];
-    foreach (['assignment_submissions' => 'memberId', 'assignment_notices' => 'memberId', 'notifications' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'ASGX-%'");
+    foreach (['assignment_submissions' => 'memberId', 'assignment_notices' => 'memberId', 'notifications' => 'memberId', 'member_state' => 'memberId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'ASGX-%'");
     db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$aid]);
     db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-INS-26-ASGX'");
 })();

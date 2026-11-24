@@ -292,6 +292,8 @@ function AsdMark({ desk, s, a, canMark, ai, onDone }) {
   const [fb, setFb] = React.useState(s.feedback || "");
   const [busy, setBusy] = React.useState("");
   const [why, setWhy] = React.useState("");
+  // Returned work is open again, due on this date (blank: the server's default, three days).
+  const [by, setBy] = React.useState(() => new Date(Date.now() + 3 * 86400000 + 3600000).toISOString().slice(0, 10));
   const suggest = async () => {
     setBusy("ai");
     try { const r = await desk.suggest(s.submissionId); setGrade(String(r.grade)); setFb(r.feedback || ""); setWhy(r.confidence === "high" ? "AI suggestion — check it, then save." : "AI suggestion, low confidence — read the work closely."); }
@@ -308,7 +310,7 @@ function AsdMark({ desk, s, a, canMark, ai, onDone }) {
   const giveBack = async () => {
     if (!fb.trim()) { setWhy("Say what to change before you return it."); return; }
     setBusy("ret");
-    try { await desk.giveBack(s.submissionId, fb); toast.success("Returned for changes.", s.memberName); onDone(); }
+    try { const r = await desk.giveBack(s.submissionId, fb, by); toast.success("Returned for changes · hand in again by " + ((r && r.resubmitBy) || by) + ".", s.memberName); onDone(); }
     catch (e) { toast.error(asdErr(e), "Not returned"); } finally { setBusy(""); }
   };
   return (
@@ -328,6 +330,7 @@ function AsdMark({ desk, s, a, canMark, ai, onDone }) {
           <label className="asd-field"><span>Mark (out of {a.points})</span><input className="asd-input" type="number" min="0" max={a.points} value={grade} onChange={e => setGrade(e.target.value)}/></label>
           <label className="asd-field is-span2"><span>Feedback to {String(s.memberName || "").split(" ")[0] || "them"}</span><textarea className="asd-input is-area" rows={3} value={fb} maxLength={2000} onChange={e => setFb(e.target.value)}/></label>
         </div>
+        <label className="asd-field"><span>If you return it: hand in again by</span><input className="asd-input" type="date" value={by} min={new Date(Date.now() + 3600000).toISOString().slice(0, 10)} onChange={e => setBy(e.target.value)}/></label>
         {why ? <p className="asd-hint" role="status">{why}</p> : null}
         <div className="asd-inline">
           <button type="button" className="asd-btn is-primary" disabled={!!busy} onClick={mark}>{busy === "mark" ? "Saving…" : "Save mark"}</button>

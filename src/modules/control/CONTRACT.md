@@ -66,7 +66,7 @@ themselves (§3). Never set widths.
   server: `{ cols, server: { fetch: async ({ q, filters, sort, page, pageSize }) => ({ rows, total }), sortKeys: { [colIndex]: "key" } }, filters: [{ id, l, opts: [{ v, l, n }] }], reloadKey, selectAllMatching?: async ({ q, filters }) => keys }`.
   `cols`: strings (`"#Owed"` = numeric, right-aligned) or `{ l, num?, wrap?, sort?: false }`.
   Row: `{ key, cells: [cell], open?: () => ctx.drawer(…) }`. Cells: `{ k: "person", t, s, photo }`,
-  `{ k: "status", t, tone }`, `{ k: "progress", pct, t }`, `{ k: "mono", t }`, `{ k: "num", t, v }`
+  `{ k: "status", t, tone }`, `{ k: "progress", pct, t, tone? }` (tone ok|warn|bad overrides the colour the percentage would give), `{ k: "mono", t }`, `{ k: "num", t, v }`
   (`v` = the number to sort by), `{ k: "strong", t, s }`, `{ k: "text", t, s }`.
   Bulk: `[{ l, run: async (keys, rows) => false|any, max }]` — read the count BEFORE confirming,
   report per-row verdicts (partial ≠ success), use the server's bulk op where one exists.
