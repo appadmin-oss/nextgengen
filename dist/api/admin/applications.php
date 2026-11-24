@@ -10,6 +10,10 @@ if ($method === 'GET') {
     $act = (string)($b['action'] ?? '');
     if ($act === 'convert') {
         $res = gs_call('admin.application.convert', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'startDate' => (string)($b['startDate'] ?? ''), 'centre' => (string)($b['centre'] ?? ''), 'ip' => client_ip()]);
+    } elseif ($act === 'centreOptions') {
+        $res = gs_call('admin.application.centre_options', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0]);
+    } elseif ($act === 'offerCentre') {
+        $res = gs_call('admin.application.offer_centre', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'centre' => (string)($b['centre'] ?? ''), 'note' => (string)($b['note'] ?? ''), 'ip' => client_ip()]);
     } elseif ($act === 'update') {
         $res = gs_call('admin.application.update', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'data' => $b['data'] ?? [], 'ip' => client_ip()]);
     } elseif ($act === 'message') {

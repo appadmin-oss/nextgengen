@@ -496,12 +496,20 @@ so "who suspended forty people on Tuesday" has a readable answer.
 
 Control Room → Members → **Registration** (`people`). Every NGG member has a
 registration checklist; a member accepted from an application gets theirs at
-once. A named **supervisor** at the member's centre helps them through it, and
-the member and their guardians see how far along they are.
+once. A named **helper** helps them through it, and the member and their
+guardians see how far along they are.
 
-**It follows the NGG entry steps** — the card NGG hands a family: *Enquiry ·
-Orientation · Payment · Submit documents · Online registration · ID card · Attend
-lectures.* Every item sits in one step, and the checklist reads in that order.
+**The helper is chosen by itself** (owner, 24 Nov 2026): the child's **mentor**,
+from the moment they have one; until then, the best person seen at their centre
+(check-ins, the desk rota, the timetable, with room for more). The list says
+*Their mentor*, *Chosen automatically* or *Chosen by staff*. A helper you choose
+by hand stays until you change it. The family's reminders (email and WhatsApp)
+and the alerts to the centre's staff run whoever helps.
+
+**It follows the entry steps in the order a family does them** (owner, 24 Nov
+2026): *Online registration · Payment* (both from home) · *Orientation* (at the
+centre) · *Submit documents · ID card* (last), then *Attend lectures.* Every item
+sits in one step, and the checklist reads in that order.
 Enquiry is behind the family before the checklist exists (the application at
 /join). **Attend lectures is not an item anyone ticks: the day the last item is
 done is the day the member resumes.** That date is recorded once (*Resumed* on
@@ -510,10 +518,10 @@ reopened later; the family, the member and the supervisor are told that day.
 
 | Step | Items on every checklist by default |
 |---|---|
-| Orientation | **Orientation attended** — at the centre, covering the policies, the membership fee, the monthly commitment fee and the NGG T-shirt (a note of who came). |
-| Payment | **Joining fees paid** — the joining invoice (membership fee and first month's commitment fee), while fees are switched on. |
-| Submit documents | **File handed in**; **Passport photograph** (on the record); **Membership Agreement (MoU) handed in** (see below); **Latest school report card** (a photo or scan, dated within 400 days); **Personal timetable on the site** — the member's school week entered at /timetable, signed in as them, with lessons on at least three school days. |
 | Online registration | Guardian linked, consents, date of birth, school, emergency contact, courses placed. |
+| Payment | **Joining fees paid** — the joining invoice (membership fee and first month's commitment fee), while fees are switched on. |
+| Orientation | **Orientation attended** — at the centre, covering the policies, the membership fee, the monthly commitment fee and the NGG T-shirt (a note of who came). |
+| Submit documents | **File handed in**; **Passport photograph** (on the record); **Membership Agreement (MoU) handed in** (see below); **Latest school report card** (a photo or scan, dated within 400 days); **Personal timetable on the site** — the member's week entered at /timetable, signed in as them, on at least three days. |
 | ID card | **ID card printed** (a proof does not count). |
 
 Orientation, the file and the report card are ordinary items staff added: you
@@ -1064,7 +1072,9 @@ says what joining costs before anybody applies.
 
 | You want to… | Do this |
 |---|---|
-| Accept a child | **Accept & create member**: the start date, and the centre when the application names none. Each child is their own member, even when brothers and sisters applied from one parent's email. A declined application, or a child who is now outside 10 to 17, is refused with the reason. Pressing it twice, or in two tabs at once, makes **one** member: the second press says *already had a record* and names them. The application remembers the member it became. |
+| Accept a child | **Accept**: the start date, and the centre when the application names none. The family gets one email: accepted, with the agreement to sign and the joining fee to pay; the place is **confirmed**, and the welcome with the sign-in sent, when both are done (see *Accepted, then confirmed*). |
+| Their centre is full | **Offer another centre**: the centres with room, nearest first, with the distance and the places left. The family answers from the email with one tap: **yes** accepts the child there at once; **no** puts the application on the waiting list for the centre they chose. The offer is held for 14 days, and is answered once. |
+| Siblings, and pressing twice | Each child is their own member, even when brothers and sisters applied from one parent's email. A declined application, or a child who is now outside 10 to 17, is refused with the reason. Pressing it twice, or in two tabs at once, makes **one** member: the second press says *already had a record* and names them. The application remembers the member it became. |
 | A converted child | Cannot be **waitlisted or rejected** from the application (*already a member*): that used to send the family a refusal after their welcome. Change their membership on the member record. |
 | Put a child on the waiting list | **Waitlist**. The family is emailed and the main parent is texted. The application stays in the inbox, marked *Waitlisted*, and you accept it from there when a place opens. |
 | Decline | **Reject**, with an optional line the family reads in the email and text. |
@@ -1155,11 +1165,26 @@ signatories, VAT and days to pay.
 - VAT is *Exempt* by default. At 7.5% the VAT is shown inside the amount
   charged, so the total stays what the account charged.
 
+### Accepted, then confirmed
+
+Owner, 24 Nov 2026. A child is **accepted** by staff, at a centre, before anything
+is paid. The family then has two steps, in either order, from one email:
+
+1. **Sign the Membership Agreement** online (online members have no agreement), and
+2. **Pay the joining fee** (nothing to pay while membership fees are off).
+
+The moment both are done the place is **confirmed**, by itself: the *You're in*
+welcome goes, with the member number, the set-a-password link and what happens
+next (orientation with the inked agreement, the timetable, the family app). Paid
+but not signed, the receipt says the one step left instead of "fully enrolled".
+Members → Registration shows *Accepted · to sign and pay* until then. A member who
+joined before this was welcomed long ago and is never welcomed again.
+
 ### Joining fees: the membership invoice
 
 Nothing is paid until a child is **accepted**. In **Inbox → Applications**,
-*Accept & create member* asks for the **start date**, then creates the member
-and emails the family **one invoice**:
+*Accept* asks for the **start date**, then creates the member and emails the
+family **once** — accepted, with the agreement to sign and **one invoice** to pay:
 
 - the **membership fee** (Money → Dues & arrears → membership fee), and
 - the **commitment fee** for the first month, charged **only for the meeting
@@ -5423,8 +5448,9 @@ a storage outage.
 - **Not for online members.** Members whose centre is an online one have different terms: this agreement is never
   sent to them, they are not listed under *Not started*, and it is not on their registration checklist.
 
-- **It starts by itself** when you press *Accept & create member* on an NGG application: the family gets the
-  welcome email and, after it, a private link to read and sign. For members who joined before, press
+- **It starts by itself** when you press *Accept* on an NGG application: the family's one accepted email
+  carries the private link to read and sign, beside the joining fee to pay. Signed online, the page shows the fee
+  still to pay with a *Pay now* button. For members who joined before, press
   *Send to N members without one* (or select some under *Not started* and choose *Send the agreement*).
 - **The family** reads each part as a short summary with the full wording a tap away, answers five quick
   questions (a wrong answer shows what the agreement says; they try again — nobody is locked out), confirms

@@ -9959,6 +9959,12 @@ a.mlb-chip { display: inline-flex; align-items: center; min-height: 32px; text-d
 .mou-error { background: #fbe3e3; color: #9b1c22; border-radius: var(--c-r-sm); padding: 10px 14px; margin: 0; font-weight: 600; }
 .mou-err p { color: var(--ink-700); }
 .mou-done { display: flex; flex-direction: column; gap: 12px; }
+/* Accepted, then confirmed: the fee still to pay, said first, with its button (page-mou.jsx MouDone). */
+.mou-pay { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; border-radius: var(--c-r-card, 16px); background: var(--cream-100); border: 1.5px solid var(--gold-500, #c99a1e); }
+.mou-pay b { color: var(--navy-900); font-size: 17px; }
+.mou-pay span { color: var(--ink-700); line-height: 1.5; }
+.mou-pay .mou-btn { align-self: flex-start; }
+.mou-pay.is-done { border-color: #1f7a4d; background: #e8f5ee; }
 .mou-award { margin: 0 0 16px; padding: 16px 18px; border: 1.5px solid var(--gold-500, #c99a1e); border-radius: var(--c-r-card, 16px); background: var(--cream-100); display: flex; flex-direction: column; gap: 4px; }
 .mou-award-v { font: 800 30px/1.1 var(--font-display, var(--font-body)); color: var(--navy-900); }
 .mou-award p { margin: 0; line-height: 1.5; color: var(--ink-700); }

@@ -7687,3 +7687,36 @@ the existing Kapso integration (domain/kapso.php), not through Make: the site al
   photo → kept via `photo_store_put` and recorded as a `family_sent` submission; STOP/START → `whatsapp_optout`
   (migration 241). A button for a child is honoured only from a number that child's reminder went to.
 - Tests: PHP "whatsapp ·" (13), each core rule proven to fail when removed.
+
+## 2026-11-24 — Accepted, then confirmed; a nearer centre offered; the helper chosen by itself
+
+Owner: families were getting the welcome and the agreement "before they are even accepted"; the child "has to be
+accepted before the fee is paid"; "when a centre is no longer accepting, they can suggest a new closer one"; the
+helper "should be the child's mentor", automated; and the entry steps in the order a family does them.
+
+- **Accept** (was *Accept & create member*) sends ONE email (`ngg_accepted_send`): accepted, with the agreement to
+  sign and the joining fee to pay. No welcome, no separate agreement email, no separate invoice email.
+- **Confirmed** by itself when every step that applies is done (`ngg_confirm_if_ready`): agreement signed
+  (`clientSignedAt`; not for online members), joining invoice paid (not while fees are off). Called from
+  `public_mou_sign`, `admin_mou_paper` (a paper-only signing), `membership_settle` (before the receipt, which says
+  "one step left" when unsigned) and at acceptance. Then `ngg_welcome_send` and a push. Once, by a conditional
+  UPDATE. Migration 242: `reg_checklists.confirmWait` (1 only for children accepted this way, so no row is
+  rewritten and nothing needs a MySQL data fixup) and `confirmedAt`. The MoU page returns `place` (`mou_place_public`)
+  and shows *Step 2 of 2: pay* with the pay link.
+- **Offer another centre**: `admin.application.centre_options` (active NGG centres in scope with room, nearest first
+  by `geo_distance_m`; Summer-only and full centres left out) and `admin.application.offer_centre` (email with ONE
+  link; token stored hashed in `applications.offerTokenHash`, migration 242). The family's page,
+  `api/public/centre-offer.php`, is two buttons in a POST form (no script) so a mail scanner that follows the link
+  answers nothing; CSRF-exempt because the token is the proof. "Yes" runs `app_convert` as the staff member who
+  offered (their rights read live through `admin_cap_gate`); "Wait" → waitlist. Held 14 days (`APP_OFFER_DAYS`);
+  answered once. `admin_application_convert` is now the gate plus `app_convert`.
+- **The helper** (`rcl_auto_helpers`): the child's mentor wins (`assignedBy = 'auto-mentor'`); else the top present
+  candidate with room (`'auto'`); a helper staff chose (any other `assignedBy`) stays. The list's `supervisorWhy`
+  (mentor / seen / staff) says which — a candidate whose ROLE is mentor is not the child's mentor, and the first
+  screen said so wrongly until the browser suite caught it. Runs at `rcl_start`, in `rcl_tick`, and on `admin_assign_mentor`.
+- **Steps**: `RCL_STEPS` = online, payment, orientation, documents, idcard.
+- Tests: PHP "accept ·", "centre offer ·" (11), "confirm ·" (8), "helper ·" (4), and the onboarding/pay checks
+  rewritten for the new order. Mutations checked: removing the confirmWait guard and the mentor preference each
+  fail their test. The answer-once claim guards concurrent taps; a sequential second tap is also refused by
+  `app_offer_by_token`, so no sequential test can tell the claim's absence.
+

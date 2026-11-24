@@ -302,6 +302,15 @@ function mou_parties_public(array $r): array {
 
 /* ── The family's page (/mou/<token>) ──────────────────────────────────── */
 
+/** Where the child's place stands, for the family's page: the fee still to pay (with its link), and whether it is confirmed. */
+function mou_place_public(array $m, array $conf = []): array {
+    if (!function_exists('ngg_confirm_state') || !member_is_ngg($m)) return [];
+    $c = db_row('SELECT confirmWait, confirmedAt FROM reg_checklists WHERE memberId = ? LIMIT 1', [(string)$m['memberId']]);
+    $confirmed = !empty($conf['confirmed']) || !$c || (int)$c['confirmWait'] !== 1 || (string)$c['confirmedAt'] !== '';
+    $st = $confirmed ? ['pay' => null] : ngg_confirm_state($m);
+    return ['place' => ['confirmed' => $confirmed, 'pay' => $st['pay'] ?? null]];
+}
+
 /** public.mou.get — the agreement to read, the questions, the details to confirm, and where it stands. */
 function public_mou_get(array $p): array {
     [$r, $no] = mou_by_token((string)($p['token'] ?? '')); if ($no) return $no;
@@ -310,7 +319,7 @@ function public_mou_get(array $p): array {
     if ((string)$r['viewedAt'] === '') db_update('mou_agreements', ['viewedAt' => now_iso()], ['id' => (int)$r['id']]);
     $fig = json_decode((string)$r['termsJson'], true) ?: mou_figures();
     $pre = json_decode((string)$r['prefillJson'], true) ?: mou_prefill($m);
-    return ['ok' => true, 'status' => (string)$r['status'], 'version' => (string)$r['version'],
+    return ['ok' => true, 'status' => (string)$r['status'], 'version' => (string)$r['version']] + mou_place_public($m) + [
             'member' => ['first' => explode(' ', trim((string)$m['fullName']))[0], 'fullName' => (string)$m['fullName'], 'centre' => (string)($m['centre'] ?? ''), 'displayId' => (string)($m['displayId'] ?? '')],
             'org' => MOU_ORG, 'contact' => MOU_CONTACT, 'sections' => mou_terms($fig), 'scholarship' => mou_scholarship($fig + mou_figures()),
             'quiz' => array_map(static fn($q) => $q, mou_quiz()), 'prefill' => $pre,
@@ -411,7 +420,8 @@ function public_mou_sign(array $p): array {
         'what' => 'Membership Agreement signed by the family — countersign' . ($wit ? '' : ' and witness')]);
     $row = db_row('SELECT * FROM mou_agreements WHERE id = ?', [(int)$r['id']]);
     $sent = mou_mail_copy($row, $m, $docToken, false, [$fam['email']]);
-    return ['ok' => true, 'status' => 'awaiting_ngg', 'copyTo' => $sent, 'docUrl' => mou_origin() . '/api/public/mou.php?doc=' . $docToken, 'parties' => mou_parties_public($row),
+    $conf = function_exists('ngg_confirm_if_ready') ? ngg_confirm_if_ready((string)$m['memberId']) : [];
+    return ['ok' => true, 'status' => 'awaiting_ngg', 'copyTo' => $sent] + mou_place_public($m, $conf) + [ 'docUrl' => mou_origin() . '/api/public/mou.php?doc=' . $docToken, 'parties' => mou_parties_public($row),
             // What happens next, said once and plainly: print, sign in ink, bring it in.
             'next' => ['print' => true, 'centre' => (string)($m['centre'] ?? ''), 'checks' => array_values(MOU_PAPER_CHECKS)]];
 }
@@ -589,6 +599,8 @@ function admin_mou_paper(array $p): array {
     db_update('mou_agreements', $upd, ['id' => (int)$r['id']]);
     audit('mou.paper_received', (string)$me['memberId'], (string)$m['memberId'], ['mouId' => (string)$r['mouId'], 'via' => $st === 'awaiting_family' ? 'paper' : 'online', 'centre' => $centre, 'width' => $w, 'height' => $h], (string)($p['ip'] ?? ''));
     if (function_exists('rcl_refresh')) rcl_refresh([(string)$m['memberId']]);
+    // Signed on paper at the centre: that is the agreement signed, so a family that has paid is confirmed now.
+    if ($st === 'awaiting_family' && function_exists('ngg_confirm_if_ready')) ngg_confirm_if_ready((string)$m['memberId']);
     $row = db_row('SELECT * FROM mou_agreements WHERE id = ?', [(int)$r['id']]);
     return ['ok' => true, 'status' => (string)$row['status'], 'paper' => mou_paper_public($row), 'canCountersign' => (string)$row['status'] === 'awaiting_ngg'];
 }

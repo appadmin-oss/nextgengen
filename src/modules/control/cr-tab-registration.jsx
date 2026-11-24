@@ -12,8 +12,8 @@
    Summer School check-in desks (CR_ALIASES) and must keep resolving. */
 
 const CR_RCL_FILTERS = [["open", "Still registering"], ["followup", "Needs a follow-up"], ["unassigned", "Nobody helping yet"], ["mine", "Mine to help"], ["done", "Registered"], ["all", "Everyone"]];
-/* The entry steps, in the order of the card NGG hands a family (domain/registration-checklist.php RCL_STEPS). */
-const CR_RCL_STEPS = [["orientation", "Orientation"], ["payment", "Payment"], ["documents", "Submit documents"], ["online", "Online registration"], ["idcard", "ID card"]];
+/* The entry steps, in the order a family does them (domain/registration-checklist.php RCL_STEPS). */
+const CR_RCL_STEPS = [["online", "Online registration"], ["payment", "Payment"], ["orientation", "Orientation"], ["documents", "Submit documents"], ["idcard", "ID card"]];
 const CR_RCL_EVIDENCE = [["photo", "A photo"], ["document", "A document"], ["none", "A note, no file"]];
 const CR_RCL_ERR = {
   out_of_scope: "not in a centre you administer", not_found: "not found", own_account: "your own account", not_a_member: "not an NGG member",
@@ -90,7 +90,8 @@ async function crRclOpen(ctx, memberId) {
   const fus = d.followups || [];
   ctx.drawer({
     title: m.fullName, name: m.fullName, photo: m.photoUrl || null, sub: [m.displayId || m.memberId, m.centre].filter(Boolean).join(" · "),
-    stats: [["Done", c.done + " of " + c.total], ["Helping", c.supervisorName || "Nobody yet"],
+    stats: [["Place", c.confirmed === false ? "Accepted · waiting to sign and pay" : "Confirmed"], ["Done", c.done + " of " + c.total],
+      ["Helping", c.supervisorName ? c.supervisorName + (c.supervisorWhy === "mentor" ? " · their mentor" : c.supervisorAuto ? " · chosen automatically" : "") : "Nobody yet"],
       c.resumedOn ? ["Resumed", crDate(c.resumedOn)] : ["Next follow-up", c.nextFollowUpOn ? crDate(c.nextFollowUpOn) + (c.nextFollowUpOn <= (d.today || "") ? " · due" : "") : "Not set"]],
     sections: [
       { h: "Entry steps", text: (c.steps || []).map(x => (x.complete ? "✓ " : "· ") + x.label + " — " + x.done + " of " + x.total).join("\n")
@@ -232,8 +233,8 @@ function crRclServer() {
         { k: "person", t: x.fullName, s: [x.displayId || x.memberId, x.centre].filter(Boolean).join(" · "), photo: x.photoUrl || null },
         { k: "progress", pct: x.total ? Math.round(x.done / x.total * 100) : 0, t: x.done + " of " + x.total },
         { k: "text", t: (x.left || []).slice(0, 3).join(", ") + ((x.left || []).length > 3 ? " and " + ((x.left || []).length - 3) + " more" : "") || "Nothing left" },
-        { k: "text", t: x.supervisorName || "Nobody yet", s: x.supervisorName ? "Since " + crDate(x.assignedAt) : "" },
-        { k: "status", t: x.status === "done" ? (x.resumedOn ? "Resumed " + crDate(x.resumedOn) : "Registered") : x.stalled ? "Stalled · follow up" : x.supervisorId ? "In progress" : "Needs a supervisor",
+        { k: "text", t: x.supervisorName || "Nobody yet", s: x.supervisorName ? (x.supervisorWhy === "mentor" ? "Their mentor" : x.supervisorAuto ? "Chosen automatically" : "Chosen by staff") + " · since " + crDate(x.assignedAt) : "" },
+        { k: "status", t: x.status === "done" ? (x.resumedOn ? "Resumed " + crDate(x.resumedOn) : "Registered") : x.confirmed === false ? "Accepted · to sign and pay" : x.stalled ? "Stalled · follow up" : x.supervisorId ? "In progress" : "Needs a supervisor",
           tone: x.status === "done" ? "ok" : x.stalled || !x.supervisorId ? "bad" : "warn", s: x.status !== "done" && x.nextFollowUpOn ? "Follow up " + crDate(x.nextFollowUpOn) : "" },
       ] })) };
     },
@@ -273,7 +274,7 @@ Object.assign(CR_TAB_DEFS, {
           sub: "Select them and choose “Assign a supervisor”. The suggestions are people actually seen at their centre, with the reasons." } : null,
         c.followup ? { type: "note", span: 6, icon: "phone-call", tone: "warn", text: crPlural(c.followup, "registration") + " need" + (c.followup === 1 ? "s" : "") + " a follow-up today.",
           sub: "Show “Needs a follow-up”, open each, call or message the family, and log what they said with the next day to try." } : null,
-        { type: "table", span: 6, title: "Members registering", sub: "The entry steps: orientation, payment, documents, online registration, ID card. A member resumes lectures on the day the last one is done.", server: d.server,
+        { type: "table", span: 6, title: "Members registering", sub: "The entry steps: online registration, payment, orientation, documents, ID card. A member resumes lectures on the day the last one is done.", server: d.server,
           search: "Name, ID or supervisor", cols: [{ l: "Member" }, { l: "Progress" }, { l: "What is left", wrap: true, sort: false }, { l: "Helping", sort: false }, { l: "Status", sort: false }],
           filtersInit: { status: c.unassigned ? "unassigned" : "open" },
           filters: [{ id: "status", l: "Show", opts: CR_RCL_FILTERS.map(f => ({ v: f[0], l: f[1], n: c[f[0]] })) }],

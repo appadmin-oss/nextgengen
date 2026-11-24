@@ -270,8 +270,17 @@ function MouDone({ d, done, first, token }) {
   const paper = d.paper || null;
   const row = (l, x, sub) => <li className={x ? "is-done" : ""}><span className="mou-step-n" aria-hidden="true">{x ? "✓" : "·"}</span><span><b>{l}</b><small>{x ? (x.name + (sub ? " · " + sub : "")) : "Waiting"}</small></span></li>;
   const centre = (d.member && d.member.centre) || "the centre";
+  /* Accepted, then confirmed: signed, the one thing left may be the fee. Say it first, with the button. */
+  const place = (done && done.place) || d.place || null;
+  const pay = place && !place.confirmed ? place.pay : null;
   return (
     <div className="mou-card mou-done">
+      {pay && <div className="mou-pay" role="status">
+        <b>Step 2 of 2: pay the joining fee — {pay.text}</b>
+        <span>{first}’s place is confirmed the moment it is paid, and we email you the welcome with how to sign in.</span>
+        <a className="mou-btn" href={pay.url}>Pay now</a>
+      </div>}
+      {place && place.confirmed && done && <div className="mou-pay is-done" role="status"><b>{first}’s place is confirmed.</b><span>The welcome, with the member number and how to sign in, is in your email.</span></div>}
       <span className="mou-eyebrow">Membership Agreement · {d.member.fullName}</span>
       <h1 className="mou-h1">{st === "signed" && paper ? "Signed by everyone" : done ? "Thank you — now print it and sign in ink" : paper ? "Received at the centre" : "Signed online — now the paper copy"}</h1>
       <p className="mou-lead">{done && done.copyTo && done.copyTo.length ? "Your copy is on its way to " + done.copyTo.join(", ") + ". " : ""}

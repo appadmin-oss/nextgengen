@@ -85,11 +85,13 @@ const RCL_EXT_WORDS = ['pdf' => 'a PDF', 'doc' => 'a Word document', 'docx' => '
  *    FOR: the day the last item is done is the day the member resumes
  *    (reg_checklists.resumedOn, written once) — not the day they were added.
  */
+/* The order a family does them (owner, 24 Nov 2026): register online and pay first, from home; then
+   orientation at the centre; documents and the ID card last. */
 const RCL_STEPS = [
-    'orientation' => 'Orientation',
-    'payment'     => 'Payment',
-    'documents'   => 'Submit documents',
     'online'      => 'Online registration',
+    'payment'     => 'Payment',
+    'orientation' => 'Orientation',
+    'documents'   => 'Submit documents',
     'idcard'      => 'ID card',
 ];
 
@@ -451,24 +453,30 @@ function rcl_tell_resumed(string $memberId, string $on, string $sup): void {
 }
 
 /** Start a member's checklist. True when it is new. Only active NGG members (members.type), never staff. */
-function rcl_start(array $m, string $by): bool {
+/**
+ * $awaitConfirm: a child accepted today waits to be CONFIRMED (signed and paid, ngg_confirm_if_ready)
+ * before the welcome goes. Every other checklist starts confirmed: its member was welcomed long ago.
+ */
+function rcl_start(array $m, string $by, bool $awaitConfirm = false): bool {
     if (!member_is_ngg($m) || !in_array((string)($m['role'] ?? 'member'), ['', 'member'], true)) return false;
     if (strtolower((string)($m['status'] ?: 'active')) !== 'active') return false;
     $mid = (string)$m['memberId'];
     if (db_row('SELECT 1 FROM reg_checklists WHERE memberId = ? LIMIT 1', [$mid])) return false;
     try {
         db_insert('reg_checklists', ['memberId' => $mid, 'status' => 'open', 'startedAt' => now_iso(), 'startedBy' => substr($by, 0, 64), 'updatedAt' => now_iso(), 'lastProgressAt' => now_iso(),
+                                     'confirmWait' => $awaitConfirm ? 1 : 0,
                                      'nextFollowUpOn' => gmdate('Y-m-d', (int)strtotime(attendance_today() . 'T12:00:00Z') + RCL_FIRST_FOLLOWUP * 86400)]);
     } catch (\Throwable $e) { return false; }   // started at the same moment elsewhere
     rcl_refresh([$mid]);
+    rcl_auto_helpers([$mid]);
     return true;
 }
 
 /** Called once, at the end of admin_application_convert: a new NGG member's checklist starts at once. */
-function rcl_start_for_new_member(string $memberId, string $by): void {
+function rcl_start_for_new_member(string $memberId, string $by, bool $awaitConfirm = false): void {
     try {
         $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
-        if ($m && rcl_start($m, $by)) audit('regcheck.start', $by, '', ['count' => 1, 'started' => 1, 'via' => 'application.convert', 'memberIds' => [$memberId]]);
+        if ($m && rcl_start($m, $by, $awaitConfirm)) audit('regcheck.start', $by, '', ['count' => 1, 'started' => 1, 'via' => 'application.convert', 'memberIds' => [$memberId]]);
     } catch (\Throwable $e) { /* a checklist must never fail an acceptance */ }
 }
 
@@ -762,6 +770,65 @@ function admin_regcheck_assign(array $p): array {
     return ['ok' => true, 'applied' => $applied, 'unchanged' => $unchanged, 'refused' => $refused, 'results' => $results];
 }
 
+/* ── The helper, chosen by itself (owner, 24 Nov 2026) ───────────────────
+ * "The helper should be the child's mentor", and nobody waits on a person to
+ * assign one. So:
+ *   · the child's MENTOR is their helper, from the moment they have one;
+ *   · until then, the best person seen at their centre (the top of the
+ *     suggestions: check-ins, the desk rota, the timetable; with room for more);
+ *   · a helper staff chose by hand stays until staff change it.
+ * The family's reminders and the staff alerts run whoever helps, or if nobody can.
+ */
+const RCL_AUTO_BY = 'auto';            // chosen by itself: the best person seen at the centre
+const RCL_AUTO_MENTOR = 'auto-mentor';  // chosen by itself: the child's own mentor
+
+/** Give these members a helper where they have none, or their mentor where the system chose one. Returns how many changed. */
+function rcl_auto_helpers(array $memberIds): int {
+    $memberIds = array_values(array_unique(array_filter(array_map('strval', $memberIds))));
+    if (!$memberIds) return 0;
+    $changed = 0; $byCentre = [];
+    foreach (array_chunk($memberIds, 300) as $chunk) {
+        $ph = implode(',', array_fill(0, count($chunk), '?'));
+        $rows = db_all("SELECT c.memberId, c.supervisorId, c.assignedBy, m.fullName, m.centre FROM reg_checklists c JOIN members m ON m.memberId = c.memberId
+                        WHERE c.status = 'open' AND (c.supervisorId = '' OR c.assignedBy IN (?, ?)) AND c.memberId IN ($ph)", array_merge([RCL_AUTO_BY, RCL_AUTO_MENTOR], $chunk));
+        foreach ($rows as $r) {
+            try {
+                $mid = (string)$r['memberId']; $cur = (string)$r['supervisorId'];
+                $pid = rcl_mentor_principal_of($mid); $kind = 'mentor'; $name = '';
+                $theirMentor = $pid !== '' && $pid !== $mid;
+                if ($theirMentor) {
+                    $name = (string)(rcl_person($pid)['name'] ?? '');
+                } else {
+                    if ($cur !== '') continue;   // already helped; a mentor is the only reason to move them
+                    $centre = trim((string)$r['centre']);
+                    if ($centre === '') continue;
+                    if (!isset($byCentre[$centre])) {
+                        [$cn, $cid] = rcl_centre($centre);
+                        $all = array_map(static fn($x) => rcl_candidate_public($x, $cn, ''), array_values(rcl_candidates($cn, $cid)));
+                        usort($all, static fn($a, $b) => [$b['score'], $a['name']] <=> [$a['score'], $b['name']]);
+                        $byCentre[$centre] = $all;
+                    }
+                    $pid = '';
+                    foreach ($byCentre[$centre] as $i => $x) {
+                        if (!$x['present'] || $x['load'] >= RCL_SUPERVISOR_MAX || $x['id'] === $mid) continue;
+                        $pid = (string)$x['id']; $name = (string)$x['name']; $kind = (string)($x['kinds'][0] ?? 'volunteer');
+                        $byCentre[$centre][$i]['load']++;
+                        break;
+                    }
+                }
+                if ($pid === '' || $pid === $cur) continue;
+                $now = now_iso();
+                db_update('reg_checklists', ['supervisorId' => $pid, 'supervisorKind' => $kind, 'supervisorName' => mb_substr($name, 0, 160),
+                                             'assignedAt' => $now, 'assignedBy' => $theirMentor ? RCL_AUTO_MENTOR : RCL_AUTO_BY, 'updatedAt' => $now], ['memberId' => $mid]);
+                rcl_tell_assigned($pid, [['fullName' => (string)$r['fullName']]], $now . ':' . $mid);
+                $changed++;
+            } catch (\Throwable $e) { error_log('[rcl_auto_helpers] ' . $e->getMessage()); }
+        }
+    }
+    if ($changed) audit('regcheck.auto_assign', 'system', '', ['count' => $changed]);
+    return $changed;
+}
+
 /* ── Reminders ─────────────────────────────────────────────────────────── */
 
 /** Claim a send in the ledger. True when this is the first time — the caller then sends. */
@@ -821,6 +888,7 @@ function rcl_tick(?int $now = null): array {
     $today = attendance_today($now);
     $open = array_column(db_all("SELECT memberId FROM reg_checklists WHERE status = 'open' ORDER BY updatedAt, id LIMIT " . RCL_REFRESH_MAX), 'memberId');
     $built = rcl_refresh($open);
+    rcl_auto_helpers($open);   // nobody waits on a person to choose a helper; a new mentor takes over
     $sent = 0;
     $rows = db_all("SELECT c.memberId, c.supervisorId, c.startedAt, c.lastProgressAt, c.nextFollowUpOn, m.fullName, m.centre
                     FROM reg_checklists c JOIN members m ON m.memberId = c.memberId WHERE c.status = 'open' AND m.status = 'active' ORDER BY c.id");
@@ -1208,7 +1276,9 @@ function rcl_row_public(array $m, array $c, ?array $b): array {
             'centre' => (string)$m['centre'], 'photoUrl' => (string)($m['photoUrl'] ?? ''),
             'status' => (string)$c['status'], 'done' => $b ? $b['done'] : (int)$c['done'], 'total' => $b ? $b['total'] : (int)$c['total'],
             'left' => $b ? $b['left'] : [], 'supervisorId' => (string)$c['supervisorId'], 'supervisorName' => (string)$c['supervisorName'],
-            'supervisorKind' => (string)$c['supervisorKind'], 'assignedAt' => (string)$c['assignedAt'], 'startedAt' => (string)$c['startedAt'], 'completedAt' => (string)$c['completedAt'],
+            'supervisorKind' => (string)$c['supervisorKind'], 'supervisorAuto' => in_array((string)($c['assignedBy'] ?? ''), [RCL_AUTO_BY, RCL_AUTO_MENTOR], true),
+            'supervisorWhy' => (string)($c['supervisorId'] ?? '') === '' ? '' : ((string)($c['assignedBy'] ?? '') === RCL_AUTO_MENTOR ? 'mentor' : ((string)($c['assignedBy'] ?? '') === RCL_AUTO_BY ? 'seen' : 'staff')),
+            'confirmed' => (int)($c['confirmWait'] ?? 0) === 0 || (string)($c['confirmedAt'] ?? '') !== '', 'confirmedAt' => (string)($c['confirmedAt'] ?? ''), 'assignedAt' => (string)$c['assignedAt'], 'startedAt' => (string)$c['startedAt'], 'completedAt' => (string)$c['completedAt'],
             'resumedOn' => (string)($c['resumedOn'] ?? ''), 'lastProgressAt' => (string)($c['lastProgressAt'] ?? ''), 'nextFollowUpOn' => (string)($c['nextFollowUpOn'] ?? ''),
             'stalled' => (string)$c['status'] === 'open' && (string)(($c['lastProgressAt'] ?? '') ?: $c['startedAt']) < gmdate('Y-m-d\TH:i:s\Z', time() - RCL_STALL_DAYS * 86400),
             'steps' => $b ? rcl_steps_public($b['items']) : []];

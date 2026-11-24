@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 241;
+const NGG_SCHEMA_TARGET = 242;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6706,6 +6706,22 @@ function db_migrate(PDO $db): void {
            gets no more registration reminders on WhatsApp until it answers START: one row per number. */
         241 => "
             CREATE TABLE IF NOT EXISTS whatsapp_optout (phone TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT '', via TEXT NOT NULL DEFAULT '');
+        ",
+        /* 242 — ACCEPTED, THEN CONFIRMED (owner, 24 Nov 2026). Staff accept a child at a centre, or offer a
+           nearer centre that has room, which the family takes or declines with one tap (applications.offer*).
+           Accepted, the family signs the agreement and pays the joining fee; the place is CONFIRMED the moment
+           both are done (reg_checklists.confirmedAt), and only then does the "You're in" welcome go.
+           Only a child accepted this way waits (confirmWait = 1): every member already onboarded was welcomed
+           long ago, so no row is rewritten and nothing needs a data fixup on MySQL. */
+        242 => "
+            ALTER TABLE reg_checklists ADD COLUMN confirmWait INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE reg_checklists ADD COLUMN confirmedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE applications ADD COLUMN offeredCentre TEXT NOT NULL DEFAULT '';
+            ALTER TABLE applications ADD COLUMN offerTokenHash TEXT NOT NULL DEFAULT '';
+            ALTER TABLE applications ADD COLUMN offeredBy TEXT NOT NULL DEFAULT '';
+            ALTER TABLE applications ADD COLUMN offeredAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE applications ADD COLUMN offerAnswer TEXT NOT NULL DEFAULT '';
+            ALTER TABLE applications ADD COLUMN offerAnsweredAt TEXT NOT NULL DEFAULT '';
         ",
     ];
 

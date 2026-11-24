@@ -1336,16 +1336,24 @@ db_update('applications', ['centre' => 'Egbeda'], ['id' => (int)$crow['id']]);  
 $GLOBALS['__mail_sink'] = [];
 $cconv = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => (int)$crow['id']]);
 $cmem = db_row('SELECT * FROM members WHERE memberId = ?', [$cconv['memberId'] ?? '']);
-/* Onboarding audit (13 Nov 2026): one welcome, with the number on the card and what happens next. */
+/* Onboarding (owner, 24 Nov 2026): ACCEPTED first — one email with the two steps that confirm the place —
+   and the "You're in" welcome only once the agreement is signed and the joining fee paid. */
+$__acc = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains((string)$m['subject'], 'is accepted')));
 $__wel = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains((string)$m['subject'], 'Welcome')));
-$__ord = array_map(fn($m) => str_contains((string)$m['subject'], 'Welcome') ? 'W' : (str_contains((string)$m['subject'], 'membership —') ? 'I' : ''), $GLOBALS['__mail_sink']);
-$__ord = implode('', $__ord);
-unset($GLOBALS['__mail_sink']);
-chk('onboarding · ONE email says welcome, and it gives the printed member number, not the internal record id', $cmem && count($__wel) === 1
+chk('onboarding · acceptance sends the family ONE accepted email, with the agreement to sign, and no welcome yet', $cmem && count($__acc) === 1 && !$__wel
+    && str_contains($__acc[0]['html'], 'Read and sign the agreement') && !array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains((string)$m['subject'], 'Membership Agreement')));
+db_exec("UPDATE mou_agreements SET clientSignedAt = ? WHERE memberId = ?", [now_iso(), (string)($cmem['memberId'] ?? '')]);
+db_exec("UPDATE membership_invoices SET status = 'paid', paidAt = ? WHERE memberId = ? AND purpose = 'joining'", [now_iso(), (string)($cmem['memberId'] ?? '')]);
+$GLOBALS['__mail_sink'] = [];
+$__cf = ngg_confirm_if_ready((string)($cmem['memberId'] ?? ''));
+$__wel = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains((string)$m['subject'], 'Welcome')));
+chk('onboarding · signed and paid: the place is confirmed, and ONE email says welcome, with the printed member number, not the internal record id', !empty($__cf['now']) && count($__wel) === 1
     && (string)$cmem['displayId'] !== '' && str_contains($__wel[0]['html'], (string)$cmem['displayId']) && !str_contains($__wel[0]['html'], (string)$cmem['memberId'] . '</b>'));
-chk('onboarding · the welcome says what happens next: set a password, and the family app for the parent', $__wel
-    && str_contains($__wel[0]['html'], 'Set a password') && str_contains($__wel[0]['html'], '/family') && !str_contains($__wel[0]['html'], 'in touch shortly'));
-chk('onboarding · the welcome arrives before the invoice it introduces (got "' . $__ord . '")', str_contains($__ord, 'W') && (!str_contains($__ord, 'I') || strpos($__ord, 'W') < strpos($__ord, 'I')));
+chk('onboarding · the welcome says what happens next: set a password, orientation with the inked agreement, and the family app for the parent', $__wel
+    && str_contains($__wel[0]['html'], 'Set a password') && str_contains($__wel[0]['html'], '/family') && str_contains($__wel[0]['html'], 'orientation') && !str_contains($__wel[0]['html'], 'in touch shortly'));
+$GLOBALS['__mail_sink'] = [];
+chk('onboarding · confirmed once: asking again sends nothing', !empty(ngg_confirm_if_ready((string)($cmem['memberId'] ?? ''))['confirmed']) && $GLOBALS['__mail_sink'] === []);
+unset($GLOBALS['__mail_sink']);
 chk('onboarding · the invoice email no longer calls itself a welcome', !str_contains((string)file_get_contents(__DIR__ . '/../_lib/domain/membership-pay.php'), 'Welcome to NGG — one step left'));
 $__rec = backend_dispatch('admin.members.record', ['requesterId' => 'NGG-2025-0099', 'memberId' => (string)($cmem['memberId'] ?? '')]);
 chk('onboarding · the member record carries what the family wrote on the application (vision, interests, who the guardian is to the child)',
@@ -1356,6 +1364,148 @@ chk('club apply → member: the parent by name and number, the school and class,
     && $cmem['parentName'] === 'Adunni Adebayo' && $cmem['parentPhone'] === '08031234567' && $cmem['school'] === 'Egbeda Senior High School' && (json_decode((string)$cmem['profileJson'], true)['class'] ?? '') === 'JSS 2'
     && (int)db_row("SELECT COUNT(DISTINCT type) c FROM consents WHERE studentId = ? AND policyVersion = '2026.10'", [$cmem['memberId']])['c'] === 7
     && (consent_state($cmem['memberId'])['media']['status'] ?? '') === 'granted');
+// ── ACCEPTED, THEN CONFIRMED; A NEARER CENTRE; THE HELPER (owner, 24 Nov 2026) ── (rolled back: it adds centres and fees)
+(function () { $__db = db_conn(); $__db->beginTransaction(); try {
+    $A = 'NGG-2025-0099'; $now = now_iso(); $today = attendance_today();
+    $fs = backend_dispatch('admin.fees.settings.set', ['requesterId' => $A, 'data' => ['enabled' => true, 'membershipFee' => 10000, 'membershipEveryMonths' => 12, 'monthlyDues' => 4000, 'trainingFee' => 0, 'balanceCap' => 0, 'remindEnabled' => false]]);
+    // Confa is full (1 place, 1 member); Confd is full and near; Confb is near with room; Confc far with room; Confe is Summer School only.
+    foreach ([['CEN-CFA', 'Confa', 1, 6.600, 3.300, 'ngg'], ['CEN-CFB', 'Confb', 0, 6.610, 3.310, 'ngg'], ['CEN-CFC', 'Confc', 0, 6.900, 3.600, 'ngg'],
+              ['CEN-CFD', 'Confd', 1, 6.601, 3.301, 'ngg'], ['CEN-CFE', 'Confe', 0, 6.602, 3.302, 'summer']] as [$cid, $cn, $cap, $lat, $lng, $pr])
+        db_insert('centres', ['centreId' => $cid, 'name' => $cn, 'code' => substr($cid, -3), 'color' => '#123456', 'status' => 'active', 'programmes' => $pr, 'capacity' => $cap, 'lat' => $lat, 'lng' => $lng, 'createdAt' => $now]);
+    foreach (['Confa', 'Confd'] as $i => $cn) db_insert('members', ['memberId' => 'NGG-CF-FULL' . $i, 'fullName' => 'Full Seat', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $cn, 'createdAt' => $now, 'updatedAt' => $now]);
+    // The admin was at Confb last Saturday: the best person seen there.
+    db_insert('attendance', ['studentId' => $A, 'date' => $today, 'centre' => 'Confb', 'centreId' => 'CEN-CFB', 'method' => 'qr', 'checkInAt' => $now]);
+    $apply = function (string $first, string $email) {
+        backend_dispatch('public.apply', ['kind' => 'teen', 'program' => 'anchor', 'details' => CLUBTEST_DETAILS, 'consents' => CLUBTEST_CONSENTS, 'why' => CLUBTEST_WHY,
+            'sex' => 'Female', 'firstName' => $first, 'lastName' => 'Confirm', 'email' => $email, 'phone' => '08031117' . substr((string)crc32($email), 0, 3), 'centre' => 'Confa',
+            'dob' => gmdate('Y-m-d', strtotime('-12 years')), 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg']);
+        return db_row('SELECT * FROM applications WHERE email = ? ORDER BY id DESC LIMIT 1', [$email]);
+    };
+    $a1 = $apply('Ada', 'cf-ada@example.com');
+    chk('accept · the setup: fees on, the application filed at the full centre', !empty($fs['ok']) && $a1 && $a1['centre'] === 'Confa');
+
+    // A nearer centre, offered.
+    $op = backend_dispatch('admin.application.centre_options', ['requesterId' => $A, 'id' => (int)$a1['id']]);
+    $names = array_column($op['options'] ?? [], 'name');
+    chk('centre offer · the chosen centre is seen to be full, and the centres with room are listed nearest first; full and Summer-only places are not offered',
+        ($op['full'] ?? null) === true && array_slice($names, 0, 2) === ['Confb', 'Confc'] && !in_array('Confd', $names, true) && !in_array('Confe', $names, true) && !in_array('Confa', $names, true)
+        && ($op['options'][0]['km'] ?? 0) > 0 && $op['options'][0]['km'] < $op['options'][1]['km']);
+    chk('centre offer · a centre with no room either is refused, and so is the centre they chose',
+        (backend_dispatch('admin.application.offer_centre', ['requesterId' => $A, 'id' => (int)$a1['id'], 'centre' => 'Confd'])['error'] ?? '') === 'centre_full'
+        && (backend_dispatch('admin.application.offer_centre', ['requesterId' => $A, 'id' => (int)$a1['id'], 'centre' => 'Confa'])['error'] ?? '') === 'same_centre');
+    $GLOBALS['__mail_sink'] = [];
+    $of = backend_dispatch('admin.application.offer_centre', ['requesterId' => $A, 'id' => (int)$a1['id'], 'centre' => 'Confb', 'note' => 'Confb meets on Saturdays too.']);
+    $om = $GLOBALS['__mail_sink'][0] ?? ['subject' => '', 'html' => ''];
+    preg_match('/centre-offer\.php\?t=([a-f0-9]{48})/', (string)$om['html'], $tm); $tok = $tm[1] ?? '';
+    chk('centre offer · the family is emailed the offer, with the distance, the note and ONE link to answer', !empty($of['ok']) && $of['sent'] === true && str_contains($om['subject'], 'Confb')
+        && str_contains($om['html'], 'km away') && str_contains($om['html'], 'Saturdays too') && $tok !== ''
+        && db_row('SELECT offerTokenHash FROM applications WHERE id = ?', [(int)$a1['id']])['offerTokenHash'] === hash('sha256', $tok));
+    $list = backend_dispatch('admin.applications.list', ['requesterId' => $A, 'status' => 'reviewing']);
+    $row = array_values(array_filter($list['applications'] ?? [], fn($r) => (int)$r['id'] === (int)$a1['id']))[0] ?? [];
+    chk('centre offer · the inbox shows the offer waiting, and never the link’s secret', ($row['offeredCentre'] ?? '') === 'Confb' && !array_key_exists('offerTokenHash', $row));
+    $pg = backend_dispatch('public.centre_offer.get', ['t' => $tok]);
+    chk('centre offer · opening the link only SHOWS the offer (a mail scanner that follows it answers nothing)', ($pg['state'] ?? '') === 'open' && $pg['offered'] === 'Confb' && $pg['chose'] === 'Confa'
+        && db_row('SELECT offerAnswer FROM applications WHERE id = ?', [(int)$a1['id']])['offerAnswer'] === '');
+    $ph = backend_dispatch('public.centre_offer.page', ['t' => $tok])['html'] ?? '';
+    chk('centre offer · the family’s page is two buttons in a form that POSTs — no script, nothing answered by opening it', str_contains($ph, '<form method="post">')
+        && str_contains($ph, 'value="yes"') && str_contains($ph, 'value="wait"') && str_contains($ph, 'Confb') && !str_contains($ph, '<script')
+        && (backend_dispatch('public.centre_offer.page', ['t' => 'nope'])['http'] ?? 0) === 404);
+    chk('centre offer · a wrong answer or a wrong link does nothing', (backend_dispatch('public.centre_offer.answer', ['t' => $tok, 'answer' => 'maybe'])['error'] ?? '') === 'bad_answer'
+        && (backend_dispatch('public.centre_offer.answer', ['t' => str_repeat('a', 48), 'answer' => 'yes'])['error'] ?? '') === 'not_found');
+    $GLOBALS['__mail_sink'] = [];
+    $yes = backend_dispatch('public.centre_offer.answer', ['t' => $tok, 'answer' => 'yes']);
+    $a1b = db_row('SELECT * FROM applications WHERE id = ?', [(int)$a1['id']]);
+    $m1 = db_row('SELECT * FROM members WHERE memberId = ?', [(string)$a1b['convertedMemberId']]);
+    $acc = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains((string)$m['subject'], 'is accepted')));
+    chk('centre offer · "Yes" accepts the child at the offered centre at once, and the family gets the accepted email — not a welcome', !empty($yes['accepted']) && $m1 && $m1['centre'] === 'Confb'
+        && count($acc) === 1 && str_contains($acc[0]['html'], 'Confb') && !array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains((string)$m['subject'], 'Welcome'))
+        && (bool)db_row("SELECT 1 x FROM notifications WHERE memberId = ? AND title LIKE '%is accepted at Confb%'", [$A]));
+    chk('centre offer · the page after "Yes" says they are accepted and what comes next', str_contains(backend_dispatch('public.centre_offer.page', ['t' => $tok, 'answered' => $yes])['html'] ?? '', 'is accepted at Confb'));
+    chk('centre offer · answered once: the link cannot answer again', (backend_dispatch('public.centre_offer.answer', ['t' => $tok, 'answer' => 'wait'])['error'] ?? '') === 'answered'
+        && (backend_dispatch('public.centre_offer.get', ['t' => $tok])['state'] ?? '') === 'answered');
+    $a2 = $apply('Bisi', 'cf-bisi@example.com');
+    $GLOBALS['__mail_sink'] = [];
+    backend_dispatch('admin.application.offer_centre', ['requesterId' => $A, 'id' => (int)$a2['id'], 'centre' => 'Confc']);
+    preg_match('/t=([a-f0-9]{48})/', (string)($GLOBALS['__mail_sink'][0]['html'] ?? ''), $tm2);
+    $w = backend_dispatch('public.centre_offer.answer', ['t' => $tm2[1] ?? '', 'answer' => 'wait']);
+    $a2b = db_row('SELECT * FROM applications WHERE id = ?', [(int)$a2['id']]);
+    chk('centre offer · "Wait" puts the application on the waiting list for the first choice, and makes nobody a member', ($w['answer'] ?? '') === 'wait' && $a2b['status'] === 'waitlist'
+        && $a2b['centre'] === 'Confa' && trim((string)$a2b['convertedMemberId']) === '');
+    $a3 = $apply('Chi', 'cf-chi@example.com');
+    $GLOBALS['__mail_sink'] = [];
+    backend_dispatch('admin.application.offer_centre', ['requesterId' => $A, 'id' => (int)$a3['id'], 'centre' => 'Confb']);
+    preg_match('/t=([a-f0-9]{48})/', (string)($GLOBALS['__mail_sink'][0]['html'] ?? ''), $tm3);
+    db_update('applications', ['offeredAt' => gmdate('Y-m-d\TH:i:s\Z', time() - (APP_OFFER_DAYS + 1) * 86400)], ['id' => (int)$a3['id']]);
+    chk('centre offer · an offer not answered in ' . APP_OFFER_DAYS . ' days has lapsed: shown as such, and it cannot be taken', (backend_dispatch('public.centre_offer.get', ['t' => $tm3[1] ?? ''])['state'] ?? '') === 'expired'
+        && (backend_dispatch('public.centre_offer.answer', ['t' => $tm3[1] ?? '', 'answer' => 'yes'])['error'] ?? '') === 'expired');
+
+    // Accepted → confirmed: sign and pay, in either order.
+    $mid = (string)$m1['memberId'];
+    $c = db_row('SELECT * FROM reg_checklists WHERE memberId = ?', [$mid]);
+    $inv = db_row("SELECT * FROM membership_invoices WHERE memberId = ? AND purpose = 'joining'", [$mid]);
+    chk('confirm · an accepted child waits to be confirmed; the accepted email carried the agreement AND the private link to pay', $c && (int)$c['confirmWait'] === 1 && $c['confirmedAt'] === ''
+        && $inv && str_contains($acc[0]['html'], '/pay/' . $inv['payToken']) && str_contains($acc[0]['html'], 'Read and sign the agreement'));
+    chk('confirm · …and their registration helper was chosen by itself: the person seen at the centre', $c['supervisorId'] === $A && $c['assignedBy'] === RCL_AUTO_BY);
+    $GLOBALS['__mail_sink'] = [];
+    $paid = membership_settle((string)$inv['invoiceId'], 'cash', 'CF-1', $A);
+    $rec = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains((string)$m['subject'], 'payment received')));
+    chk('confirm · paid but not signed: NOT confirmed, no welcome, and the receipt says the one step left (not "fully enrolled")', !empty($paid['ok']) && empty($paid['confirmed']['confirmed'])
+        && !array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains((string)$m['subject'], 'Welcome')) && count($rec) === 1 && str_contains($rec[0]['html'], 'one step left') && !str_contains($rec[0]['html'], 'fully enrolled'));
+    $pl = backend_dispatch('public.mou.get', ['token' => '']);
+    chk('confirm · the agreement page knows where the place stands', function_exists('mou_place_public') && (mou_place_public($m1)['place']['confirmed'] ?? null) === false);
+    db_exec('UPDATE mou_agreements SET clientSignedAt = ? WHERE memberId = ?', [$now, $mid]);
+    $GLOBALS['__mail_sink'] = [];
+    $cf = ngg_confirm_if_ready($mid);
+    $wel = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains((string)$m['subject'], 'Welcome')));
+    chk('confirm · then signed: confirmed at once, ONE welcome, the member told, the act audited', !empty($cf['now']) && count($wel) >= 1 && count(array_unique(array_column($wel, 'to'))) === count($wel)
+        && db_row('SELECT confirmedAt FROM reg_checklists WHERE memberId = ?', [$mid])['confirmedAt'] !== ''
+        && (bool)db_row("SELECT 1 x FROM notifications WHERE memberId = ? AND title LIKE 'You’re in%'", [$mid]) && (bool)db_row("SELECT 1 x FROM audit_log WHERE event = 'member.confirmed' AND subject = ?", [$mid]));
+    // The other order, by the real hook: signed first, then paying confirms.
+    $a4 = $apply('Dayo', 'cf-dayo@example.com');
+    $cv4 = backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => (int)$a4['id'], 'centre' => 'Confb']);
+    $m4 = (string)($cv4['memberId'] ?? '');
+    db_exec('UPDATE mou_agreements SET clientSignedAt = ? WHERE memberId = ?', [$now, $m4]);
+    chk('confirm · signed but not paid: not confirmed', empty(ngg_confirm_if_ready($m4)['confirmed']) && !empty($cv4['accepted']) && empty($cv4['confirmed']));
+    $GLOBALS['__mail_sink'] = [];
+    $inv4 = db_row("SELECT * FROM membership_invoices WHERE memberId = ? AND purpose = 'joining'", [$m4]);
+    $p4 = membership_settle((string)$inv4['invoiceId'], 'cash', 'CF-4', $A);
+    $ord = implode('', array_map(fn($m) => str_contains((string)$m['subject'], 'Welcome') ? 'W' : (str_contains((string)$m['subject'], 'payment received') ? 'R' : ''), $GLOBALS['__mail_sink']));
+    chk('confirm · …then paying confirms it, by itself: the welcome goes before the receipt (got "' . $ord . '")', !empty($p4['confirmed']['now']) && str_contains($ord, 'W') && strpos($ord, 'W') < strpos($ord, 'R'));
+    // Fees off: signing alone confirms.
+    backend_dispatch('admin.fees.settings.set', ['requesterId' => $A, 'data' => ['enabled' => false]]);
+    $a5 = $apply('Efe', 'cf-efe@example.com');
+    $cv5 = backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => (int)$a5['id'], 'centre' => 'Confb']);
+    db_exec('UPDATE mou_agreements SET clientSignedAt = ? WHERE memberId = ?', [$now, (string)($cv5['memberId'] ?? '')]);
+    chk('confirm · with membership fees off there is nothing to pay: signing alone confirms', empty($cv5['confirmed']) && !empty(ngg_confirm_if_ready((string)($cv5['memberId'] ?? ''))['now']));
+    backend_dispatch('admin.fees.settings.set', ['requesterId' => $A, 'data' => ['enabled' => true]]);
+    // A member onboarded long ago is never "welcomed" again.
+    db_insert('members', ['memberId' => 'NGG-CF-OLD', 'fullName' => 'Old Hand', 'email' => 'cf-old@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Confb', 'createdAt' => $now, 'updatedAt' => $now]);
+    rcl_start(db_row("SELECT * FROM members WHERE memberId = 'NGG-CF-OLD'"), $A);
+    db_insert('mou_agreements', ['mouId' => 'MOU-CF-OLD', 'memberId' => 'NGG-CF-OLD', 'version' => MOU_VERSION, 'status' => 'awaiting_ngg', 'clientSignedAt' => $now, 'createdAt' => $now, 'updatedAt' => $now]);
+    $GLOBALS['__mail_sink'] = [];
+    chk('confirm · a member onboarded before this (their checklist started confirmed) who signs an agreement later gets no second welcome',
+        (int)db_row("SELECT confirmWait FROM reg_checklists WHERE memberId = 'NGG-CF-OLD'")['confirmWait'] === 0 && !empty(ngg_confirm_if_ready('NGG-CF-OLD')['confirmed']) && $GLOBALS['__mail_sink'] === []);
+
+    // The helper: the mentor takes over; a person staff chose stays.
+    db_insert('members', ['memberId' => 'NGG-CF-MENT', 'fullName' => 'Mentor Mo', 'email' => 'cf-mentor@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Confb', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'MEN-CF', 'memberId' => 'NGG-CF-MENT', 'fullName' => 'Mentor Mo', 'email' => 'cf-mentor@example.com', 'status' => 'active', 'centre' => 'Confb']);
+    db_insert('mentor_assignments', ['memberId' => $m4, 'mentorId' => 'MEN-CF', 'status' => 'active', 'startedAt' => $now]);
+    $n = rcl_auto_helpers([$m4]);
+    $c4 = db_row('SELECT * FROM reg_checklists WHERE memberId = ?', [$m4]);
+    chk('helper · once the child has a mentor, the mentor is their registration helper — by itself, and told', $n === 1 && $c4['supervisorId'] === 'NGG-CF-MENT' && $c4['supervisorKind'] === 'mentor' && $c4['assignedBy'] === RCL_AUTO_MENTOR
+        && (bool)db_row("SELECT 1 x FROM notifications WHERE memberId = 'NGG-CF-MENT' AND title LIKE 'You are helping%'"));
+    chk('helper · …and running it again changes nothing', rcl_auto_helpers([$m4]) === 0);
+    $byHand = backend_dispatch('admin.regcheck.assign', ['requesterId' => $A, 'memberIds' => [$mid], 'supervisorId' => $A]);
+    db_insert('mentor_assignments', ['memberId' => $mid, 'mentorId' => 'MEN-CF', 'status' => 'active', 'startedAt' => $now]);
+    db_update('reg_checklists', ['assignedBy' => $A], ['memberId' => $mid]);
+    chk('helper · a helper staff chose by hand stays, even when a mentor arrives', !empty($byHand['ok']) && rcl_auto_helpers([$mid]) === 0
+        && db_row('SELECT supervisorId FROM reg_checklists WHERE memberId = ?', [$mid])['supervisorId'] === $A);
+    $rl = backend_dispatch('admin.regcheck.list', ['requesterId' => $A, 'filter' => 'all']);
+    $r4 = array_values(array_filter($rl['rows'] ?? [], fn($r) => $r['memberId'] === $m4))[0] ?? [];
+    chk('helper · the registration list says the helper was chosen automatically, and whether the place is confirmed', ($r4['supervisorAuto'] ?? null) === true && ($r4['supervisorWhy'] ?? '') === 'mentor' && ($r4['confirmed'] ?? null) === true);
+    unset($GLOBALS['__mail_sink']);
+} finally { if ($__db->inTransaction()) $__db->rollBack(); } })();
+
 // ── Application review fixes (siblings, consent, scope, waitlist, volunteers' safeguarding) ──
 (function () {
     $now = now_iso(); $A = 'NGG-2025-0099';
@@ -1717,7 +1867,7 @@ chk('schools: a school the family typed joins the list once their child is accep
     // ── NGG ENTRY STEPS (owner, 18 Nov 2026): the paper card, the resumption day, the follow-ups.
     $bm = $b('NGG-RCL-M2');
     $order = array_map(fn($i) => array_search($i['step'], array_keys(RCL_STEPS), true), $bm['items']);
-    chk('entry steps · every item sits in one of the card’s steps, in the card’s order (orientation, payment, documents, online, ID card)',
+    chk('entry steps · every item sits in one of the steps, in the order a family does them (online, payment, orientation, documents, ID card)',
         !in_array(false, $order, true) && $order === array_values(array_merge([], (function ($o) { sort($o); return $o; })($order))) && $bm['items'][0]['stepLabel'] !== '');
     $keys = array_column($bm['items'], 'key');
     chk('entry steps · the card’s items are on every checklist by default: orientation, the file, the report card, the passport photo, the MoU and the school timetable',
@@ -1773,7 +1923,7 @@ chk('schools: a school the family typed joins the list once their child is accep
     rcl_refresh([$D]);
     chk('entry steps · …nor does finishing it again: the day they resumed is written once', db_row('SELECT status, resumedOn FROM reg_checklists WHERE memberId = ?', [$D]) == ['status' => 'done', 'resumedOn' => '2026-01-05']);
     $pg = backend_dispatch('family.regcheck', ['guardianId' => 'G-RCL-2', 'linkId' => 'GW-RCL-2']);
-    chk('entry steps · the family sees the card’s steps and what to bring, in words', count($pg['steps'] ?? []) >= 4 && ($pg['steps'][0]['label'] ?? '') === 'Orientation'
+    chk('entry steps · the family sees the card’s steps and what to bring, in words', count($pg['steps'] ?? []) >= 4 && ($pg['steps'][0]['label'] ?? '') === 'Online registration'
         && in_array('the child’s date of birth', $pg['bring'] ?? [], true) && ($pg['centre'] ?? '') === 'Rcl Town');
 
     // Follow-ups: logged with the next day; the cadence; stalled ones reach the centre's staff.
@@ -28459,8 +28609,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $wantDues = membership_prorate(4000, $start, $memA)['amount'];
     chk('pay: acceptance files the member under the division the card prints, from the start date chosen', $memA && $memA['disciplines'] === 'TECH' && $memA['joinDate'] === $start && $memA['track'] === 'Robotics');
     chk('pay: …and creates one invoice: the membership fee and the pro-rated first month', $invA && count($itemsA) === 2 && $itemsA[0]['amount'] === 10000 && $itemsA[1]['amount'] === $wantDues && (int)$invA['total'] === 10000 + $wantDues);
-    $payMail = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains($m['subject'], 'Complete')));
-    chk('pay: …and only then emails the family a private link to pay it', $invA && count($payMail) === 1 && str_contains($payMail[0]['html'], '/pay/' . $invA['payToken']) && ($cv['invoice']['sent'] ?? false) === true);
+    $payMail = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains($m['subject'], 'is accepted')));
+    chk('pay: …and only then emails the family a private link to pay it, in the one accepted email', $invA && count($payMail) === 1 && str_contains($payMail[0]['html'], '/pay/' . $invA['payToken']) && ($cv['invoice']['sent'] ?? false) === true);
     $again = membership_invoice_create($memA, 'test');
     chk('pay: asking again returns the same invoice — nobody is billed twice', !empty($again['existed']) && $again['invoice']['invoiceId'] === $invA['invoiceId']);
     $pub = backend_dispatch('public.membership.invoice', ['token' => $invA['payToken']]);

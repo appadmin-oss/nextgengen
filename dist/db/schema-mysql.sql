@@ -5457,3 +5457,14 @@ CREATE TABLE IF NOT EXISTS whatsapp_optout (
   phone VARCHAR(32) NOT NULL PRIMARY KEY, at VARCHAR(32) NOT NULL DEFAULT '', via VARCHAR(24) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (241) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 242 · Accepted, then confirmed (signed and paid); a nearer centre offered to the family ──
+ALTER TABLE reg_checklists ADD COLUMN confirmWait TINYINT NOT NULL DEFAULT 0;
+ALTER TABLE reg_checklists ADD COLUMN confirmedAt VARCHAR(40) NOT NULL DEFAULT '';
+ALTER TABLE applications ADD COLUMN offeredCentre VARCHAR(160) NOT NULL DEFAULT '';
+ALTER TABLE applications ADD COLUMN offerTokenHash VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE applications ADD COLUMN offeredBy VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE applications ADD COLUMN offeredAt VARCHAR(40) NOT NULL DEFAULT '';
+ALTER TABLE applications ADD COLUMN offerAnswer VARCHAR(16) NOT NULL DEFAULT '';
+ALTER TABLE applications ADD COLUMN offerAnsweredAt VARCHAR(40) NOT NULL DEFAULT '';
+INSERT INTO schema_version (version) VALUES (242) ON DUPLICATE KEY UPDATE version = version;

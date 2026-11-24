@@ -571,7 +571,11 @@ function membership_settle(string $invoiceId, string $via, string $reference, st
         audit('membership.invoice.paid', $by, $memberId, ['invoiceId' => $invoiceId, 'via' => $via, 'reference' => $reference, 'total' => (int)$inv['total']] + $extra);
         return ['ok' => true, 'invoice' => membership_invoice_by('invoiceId', $invoiceId)];
     });
-    if (!empty($res['ok']) && empty($res['already'])) $res['receipt'] = membership_send_receipt($res['invoice']);
+    if (!empty($res['ok']) && empty($res['already'])) {
+        // Paying the joining fee may complete the place: confirmed, and welcomed, before the receipt goes.
+        if ((string)($res['invoice']['purpose'] ?? 'joining') === 'joining' && function_exists('ngg_confirm_if_ready')) $res['confirmed'] = ngg_confirm_if_ready((string)$res['invoice']['memberId']);
+        $res['receipt'] = membership_send_receipt($res['invoice']);
+    }
     return $res;
 }
 
@@ -582,9 +586,13 @@ function membership_send_receipt(array $inv): array {
     $to = membership_contact($m);
     if ($to === '') return ['ok' => false, 'error' => 'no_email'];
     $first = explode(' ', trim((string)$m['fullName']))[0] ?: 'your child';
+    // A joining fee paid before the agreement is signed: thank them, and say the one step left.
+    $left = (string)($inv['purpose'] ?? 'joining') === 'joining' && function_exists('ngg_confirm_state') && member_is_ngg($m) && ngg_confirm_state($m)['agreement'] === false;
     $ok = @send_mail($to, 'Thank you — payment received · receipt ' . $inv['receiptNo'], email_template([
-        'title' => ['advance' => 'Thank you. ' . $first . ' is paid ahead.', 'balance' => 'Thank you. ' . $first . '’s account is paid.'][(string)($inv['purpose'] ?? '')] ?? 'Thank you. ' . $first . ' is fully enrolled.',
-        'intro' => 'We have received your payment of ' . fees_money_text((int)$inv['total']) . '. Your support keeps the programme running.',
+        'title' => ['advance' => 'Thank you. ' . $first . ' is paid ahead.', 'balance' => 'Thank you. ' . $first . '’s account is paid.'][(string)($inv['purpose'] ?? '')]
+            ?? ($left ? 'Thank you — one step left for ' . $first . '.' : 'Thank you. ' . $first . ' is fully enrolled.'),
+        'intro' => 'We have received your payment of ' . fees_money_text((int)$inv['total']) . '. Your support keeps the programme running.'
+            . ($left ? ' To secure ' . $first . '’s place, read and sign the Membership Agreement: the button is in our first email (“' . $first . ' is accepted at NGG”), or ask at the centre.' : ''),
         'bodyHtml' => membership_items_html($inv, true)
             . '<p style="margin:16px 0 0;font-size:14px"><b>Receipt</b> ' . esc_html($inv['receiptNo']) . ' · <b>Invoice</b> ' . esc_html($inv['invoiceId']) . '</p>'
             // Files drawn on the server (receipt-draw.php): keep it, or forward it on WhatsApp.

@@ -206,25 +206,46 @@ const CR_INBOX_SOURCES = {
           a.program === "summer" ? { l: "Accept & create member", tone: "primary",
             form: () => ({ title: "Create a member for " + a.name + "?", submit: "Accept & create member", intro: "They get a Summer School record. This can’t be undone from here.", values: {}, fields: centreField }),
             run: async (it, v) => { const x = await NGGApi.admin.applications.convert(a.id, "", (v && v.centre) || ""); return { text: x.existed ? a.name + " already had a record · " + x.memberId : "Member created · " + x.memberId }; } }
-          : { l: "Accept & create member", tone: "primary",
-            /* An NGG place is paid for only once it is offered: accepting sends
-               the family one invoice — the membership fee and the first
-               month's commitment fee, charged only for the meeting days left
-               from the start date set here. */
-            form: () => ({ title: "Accept " + a.name + " into NGG", submit: "Accept and send the invoice",
-              intro: "They get an NGG record, a member ID and a card number. Their family is emailed one invoice to pay: the membership fee and the commitment fee for the meeting days left in their first month.",
+          : { l: "Accept", tone: "primary",
+            /* Accepted, then confirmed (owner, 24 Nov 2026): the family gets ONE
+               email — accepted, with the agreement to sign and the joining fee to
+               pay (the membership fee and the first month's commitment fee,
+               charged only for the meeting days left from the start date set
+               here). The place is confirmed, and the welcome sent, when both are done. */
+            form: () => ({ title: "Accept " + a.name + " into NGG", submit: "Accept " + (a.name || "").split(" ")[0],
+              intro: "They get an NGG record and a member number. The family is emailed once: " + (a.name || "").split(" ")[0] + " is accepted, and two steps confirm the place — sign the Membership Agreement and pay the joining fee. When both are done, the welcome with the sign-in goes by itself.",
               values: { start: new Date().toISOString().slice(0, 10) },
               fields: [{ id: "start", l: "Start date", type: "date", req: true, help: "The first day they attend. Only the meeting days from this date are charged for the first month." }].concat(centreField) }),
             run: async (it, v) => {
               const x = await NGGApi.admin.applications.convert(a.id, v.start, v.centre || "");
               if (x.existed) return { text: a.name + " already had a record · " + x.memberId };
               const inv = x.invoice || {};
-              const tail = inv.invoiceId ? (inv.sent ? " · invoice " + fmtMoney(inv.total) + " sent to " + inv.to : " · invoice made, but the email didn’t go — resend it from Money → Membership payments")
-                : inv.error === "fees_off" ? " · no invoice: membership fees are off" : inv.error ? " · no invoice (" + inv.error.replace(/_/g, " ") + ")" : "";
-              return { text: "Member created · " + x.memberId + tail };
+              const tail = x.confirmed ? " · nothing to sign or pay: confirmed and welcomed"
+                : inv.invoiceId ? (inv.sent ? " · the family is emailed the agreement and the " + fmtMoney(inv.total) + " fee" : " · the email didn’t go — resend the invoice from Money → Membership payments")
+                : inv.error === "fees_off" ? " · the family is emailed the agreement (membership fees are off)" : inv.error ? " · no invoice (" + inv.error.replace(/_/g, " ") + ")" : "";
+              return { text: "Accepted · " + x.memberId + tail };
             } },
           wait ? null : tell("waitlist", "Waitlist", "Waitlisted"),
           tell("rejected", "Reject", "Rejected"),
+          /* After the established decisions, so 1 Accept · 2 Waitlist · 3 Reject keep their keys. */
+          /* The centre they chose is not taking new members: offer one with room,
+             nearest first. The family answers with one tap — "yes" accepts them
+             there at once; "wait" puts them on the waiting list. */
+          a.program === "summer" ? null : { l: "Offer another centre", keep: true,
+            form: async () => {
+              const o = await NGGApi.admin.applications.centreOptions(a.id);
+              const opts = (o.options || []).map(c => [c.name, c.name + (c.km != null ? " · " + c.km + " km" : "") + (c.room != null ? " · " + c.room + (c.room === 1 ? " place" : " places") + " left" : "")]);
+              return { title: "Offer " + (a.name || "").split(" ")[0] + " another centre", submit: "Email the offer",
+                intro: (o.full ? (a.centre || "Their centre") + " is full (" + o.members + " of " + o.capacity + "). " : "") + (opts.length
+                  ? "Centres with room, nearest to " + (a.centre || "their choice") + " first. The family answers with one tap: yes accepts them there at once; no keeps them waiting for " + (a.centre || "their choice") + "."
+                  : "No other centre has room right now."),
+                values: { centre: opts.length ? opts[0][0] : "", note: "" },
+                fields: [{ id: "centre", l: "Centre to offer", type: "select", req: true, opts: opts },
+                         { id: "note", l: "A line for the family (optional)", type: "textarea", req: false, help: "For example, the day it meets. It goes in the email." }] };
+            },
+            run: async (it, v) => { const x = await NGGApi.admin.applications.offerCentre(a.id, v.centre, v.note);
+              return { text: (x.sent ? "Offer emailed to " + x.to : "The offer is saved, but the email didn’t go") + " · " + x.centre,
+                patch: { sub: "Offered " + x.centre + " · waiting on the family" } }; } },
           ask,
         ].filter(Boolean) : a.kind === "mentor" ? [
           /* A mentor is accepted by MAKING the mentor: the record (pending safeguarding checks) and the
@@ -592,7 +613,10 @@ function CrInbox({ ctx, phone, data }) {
     // Going somewhere is not handling the item: it stays in the list.
     if (a.go) { a.go(it); return false; }
     if (a.form && !values) {
-      ctx.form(Object.assign({}, a.form(it), { onSubmit: async v => { await act(it, a, v); } }));
+      // A form may need to ask the server first (the centres with room): it can be async.
+      let f;
+      try { f = await a.form(it); } catch (e) { ctx.toast(crErr(e, "Couldn’t open that. Nothing changed."), null, true); return false; }
+      ctx.form(Object.assign({}, f, { onSubmit: async v => { await act(it, a, v); } }));
       return false;
     }
     if (a.confirm && !values) { const ok = await ctx.confirm(Object.assign({ cta: a.l, danger: crIsDanger(a.l) }, a.confirm(it))); if (!ok) return false; }
