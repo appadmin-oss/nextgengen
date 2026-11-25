@@ -77,8 +77,12 @@ What changed:
   small inline script, so they no longer block the first paint; `<noscript>` keeps the plain links.
   `app.jsx` draws once they have loaded (`window.__nggCss`, at most 8 s), so no screen draws unstyled.
 - **React deferred**, no longer parser-blocking in the head.
-- **Precompressed Brotli and gzip** copies of every fingerprinted script and stylesheet (Node's own zlib), served
-  by `.htaccess` before the real-file pass, with no second compression.
+- ~~Precompressed Brotli and gzip copies~~ — **removed 25 Nov 2026**. On the live host (Cloudflare in front of the
+  server) the served `.br` copy was compressed a second time, so every script and stylesheet reached the browser as
+  unreadable bytes ("Invalid or unexpected token") and the site loaded blank. The host compresses on the fly
+  correctly, so the copies were worth ~20% of transfer and cost the whole site. `tests/perf-shell.test.js` now holds
+  that none are built or served. If they ever come back, prove on the live host first that a `.br` request decodes
+  to the file exactly once.
 - **Icon fonts subset** to the 609 icons the site names (`tools/phosphor-subset.py`, cached in
   `vendor/phosphor/subset/` and recorded in `vendor/VERSIONS.json` by the build): 144 KB → 60 KB and
   129 KB → 51 KB.

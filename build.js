@@ -616,23 +616,12 @@ async function build() {
    * names the current set, so a reload always asks for these. The only window
    * where a stale one could be wanted is a deferred script fetch landing in the
    * seconds a deploy is being copied, which the plain names cover. */
-  /* PRECOMPRESSED copies of every fingerprinted script and stylesheet: Brotli at quality 11 and gzip at level 9,
-     served by dist/.htaccess when the browser accepts them (docs/PERFORMANCE.md). Built here, once, because the
-     host compresses on the fly at a lower setting on every request. Node's own zlib: no new dependency. */
-  let preBytes = 0, preBr = 0;
-  for (const name of Object.values(assets)) {
-    if (!/\.[0-9a-f]{10}\.(min\.)?(js|css)$/.test(name)) continue;
-    const file = path.join(DIST, name);
-    if (!fs.existsSync(file)) continue;
-    const raw = fs.readFileSync(file);
-    const br = zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length } });
-    fs.writeFileSync(file + '.br', br);
-    fs.writeFileSync(file + '.gz', zlib.gzipSync(raw, { level: 9 }));
-    preBytes += raw.length; preBr += br.length;
-  }
-  log(`precompressed ${(preBytes / 1048576).toFixed(1)} MB of scripts and styles to ${(preBr / 1048576).toFixed(2)} MB (Brotli)`);
-
-  const current = new Set(Object.values(assets).flatMap(a => [a, a + '.map', a + '.br', a + '.gz']));
+  /* NO PRECOMPRESSED COPIES (25 Nov 2026). The build used to write a .br and a .gz beside every fingerprinted
+     script and stylesheet, and .htaccess served them. On the live host (Cloudflare in front of the server) each
+     copy was compressed a SECOND time on the way out: the browser undid one layer, was left with Brotli bytes
+     where it expected JavaScript, and the site loaded blank. The host compresses on the fly, correctly, so the
+     copies only ever added risk. The sweep below deletes any left in dist/; tests/perf-shell.test.js holds it. */
+  const current = new Set(Object.values(assets).flatMap(a => [a, a + '.map']));   // a .br or .gz is never current
   let swept = 0;
   for (const f of fs.readdirSync(DIST)) {
     if (!/\.[0-9a-f]{10}\.(min\.)?(js|css)(\.map|\.br|\.gz)?$/.test(f) || current.has(f)) continue;

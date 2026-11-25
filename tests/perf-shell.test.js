@@ -57,18 +57,14 @@ const snaps = fs.readdirSync(pre).filter(f => f.endsWith('.html'));
 chk('no snapshot carries a script', snaps.every(f => !/<script\b/i.test(fs.readFileSync(path.join(pre, f), 'utf8'))));
 chk('no snapshot is a not-found or error screen', snaps.every(f => !/Page not found|Something went wrong/i.test(fs.readFileSync(path.join(pre, f), 'utf8').slice(0, 4000))));
 
-console.log('── precompressed copies ──');
-const hashed = fs.readdirSync(DIST).filter(f => /\.[0-9a-f]{10}\.(min\.)?(js|css)$/.test(f));
-let bad = 0;
-for (const f of hashed) {
-  const raw = fs.readFileSync(path.join(DIST, f));
-  if (!fs.existsSync(path.join(DIST, f + '.br')) || !zlib.brotliDecompressSync(fs.readFileSync(path.join(DIST, f + '.br'))).equals(raw)) bad++;
-  if (!fs.existsSync(path.join(DIST, f + '.gz')) || !zlib.gunzipSync(fs.readFileSync(path.join(DIST, f + '.gz'))).equals(raw)) bad++;
-}
-chk('every fingerprinted script and stylesheet has .br and .gz copies that are byte-for-byte the file (' + hashed.length + ' files)', hashed.length > 0 && bad === 0);
+console.log('── no precompressed copies ──');
+/* The live site loaded blank on 25 Nov 2026: .htaccess served app.<hash>.min.js.br in place of the file, and the
+   host (Cloudflare in front) compressed it again, so the browser got Brotli bytes where it expected JavaScript.
+   The host compresses on the fly correctly; a precompressed copy only adds a way to break every page. */
+const left = fs.readdirSync(DIST).filter(f => /\.(js|css)\.(br|gz)$/.test(f));
+chk('dist/ holds no .br or .gz copy of a script or stylesheet (' + left.length + ' found)', left.length === 0);
 const ht = fs.readFileSync(path.join(DIST, '.htaccess'), 'utf8');
-chk('.htaccess serves them before the real-file pass, and never compresses them twice',
-  ht.indexOf('RewriteCond %{REQUEST_FILENAME}.br -f') > 0 && ht.indexOf('RewriteCond %{REQUEST_FILENAME}.br -f') < ht.indexOf("Don't rewrite real files") && /\[E=no-gzip:1,L\]/.test(ht));
+chk('.htaccess never rewrites a request to a precompressed copy', !/REQUEST_FILENAME\}\.(br|gz) -f/.test(ht) && !/\$1\.(br|gz)\b/.test(ht));
 
 console.log((fail ? '❌ FAIL: ' : '✅ PASS: ') + pass + ' passed, ' + fail + ' failed (fast shell)');
 process.exit(fail ? 1 : 0);

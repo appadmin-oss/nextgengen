@@ -8101,3 +8101,12 @@ helper "should be the child's mentor", automated; and the entry steps in the ord
   `useNggFx`, `nggLocalTime`. Currency from the time zone, never the locale.
 - **Lessons**: 78, validated through `curriculum_validate()`, ≥3 checks each, no MCQ whose key is the longest option.
 
+## 25 Nov 2026 — the blank site: precompressed copies compressed twice
+
+After deploying the 25 Nov zip the live site loaded blank: `app.<hash>.min.js` and `api-client.<hash>.js` threw
+"Invalid or unexpected token". `.htaccess` rewrote each request to the `.br` (or `.gz`) copy built beside it, and the
+host compressed that again — a `curl --compressed` of the live bundle decoded once to Brotli bytes, and even a
+gzip-only request got the Brotli copy. Files with no copy (React) were fine. The copies and their rewrite are gone
+(build.js, .htaccess, docs/PERFORMANCE.md); the perf-shell test holds it. The new build has new file names, so a
+browser that cached the broken bundle (served `immutable` for a year) asks for the new one.
+
