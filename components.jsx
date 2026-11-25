@@ -3274,6 +3274,97 @@ function fmtMoney(n) {
   return "₦" + (isFinite(v) ? v.toLocaleString(NGG_LOCALE, { maximumFractionDigits: 0 }) : "0");
 }
 
+/* ── Prices in the family's own currency (domain/fx.php; owner, 25 Nov 2026) ──────────────────────────────
+   The account is naira and payment is naira; what changes is what a family abroad READS beside the price:
+   "₦13,000 · about £7". The currency is guessed from the device's time zone (never its locale, which says
+   how to write numbers, not where the money is), remembered on this device once the family picks one, and
+   shown only where the server has a rate. A dollar price staff promise ($10 for ₦13,000) is shown exactly. */
+const NGG_FX_KEY = "ngg.currency";
+const NGG_FX_EURO = ["Paris", "Berlin", "Madrid", "Rome", "Amsterdam", "Brussels", "Vienna", "Dublin", "Lisbon", "Athens", "Helsinki", "Luxembourg", "Bratislava", "Ljubljana", "Tallinn", "Riga", "Vilnius", "Valletta", "Nicosia", "Zagreb", "Monaco", "Andorra"];
+const NGG_FX_ZONES = { "Europe/London": "GBP", "Europe/Belfast": "GBP", "Africa/Lagos": "NGN", "Africa/Accra": "GHS", "Africa/Nairobi": "KES",
+  "Africa/Johannesburg": "ZAR", "Asia/Dubai": "AED", "Asia/Riyadh": "SAR", "Asia/Kolkata": "INR", "Asia/Calcutta": "INR", "Asia/Shanghai": "CNY",
+  "Africa/Abidjan": "XOF", "Africa/Dakar": "XOF", "Africa/Lome": "XOF", "Africa/Porto-Novo": "XOF", "Africa/Ouagadougou": "XOF", "Africa/Bamako": "XOF", "Africa/Niamey": "XOF" };
+const NGG_FX_CANADA = ["Toronto", "Vancouver", "Edmonton", "Winnipeg", "Halifax", "St_Johns", "Regina", "Montreal", "Moncton"];
+/** The currency a device's time zone suggests, or "NGN". */
+function nggFxGuess(tz) {
+  let z = tz;
+  if (z === undefined) { try { z = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { z = ""; } }
+  if (NGG_FX_ZONES[z]) return NGG_FX_ZONES[z];
+  const [area, city] = String(z).split("/");
+  if (area === "Europe" && NGG_FX_EURO.indexOf(city) >= 0) return "EUR";
+  if (area === "America") return NGG_FX_CANADA.indexOf(city) >= 0 ? "CAD" : "USD";
+  if (area === "Australia") return "AUD";
+  return "NGN";
+}
+let __nggFx = null, __nggFxP = null;
+function nggFxLoad() {
+  if (!__nggFxP) __nggFxP = (window.NGGApi && NGGApi.public && NGGApi.public.fx ? NGGApi.public.fx() : Promise.reject(new Error("no api")))
+    .then(r => (__nggFx = r || { rates: {}, currencies: [] })).catch(() => (__nggFx = { rates: {}, currencies: [] }));
+  return __nggFxP;
+}
+function nggFxCode() { try { const v = localStorage.getItem(NGG_FX_KEY); if (v) return v; } catch (e) {} return nggFxGuess(); }
+function nggFxSet(code) {
+  try { localStorage.setItem(NGG_FX_KEY, code); } catch (e) {}
+  try { window.dispatchEvent(new CustomEvent("ngg-currency", { detail: code })); } catch (e) {}
+}
+/** "about £7" for a naira amount, or "" when the currency is naira or has no rate. */
+function nggLocalPrice(naira, fx, code) {
+  const n = Number(naira) || 0;
+  if (!fx || !code || code === "NGN" || n <= 0) return "";
+  const cur = (fx.currencies || []).find(c => c.code === code);
+  const stated = fx.stated && fx.stated[code] && fx.stated[code][String(n)];
+  if (cur && stated) return cur.symbol + Number(stated).toLocaleString(NGG_LOCALE);
+  const rate = fx.rates && fx.rates[code];
+  if (!cur || !rate) return "";
+  const v = n / rate;
+  return "about " + cur.symbol + (v < 10 ? (Math.round(v * 10) / 10).toLocaleString(NGG_LOCALE) : Math.round(v).toLocaleString(NGG_LOCALE));
+}
+/** The rates and the chosen currency, kept current when the family changes it. */
+function useNggFx() {
+  const [fx, setFx] = useState(__nggFx);
+  const [code, setCode] = useState(nggFxCode);
+  useEffect(() => {
+    let live = true;
+    nggFxLoad().then(r => { if (live) setFx(r); });
+    const on = e => setCode(e.detail || nggFxCode());
+    window.addEventListener("ngg-currency", on);
+    return () => { live = false; window.removeEventListener("ngg-currency", on); };
+  }, []);
+  return { fx, code };
+}
+/** A naira price with the family's own currency beside it: ₦13,000 · about £7. */
+function NggPrice({ naira, className }) {
+  const { fx, code } = useNggFx();
+  const local = nggLocalPrice(naira, fx, code);
+  return <span className={"ngg-price" + (className ? " " + className : "")}>{fmtMoney(naira)}{local ? <span className="ngg-price-local"> · {local}</span> : null}</span>;
+}
+/** "Show prices in" — the family's own choice, remembered on this device. Hidden until rates exist. */
+function NggCurrencyPick() {
+  const { fx, code } = useNggFx();
+  const list = (fx && fx.currencies) || [];
+  if (list.length < 2) return null;
+  const known = list.some(c => c.code === code);
+  return <label className="ngg-currency-pick">
+    <span>Show prices in</span>
+    <select value={known ? code : "NGN"} onChange={e => nggFxSet(e.target.value)} aria-label="Currency to show prices in">
+      {list.map(c => <option key={c.code} value={c.code}>{c.code === "NGN" ? "Naira only" : c.name + " (" + c.code + ")"}</option>)}
+    </select>
+    <small>You always pay in naira. Other currencies are approximate.</small>
+  </label>;
+}
+/** A start time in the family's own clock, with Lagos time beside it when they differ. */
+function nggLocalTime(iso, lagosLabel) {
+  if (!iso) return lagosLabel || "";
+  const d = new Date(iso);
+  let mine = "", tz = "";
+  try {
+    mine = new Intl.DateTimeFormat(NGG_LOCALE, { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" }).format(d);
+    tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch (e) { return lagosLabel || ""; }
+  if (!tz || tz === "Africa/Lagos") return mine;
+  return mine + " your time" + (lagosLabel ? " · " + lagosLabel.replace(/^.*?,\s*/, "") + " in Lagos" : "");
+}
+
 /** A guardian's answer to "why were they away?" (domain/make.php), as one
  *  line beside the absence. It explains the absence; it does not void it. */
 const GUARDIAN_REASON_LABELS = { sick: "Sick", travelled: "Travelled", family: "Family matter", other: "Other" };

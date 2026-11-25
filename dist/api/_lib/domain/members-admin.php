@@ -308,6 +308,10 @@ function member_merge_policy(): array {
         'member_state'           => 'MOVE_UNIQUE',
         'member_timetables'      => 'MOVE_UNIQUE',    // one personal week per person; the survivor's stands
         'online_session_joins'   => 'MOVE_UNIQUE',    // online session attendance travels with the person; one row per session (online.php)
+        'online_class_joins'     => 'MOVE_UNIQUE',    // live-class attendance travels with the person; one row per class per date (online-live.php)
+        'online_class_members'   => 'MOVE_UNIQUE',    // their place in a planned class; the planner re-checks it on its next run
+        'online_course_enrolments' => 'MOVE',         // when each course was started and stopped: billing history, kept whole
+        'online_access_holds'    => 'MOVE',           // a hold staff gave stays with the person it was given to
         'member_assessments'     => 'MOVE_UNIQUE',
         'community_reads'        => 'MOVE_UNIQUE',
         'community_poll_votes'   => 'MOVE_UNIQUE',    // one person, one vote

@@ -177,7 +177,31 @@ setting.
   who was quiet this week. It also holds the session settings. The online prices are under Money → Dues &
   arrears → Amounts → NGG Online.
 
-**Still open with the owner:** the $10 (monthly or one-off), the $5 (per month or once), what happens to an
+**Was open with the owner (answered below, 25 Nov 2026):** the $10 (monthly or one-off), the $5 (per month or once), what happens to an
 unpaid online member's access (nothing automatic is built), and dollars or naira for buyers abroad (naira
 today; the dollar figure is what families are told).
+
+## Decided and built, 25 Nov 2026
+
+- **The $10 is monthly**, and both it and the $5 are settings: `onlineMonthlyBasis` and `onlineCourseBasis`,
+  each `month` or `once`. The prices are settings too (Money → Amounts → NGG Online).
+- **Courses by the months they were taken** (`online_course_enrolments`, migration 249). The answer to
+  "when was a course chosen is not recorded" above.
+- **Unpaid access: grace, then pause only what costs an instructor.** `graceHours` (48 by default, entered in
+  hours or days); reminders fitted to the window; after it the live classes and the session pause, nothing
+  else; reopened the moment payment arrives; staff holds with a reason; flagged for review after
+  `reviewAfterDays`. The child is never shown an amount. `domain/online-live.php`.
+- **Live Saturday classes, automated** (owner: "Smarter. Not like this. Automated"): a planner makes one class
+  per course (groups above `classMaxSize`), slots them clash-free for members and instructors, assigns
+  instructors, makes Jitsi rooms, keeps classes stable week to week and tells families of changes; a person's
+  edit locks a class. Reminders before, attendance by Join, recording requests after, missed-two-in-a-row
+  follow-up, and the class's lesson = where the group actually is.
+- **Prices in local currencies** (`domain/fx.php`): naira stays the account and the payment; families read their
+  own currency beside it, chosen from the device's time zone. Daily rates from a free feed, staff can pin.
+- **Course content**: 78 new lessons (`curriculum-course-depth-2026.json`) so every catalogue course has at
+  least a term; Music, the Creative division's major, had none. Each has a *Learning online* section.
+
+Still to decide: whether an online member's paused live classes should also pause instructor marking (it
+does not today), and whether a family abroad should be able to pay in another currency (Paystack charges
+naira; this would need a different gateway).
 

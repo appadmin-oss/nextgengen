@@ -8081,3 +8081,23 @@ helper "should be the child's mentor", automated; and the entry steps in the ord
   fail their test. The answer-once claim guards concurrent taps; a sequential second tap is also refused by
   `app_offer_by_token`, so no sequential test can tell the claim's absence.
 
+## 25 Nov 2026 — NGG Online, live: billing settings, grace and pause, automatic live classes, local currencies, course depth
+
+- **Merge.** `afv/brave-faraday-pdlh7o` (accepted then confirmed; a nearer centre offered) merged in. Both lines had
+  used migration 245; ours kept it (appliesTo) and theirs became 248, which also re-adds appliesTo for a database
+  built from their line.
+- **Migration 249**: online_course_enrolments, online_classes (+autoKey, groupNo, locked), online_class_sessions,
+  online_class_joins, online_class_members, online_access_holds. Merge policy names all four memberId tables.
+- **Fees**: `onlineMonthlyBasis` (month | once; 'online:once' ledger key). Course charges follow enrolment dates;
+  the accrual opens/closes enrolments (`online_enrolments_sync`).
+- **Access**: `online_access_state()` is computed from the ledger (fees_allocate, every kind including course
+  `training`), never stored. States ok · grace · paused · held · owing (pausing off). Only live classes and the
+  session pause. Reminder stages fitted to the window, latest stage only, quiet hours 21:00–07:00; notices through
+  `dues_notice_send` (kinds online_due, online_paused, online_restored, online_class).
+- **Planner**: `online_plan_classes()` — groups, greedy clash-free colouring with stability (current slot first),
+  instructor load balancing, Jitsi links, locked classes planned around, archive what is no longer needed. Webcron
+  `online_plan` (6h), `online_class` (10 min: reminders + follow-up), `online_access` (30 min), `fx` (daily).
+- **FX**: `public.fx` (cached, topic `fx`), `admin.fx*`. Components: `NggPrice`, `nggLocalPrice`, `NggCurrencyPick`,
+  `useNggFx`, `nggLocalTime`. Currency from the time zone, never the locale.
+- **Lessons**: 78, validated through `curriculum_validate()`, ≥3 checks each, no MCQ whose key is the longest option.
+

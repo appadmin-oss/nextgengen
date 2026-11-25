@@ -1022,7 +1022,8 @@ function crMoAmountsForm(cfg, B, defaults) {
           help: "A ceiling on one member’s balance; once reached nothing further accrues. 0 means no ceiling — an account that grows past what anyone can pay pushes a family out of the programme." },
       ] },
       { h: "NGG Online", help: "What online members pay instead of the centre’s fees: no membership fee, no commitment fee, no training place. The month is paid before it starts and never shortened for a late start. The dollar figures are what families are told beside the naira; accounts are kept in naira.", rows: [
-        { id: "onlineMonthly", l: "Online membership, a month (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.onlineMonthly == null ? 13000 : cfg.onlineMonthly), check: money, help: "A mentor is included." },
+        { id: "onlineMonthly", l: "Online membership (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.onlineMonthly == null ? 13000 : cfg.onlineMonthly), check: money, help: "A mentor is included." },
+        { id: "onlineMonthlyBasis", l: "Online membership is charged", c: "select", value: cfg.onlineMonthlyBasis || "month", opts: [["month", "Every month, before it starts"], ["once", "Once, when they join"]] },
         { id: "onlineMonthlyUsd", l: "…said in dollars as ($)", c: "input", type: "number", im: "numeric", value: String(cfg.onlineMonthlyUsd == null ? 10 : cfg.onlineMonthlyUsd), check: int(0, 1000) },
         { id: "onlineCourseFee", l: "Each course, with an instructor (₦)", c: "input", type: "number", im: "numeric", value: String(cfg.onlineCourseFee == null ? 6500 : cfg.onlineCourseFee), check: money, help: "0 includes courses in the membership." },
         { id: "onlineCourseUsd", l: "…said in dollars as ($)", c: "input", type: "number", im: "numeric", value: String(cfg.onlineCourseUsd == null ? 5 : cfg.onlineCourseUsd), check: int(0, 1000) },
@@ -1064,7 +1065,7 @@ function crMoAmountsForm(cfg, B, defaults) {
     ],
     save: async patch => {
       const send = {};
-      Object.keys(patch).forEach(k => { send[k] = typeof patch[k] === "boolean" || k === "trainingBasis" || k === "onlineCourseBasis" ? patch[k] : parseInt(patch[k], 10); });
+      Object.keys(patch).forEach(k => { send[k] = typeof patch[k] === "boolean" || k === "trainingBasis" || k === "onlineCourseBasis" || k === "onlineMonthlyBasis" ? patch[k] : parseInt(patch[k], 10); });
       /* The percentage is typed as a percentage and stored in basis points (1.5% → 150). */
       if (patch.payFeePct != null) { delete send.payFeePct; send.payFeeBps = Math.round(Number(patch.payFeePct) * 100); }
       const r = await NGGApi.admin.fees.settingsSet(send);
@@ -1076,6 +1077,28 @@ function crMoAmountsForm(cfg, B, defaults) {
   };
 }
 
+/* Currencies (domain/fx.php): families abroad read prices beside the naira — "₦13,000 · about £7". Rates
+   refresh daily from a free public feed; a rate pinned here wins over it. Payment is always naira. */
+const CR_FX_SRC = { pinned: "Pinned here", feed: "Daily feed", price: "From the online dollar price" };
+function crMoFxBlocks(fx, ctx) {
+  if (!fx) return [{ type: "note", span: 6, icon: "warning-circle", tone: "warn", text: "Couldn’t load the exchange rates.", act: { l: "Try again", run: () => ctx.reload() } }];
+  const rows = (fx.currencies || []).map(c => ({ key: c.code, cells: [
+    { k: "strong", t: c.name, s: c.code },
+    { k: "num", t: c.rate ? fmtMoney(Math.round(c.rate * 100) / 100) : "—", v: c.rate || 0 },
+    c.source ? { k: "status", t: CR_FX_SRC[c.source] || c.source, tone: c.source === "pinned" ? "info" : "ok" } : { k: "status", t: "Not shown", tone: "warn" },
+  ], open: ctx.can("fees") ? () => ctx.form({ title: "Rate for the " + c.name, submit: "Save", values: { rate: c.pinned ? String(c.pinned) : "" },
+      fields: [{ id: "rate", l: "Naira for one " + c.code + " (empty to use the daily feed)", type: "number", ph: c.fetched ? String(Math.round(c.fetched)) : "" }],
+      onSubmit: async v => { try { await NGGApi.admin.fx.save({ pinned: { [c.code]: v.rate === "" ? null : Number(v.rate) } }); } catch (e) { throw new Error(crErr(e, "Couldn’t save the rate.")); } ctx.reload(); return true; },
+      done: () => "Saved" }) : null }));
+  return [
+    { type: "note", span: 6, icon: "currency-circle-dollar", tone: fx.error || fx.stale ? "warn" : undefined,
+      text: "Prices abroad: families see their own currency beside the naira, chosen from their device’s time zone.",
+      sub: (fx.error ? fx.error + " " : "") + (fx.mode === "manual" ? "The daily feed is off; only pinned rates are used." : fx.fetchedAt ? "Rates from the daily feed, last " + crDate(fx.fetchedAt) + (fx.stale ? " — over a week old." : ".") : "The daily feed has not run yet.") + " Families always pay in naira.",
+      act: ctx.can("fees") ? { l: "Refresh the rates now", run: async () => { try { const r = await NGGApi.admin.fx.refresh(); ctx.toast(r.refreshed ? "Rates refreshed." : "The feed did not answer; the last rates stay.", null, !r.refreshed); } catch (e) { ctx.toast(crErr(e, "Couldn’t refresh."), null, true); } ctx.reload(); } } : null },
+    { type: "table", span: 6, title: "Exchange rates", nosel: true, cols: ["Currency", { l: "Naira for one", num: true }, "Source"], rows,
+      emptyText: "No currencies." },
+  ];
+}
 function crMoAmountsBlocks(d, ctx) {
   const up = d.up, out = [d.amountsForm];
   if (!up) out.push({ type: "note", span: 6, icon: "warning-circle", tone: "warn", text: "Couldn’t check whether a raise is due.", act: { l: "Try again", run: () => ctx.reload() } });
@@ -1091,14 +1114,14 @@ function crMoAmountsBlocks(d, ctx) {
       cols: ["Amount", { l: "Now", num: true }, { l: "Would become", num: true }],
       rows: keys.map(k => ({ key: k, cells: [{ k: "text", t: CR_MO_SETTING[k] || k }, { k: "num", t: fmtMoney(up.changes[k].from), v: up.changes[k].from }, { k: "num", t: fmtMoney(up.changes[k].to), v: up.changes[k].to }] })) });
   }
-  return out;
+  return out.concat(crMoFxBlocks(d.fx, ctx));
 }
 
 Object.assign(CR_TAB_DEFS, {
   fees: {
     skeleton: ["kpis", "table"],
     load: async ctx => {
-      const [s, up] = await Promise.all([NGGApi.admin.fees.settings(), NGGApi.admin.fees.upratePreview().catch(() => null)]);
+      const [s, up, fx] = await Promise.all([NGGApi.admin.fees.settings(), NGGApi.admin.fees.upratePreview().catch(() => null), NGGApi.admin.fx.get().catch(() => null)]);
       const B = s.bounds || {};
       const arr = await NGGApi.admin.fees.arrears(B.arrearsPage);
       const id = crMoAcctId(ctx.sub);
@@ -1109,7 +1132,7 @@ Object.assign(CR_TAB_DEFS, {
       const jr = ctx.sub === "transactions" ? await NGGApi.admin.fees.journal(jf).catch(e => ({ err: e })) : (ctx.data && ctx.data.jr) || null;
       const d = { cfg: s.fees, B, defaults: s.defaults || {}, arr, acct, rev: 0,
         up: up ? Object.assign({}, up.uprate, { maxPct: up.maxPct }) : null,
-        prev: prev || null, nv, nvErr: ctx.sub === "reminders" && !nv ? "Couldn’t load the notices." : "", trainServer: crMoTrainServer(), jf, jr };
+        fx, prev: prev || null, nv, nvErr: ctx.sub === "reminders" && !nv ? "Couldn’t load the notices." : "", trainServer: crMoTrainServer(), jf, jr };
       d.amountsForm = crMoAmountsForm(d.cfg, B, d.defaults);
       return d;
     },

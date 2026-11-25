@@ -77,6 +77,9 @@ class Fp3Portal extends React.Component {
   /* ── lifecycle ─────────────────────────────────────────────────────── */
   componentDidMount() {
     const el = this.rootRef.current;
+    // Prices abroad: re-draw once the rates are here, and whenever the family picks another currency.
+    if (typeof nggFxLoad === "function") nggFxLoad().then(() => { if (this.rootRef.current) this.forceUpdate(); });
+    this._fxOn = () => this.forceUpdate(); window.addEventListener("ngg-currency", this._fxOn);
     // Push: this phone's registration kept true, and presence while the account is open (components.jsx).
     if (typeof nggPushBoot === "function") this._pushOff = nggPushBoot("family");
     this.ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => { const r = this.rootRef.current; const w = Math.round((r && r.getBoundingClientRect().width) || window.innerWidth); if (Math.abs(w - this.state.w) > 8) this.setState({ w }); }) : null;
@@ -105,6 +108,7 @@ class Fp3Portal extends React.Component {
     } else this.boot();
   }
   componentWillUnmount() {
+    if (this._fxOn) window.removeEventListener("ngg-currency", this._fxOn);
     if (this._pushOff) this._pushOff();
     this.ro && this.ro.disconnect(); document.removeEventListener("keydown", this.onKey);
     window.removeEventListener("popstate", this.onPop); window.removeEventListener("online", this.onNet); window.removeEventListener("offline", this.onNet);
@@ -151,7 +155,13 @@ class Fp3Portal extends React.Component {
   wardsAll() { const T = this.today(); return this.links().map(l => fp3Ward(l, this.state.wards[l.linkId] || null, T)); }
   inbox() { return fp3Inbox(this.state.inbox || []); }
   events() { return fp3Events(this.state.events || []); }
-  naira(n) { return "₦" + Number(n || 0).toLocaleString("en"); }
+  /* Naira, with the family's own currency beside it when they are abroad (components.jsx · nggLocalPrice):
+     "₦13,000 (about £7)". Payment is always naira; nothing changes for a family in Nigeria. */
+  naira(n) {
+    const t = "₦" + Number(n || 0).toLocaleString("en");
+    const local = typeof nggLocalPrice === "function" && typeof __nggFx !== "undefined" ? nggLocalPrice(n, __nggFx, nggFxCode()) : "";
+    return local ? t + " (" + local + ")" : t;
+  }
   ini(n) { return String(n || "").split(" ").filter(Boolean).map(w => w[0]).slice(0, 2).join("").toUpperCase(); }
   toast(t) { clearTimeout(this.tt); this.setState({ toast: t }); this.tt = setTimeout(() => this.setState({ toast: "" }), 3800); }
   can() { if (!this.state.online) { this.toast("You’re offline. Try again when you’re connected."); return false; } return true; }
@@ -348,7 +358,7 @@ class Fp3Portal extends React.Component {
        payment made offline. */
     const wl = active && loaded;
     out.mainSlotEnd = sec === "today" && wl ? <Fp3TodayMore key={w.linkId} c={this} w={w}/>
-      : sec === "money" && wl ? <div className="fp3x-more" key={w.linkId}>{w.fees.enabled ? <><Fp3Ahead c={this} w={w}/><Fp3Paid c={this} w={w}/></> : null}<Fp3Docs c={this} w={w}/></div>
+      : sec === "money" && wl ? <div className="fp3x-more" key={w.linkId}>{w.fees.enabled ? <><Fp3Ahead c={this} w={w}/><Fp3Paid c={this} w={w}/>{typeof NggCurrencyPick === "function" ? <div className="fp3x-card fp3x-fx"><NggCurrencyPick/></div> : null}</> : null}<Fp3Docs c={this} w={w}/></div>
       // Anchor Circle, in the family account: the child's week on Growth (domain/circle.php).
       : sec === "progress" && wl ? <div className="fp3x-more" key={w.linkId}><Fp3Anchor c={this} linkId={w.linkId} first={w.member.first} role="parent"/></div>
       : sec === "account" ? <React.Fragment>

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 248;
+const NGG_SCHEMA_TARGET = 249;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6821,6 +6821,58 @@ function db_migrate(PDO $db): void {
             ALTER TABLE applications ADD COLUMN offerAnsweredAt TEXT NOT NULL DEFAULT '';
             ALTER TABLE member_ledger ADD COLUMN appliesTo TEXT NOT NULL DEFAULT '';
         ";
+
+    /* 249 — NGG Online, live (owner, 25 Nov 2026).
+         online_course_enrolments: when an online member started and stopped each course, so a course is charged
+           for the months it was taken and stops the month after it is dropped (fees_online_course_items). A row is
+           opened the first time the accrual sees a course, so no existing member is charged backwards.
+         online_classes / online_class_sessions / online_class_joins: the live Saturday classes — one row per
+           class (a course, or everyone), one per occurrence that has something to say (a recording, a cancellation,
+           the reminder sent), and one per member who pressed Join (the attendance).
+         online_access_holds: staff keeping an unpaid member's live classes open until a time, with the reason. */
+    $migrations[249] = "
+        CREATE TABLE IF NOT EXISTS online_course_enrolments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          memberId TEXT NOT NULL, course TEXT NOT NULL,
+          startedOn TEXT NOT NULL DEFAULT '', endedOn TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_online_enrol_member ON online_course_enrolments(memberId, endedOn);
+        CREATE TABLE IF NOT EXISTS online_classes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          classId TEXT NOT NULL UNIQUE, title TEXT NOT NULL DEFAULT '', course TEXT NOT NULL DEFAULT '',
+          instructorId TEXT NOT NULL DEFAULT '', instructorName TEXT NOT NULL DEFAULT '',
+          day TEXT NOT NULL DEFAULT 'Saturday', startTime TEXT NOT NULL DEFAULT '10:00', minutes INTEGER NOT NULL DEFAULT 60,
+          url TEXT NOT NULL DEFAULT '', startsOn TEXT NOT NULL DEFAULT '', endsOn TEXT NOT NULL DEFAULT '',
+          notes TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active',
+          autoKey TEXT NOT NULL DEFAULT '', groupNo INTEGER NOT NULL DEFAULT 0, locked INTEGER NOT NULL DEFAULT 0,
+          createdBy TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS online_class_sessions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          classId TEXT NOT NULL, sessionDate TEXT NOT NULL,
+          recordingUrl TEXT NOT NULL DEFAULT '', cancelled INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '',
+          remindedAt TEXT NOT NULL DEFAULT '', followedUpAt TEXT NOT NULL DEFAULT '', updatedBy TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT ''
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_online_class_session ON online_class_sessions(classId, sessionDate);
+        CREATE TABLE IF NOT EXISTS online_class_joins (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          classId TEXT NOT NULL, memberId TEXT NOT NULL, sessionDate TEXT NOT NULL, joinedAt TEXT NOT NULL DEFAULT ''
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_online_class_join ON online_class_joins(classId, memberId, sessionDate);
+        CREATE INDEX IF NOT EXISTS idx_online_class_join_date ON online_class_joins(sessionDate);
+        CREATE TABLE IF NOT EXISTS online_class_members (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          classId TEXT NOT NULL, memberId TEXT NOT NULL, addedAt TEXT NOT NULL DEFAULT ''
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_online_class_member ON online_class_members(classId, memberId);
+        CREATE INDEX IF NOT EXISTS idx_online_class_member_m ON online_class_members(memberId);
+        CREATE TABLE IF NOT EXISTS online_access_holds (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          memberId TEXT NOT NULL, holdUntil TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
+          createdBy TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_online_hold_member ON online_access_holds(memberId, holdUntil);
+    ";
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
     db_assert_migration_ladder($migrations);

@@ -684,8 +684,18 @@ class Ip6Portal extends React.Component {
     v.openCheck = () => set({ checkOpen: true });
     const selId = S.sel || (((this.ctx() || {}).L || [])[0] || {}).id;
     const selName = ((((this.ctx() || {}).L || []).find(m => m.id === selId)) || {}).name || '';
-    return <>{Ip6View(v)}{S.checkOpen && selId && <Ip6Checklist memberId={selId} name={selName} course={(this.state.d.cls || {}).course || this.state.course || ''} onClose={() => { set({ checkOpen: false }); const d = { ...this.state.d }; delete d['stu:' + selId]; this.setState({ d }, () => this.loadStu(selId)); }} say={t => this.toast(t)}/>}{S.placeOpen && <Ip6Place course={(this.state.d.cls || {}).course || this.state.course || ''} onClose={() => set({ placeOpen: false })} say={t => this.toast(t)}/>}{typeof GuideTour === 'function' && <GuideTour portal="instructor"/>}{typeof DutyPopup === 'function' && <DutyPopup role="instructor" onGo={dutyGo}/>}</>;
+    return <>{Ip6View(v)}<Ip6OnlineTeaching say={t => this.toast(t)}/>{S.checkOpen && selId && <Ip6Checklist memberId={selId} name={selName} course={(this.state.d.cls || {}).course || this.state.course || ''} onClose={() => { set({ checkOpen: false }); const d = { ...this.state.d }; delete d['stu:' + selId]; this.setState({ d }, () => this.loadStu(selId)); }} say={t => this.toast(t)}/>}{S.placeOpen && <Ip6Place course={(this.state.d.cls || {}).course || this.state.course || ''} onClose={() => set({ placeOpen: false })} say={t => this.toast(t)}/>}{typeof GuideTour === 'function' && <GuideTour portal="instructor"/>}{typeof DutyPopup === 'function' && <DutyPopup role="instructor" onGo={dutyGo}/>}</>;
   }
+}
+
+/* The live online classes this instructor teaches (domain/online-live.php): the same panel the member portal
+   shows, so there is one drawing of it. Renders nothing for an instructor with no online class. */
+function Ip6OnlineTeaching({ say }) {
+  const [list, setList] = React.useState(null);
+  const load = React.useCallback(() => { NGGApi.member.onlineTeaching().then(r => setList(r.classes || [])).catch(() => setList([])); }, []);
+  React.useEffect(() => { load(); }, [load]);
+  if (!list || !list.length || typeof Mp9OnlineTeaching !== "function") return null;
+  return <div className="ip6-online"><Mp9OnlineTeaching classes={list} toast={say} reload={load}/></div>;
 }
 
 /* /instructor: one address per programme, like /mentor.

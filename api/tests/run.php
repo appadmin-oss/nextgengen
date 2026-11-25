@@ -40581,7 +40581,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('online · the notice names the charges in the family’s words (never "Membership renewal" for a course)',
         str_starts_with(dues_charge_label(['kind' => 'dues', 'key' => $next], $om), 'NGG Online') && str_starts_with(dues_charge_label(['kind' => 'training', 'key' => 'course:' . mb_strtolower($course) . ':' . $next], $om), 'Course · ' . $course));
 
-    // The online Saturday session.
+    // The online Saturday session. Paid up first: an online member past the grace period has their live classes
+    // paused (online-live.php), which is its own block below.
+    fees_post('NGG-ONP-1', 'payment', 100000, ['by' => 'test', 'method' => 'cash', 'note' => 'paid up for the session tests']);
     $w = online_session_window(strtotime('2026-11-18 12:00:00 UTC'), ['sessionDay' => 'Saturday', 'sessionTime' => '08:30', 'sessionMinutes' => 90] + ONLINE_DEFAULTS);
     chk('online · the next session is the coming Saturday at 08:30 Lagos time', $w['date'] === '2026-11-21' && gmdate('H:i', $w['start']) === '07:30');
     chk('online · the session card is for online members only', (backend_dispatch('member.online.session', ['memberId' => 'NGG-ONP-C'])['error'] ?? '') === 'not_online');
@@ -40616,13 +40618,154 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $ov = admin_online_overview(['requesterId' => 'NGG-ONP-ADM']);
     $mine = array_values(array_filter($ov['members'] ?? [], static fn($r) => $r['memberId'] === 'NGG-ONP-1'))[0] ?? [];
     chk('online · the Online view lists online members only, with what they owe and their mentor',
-        !empty($ov['ok']) && $mine && $mine['mentor'] === 'Mo Mentor' && $mine['owing'] > 0
+        !empty($ov['ok']) && $mine && $mine['mentor'] === 'Mo Mentor' && $mine['owing'] === 0 && ($mine['access']['state'] ?? '') === 'ok'
         && !array_filter($ov['members'], static fn($r) => $r['memberId'] === 'NGG-ONP-C') && ($ov['counts']['members'] ?? 0) >= 1);
 
     db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-ONP-%'"); db_exec("DELETE FROM mentor_assignments WHERE memberId LIKE 'NGG-ONP-%'");
     db_exec("DELETE FROM online_session_joins WHERE memberId LIKE 'NGG-ONP-%'"); db_exec("DELETE FROM mentors WHERE mentorId = 'MEN-ONP-1'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-ONP-%'");
     setting_set('fees', (string)$keepFees, 'test'); setting_set(ONLINE_SETTINGS_KEY, $keepOn === null || $keepOn === '' ? ONLINE_DEFAULTS : (string)$keepOn, 'test');
+})();
+
+/* ── NGG Online, live (owner, 25 Nov 2026): fees monthly or once, courses charged by the months they were taken,
+   a grace period in hours or days, live classes paused (never the rest) when unpaid, the automatic timetable,
+   and prices in the family's own currency. ── */
+(function () {
+    $now = now_iso();
+    $keepFees = setting_raw('fees'); $keepOn = setting_raw(ONLINE_SETTINGS_KEY); $keepFx = setting_raw(FX_SETTING);
+    $fees = ['enabled' => true, 'membershipFee' => 10000, 'monthlyDues' => 2000, 'trainingFee' => 300000, 'trainingBasis' => 'total',
+        'onlineMonthly' => 13000, 'onlineMonthlyUsd' => 10, 'onlineCourseFee' => 6500, 'onlineCourseUsd' => 5, 'onlineCourseBasis' => 'month', 'payFeeOn' => false];
+    fees_settings_save($fees, 'test');
+    setting_set(ONLINE_SETTINGS_KEY, ONLINE_DEFAULTS, 'test');
+    $names = member_course_names(); $cA = $names[0] ?? 'Chess'; $cB = $names[1] ?? 'Coding'; $cC = $names[2] ?? 'Music';
+    db_insert('members', ['memberId' => 'NGG-OLV-ADM', 'fullName' => 'Live Admin', 'email' => 'olv.admin@test.invalid', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    $mk = static function (string $id, array $courses, string $join = '') use ($now) {
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Kid ' . $id, 'email' => '', 'parentEmail' => strtolower($id) . '@test.invalid', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+            'centre' => 'NGG Online', 'joinDate' => $join ?: gmdate('Y-m-01'), 'courses' => json_encode($courses), 'createdAt' => $now, 'updatedAt' => $now]);
+        return db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
+    };
+
+    // 1. The $10: monthly by default, or once.
+    $m1 = $mk('NGG-OLV-1', [$cA]);
+    fees_settings_save($fees + ['onlineMonthlyBasis' => 'once'], 'test');
+    fees_accrue_member($m1); fees_accrue_member($m1);
+    $dues = db_all("SELECT periodKey FROM member_ledger WHERE memberId = 'NGG-OLV-1' AND kind = 'dues'");
+    chk('online live · the online fee set to "once" is charged one time, keyed online:once, however often the accrual runs',
+        array_column($dues, 'periodKey') === ['online:once'] && fees_member_monthly($m1) === 0
+        && (membership_invoice_items($m1, gmdate('Y-m-d'))[0]['periodKey'] ?? '') === 'online:once');
+    chk('online live · …and set back to monthly it is the month again', (function () use ($fees, $m1) { fees_settings_save($fees + ['onlineMonthlyBasis' => 'month'], 'test'); return fees_member_monthly($m1) === 13000 && fees_online_fee_key('2026-12') === '2026-12'; })());
+    chk('online live · a basis that is not one is refused back to the current one', (function () use ($fees) { fees_settings_save($fees + ['onlineMonthlyBasis' => 'weekly'], 'test'); return (fees_settings()['onlineMonthlyBasis'] ?? '') === 'month'; })());
+
+    // 2. Courses by the months they were taken.
+    db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-OLV-1'"); db_exec("DELETE FROM online_course_enrolments WHERE memberId = 'NGG-OLV-1'");
+    $sync = online_enrolments_sync($m1);
+    $open = db_all("SELECT course, startedOn, endedOn FROM online_course_enrolments WHERE memberId = 'NGG-OLV-1'");
+    chk('online live · a course is recorded the first time it is seen, starting today — nobody is charged backwards',
+        $sync['opened'] === 1 && count($open) === 1 && $open[0]['startedOn'] === online_lagos_today() && $open[0]['endedOn'] === '');
+    db_exec('UPDATE members SET courses = ? WHERE memberId = ?', [json_encode([$cB]), 'NGG-OLV-1']);
+    $m1 = db_row("SELECT * FROM members WHERE memberId = 'NGG-OLV-1'");
+    $sync2 = online_enrolments_sync($m1);
+    $next = gmdate('Y-m', strtotime(gmdate('Y-m-01') . ' +1 month'));
+    $thisM = online_courses_in_month($m1, substr(online_lagos_today(), 0, 7)); $nextM = online_courses_in_month($m1, $next);
+    chk('online live · a dropped course is closed today: charged for this month (it was taken in it), not for next month',
+        $sync2 === ['opened' => 1, 'closed' => 1] && in_array($cA, $thisM, true) && in_array($cB, $thisM, true) && $nextM === [$cB]);
+
+    // 3. Grace, in hours or days.
+    chk('online live · the grace period can be given in days: 2 days is 48 hours', !empty(admin_online_settings_save(['requesterId' => 'NGG-OLV-ADM', 'settings' => ['graceValue' => 2, 'graceUnit' => 'days']])['ok']) && online_live_settings()['graceHours'] === 48);
+    chk('online live · …or in hours: 36', !empty(admin_online_settings_save(['requesterId' => 'NGG-OLV-ADM', 'settings' => ['graceValue' => 36, 'graceUnit' => 'hours']])['ok']) && online_live_settings()['graceHours'] === 36);
+    chk('online live · a grace unit that is not one is refused by name', (admin_online_settings_save(['requesterId' => 'NGG-OLV-ADM', 'settings' => ['graceValue' => 2, 'graceUnit' => 'weeks']])['error'] ?? '') === 'bad_grace_unit');
+    admin_online_settings_save(['requesterId' => 'NGG-OLV-ADM', 'settings' => ['graceValue' => 48, 'graceUnit' => 'hours']]);
+    $m2 = $mk('NGG-OLV-2', [$cA], '2026-10-01');
+    fees_post('NGG-OLV-2', 'dues', 13000, ['periodKey' => '2026-10', 'note' => 'NGG Online membership — October 2026', 'by' => 'test']);
+    $due = online_lagos_midnight('2026-10-01');
+    $a10 = online_access_state($m2, $due + 10 * 3600); $a49 = online_access_state($m2, $due + 49 * 3600);
+    chk('online live · owing, inside the grace period: "grace", with the hours left and the pause time', $a10['state'] === 'grace' && $a10['hoursLeft'] === 38 && $a10['dueSince'] === '2026-10-01' && $a10['owing'] === 13000);
+    chk('online live · past the grace period the live classes pause', $a49['state'] === 'paused');
+    chk('online live · the reminder ladder fits the window: 48h reminds at 0, 24h and 36h, then pauses; 6h only at the start; none, only the pause',
+        array_column(online_remind_stages(48), 0) === ['due', 'half', 'last', 'paused'] && array_column(online_remind_stages(48), 1) === [0, 86400, 129600, 172800]
+        && array_column(online_remind_stages(6), 0) === ['due', 'paused'] && array_column(online_remind_stages(0), 0) === ['paused']);
+    $paused = backend_dispatch('member.online.session.join', ['memberId' => 'NGG-OLV-2']);
+    chk('online live · paused, the Saturday session refuses — and the child is told to ask a parent, never an amount',
+        ($paused['error'] ?? '') === 'paused' && !str_contains((string)$paused['detail'], '₦') && str_contains((string)$paused['detail'], 'parent'));
+    $msg = online_remind_message($m2, $a49, 'paused');
+    chk('online live · the family hears the amount; the child’s copy of the same message carries none',
+        str_contains($msg['text'], '₦13,000') && !str_contains($msg['member']['text'], '₦') && str_contains($msg['text'], 'not affected'));
+    chk('online live · a hold needs a reason', (admin_online_hold(['requesterId' => 'NGG-OLV-ADM', 'memberId' => 'NGG-OLV-2', 'hours' => 24])['error'] ?? '') === 'reason_required');
+    $h = admin_online_hold(['requesterId' => 'NGG-OLV-ADM', 'memberId' => 'NGG-OLV-2', 'hours' => 24, 'reason' => 'Paying on Friday']);
+    chk('online live · staff can hold the live classes open, with the reason kept', !empty($h['ok']) && $h['access']['state'] === 'held' && $h['access']['holdReason'] === 'Paying on Friday');
+    admin_online_hold(['requesterId' => 'NGG-OLV-ADM', 'memberId' => 'NGG-OLV-2', 'end' => true]);
+    chk('online live · …and lift it', online_access_state($m2)['state'] === 'paused');
+    chk('online live · unpaid past the review threshold is flagged for a person, never removed', online_access_state($m2, $due + 91 * 86400)['review'] === true && db_row("SELECT status FROM members WHERE memberId = 'NGG-OLV-2'")['status'] === 'active');
+    fees_post('NGG-OLV-2', 'payment', 13000, ['by' => 'test', 'method' => 'paystack', 'note' => 'paid']);
+    chk('online live · paid, everything is open again at once (computed from the ledger, nothing to reset)', online_access_state($m2)['state'] === 'ok');
+
+    // 4. The automatic timetable.
+    db_exec("DELETE FROM online_classes"); db_exec("DELETE FROM online_class_members");
+    foreach (['VOL-OLV-1' => [$cA, $cB], 'VOL-OLV-2' => [$cC]] as $vid => $cs)
+        db_insert('volunteers', ['volunteerId' => $vid, 'fullName' => 'Teacher ' . $vid, 'email' => strtolower($vid) . '@test.invalid', 'role' => 'instructor', 'status' => 'active',
+            'safeguarding' => 'cleared', 'centre' => 'NGG Online', 'courses' => json_encode($cs), 'createdAt' => $now, 'updatedAt' => $now]);
+    db_exec("UPDATE members SET status = 'inactive' WHERE centre = 'NGG Online' AND memberId NOT LIKE 'NGG-OLV-%'");
+    $mk('NGG-OLV-3', [$cA, $cB]); $mk('NGG-OLV-4', [$cA, $cC]);
+    db_exec("UPDATE members SET courses = ? WHERE memberId IN ('NGG-OLV-1','NGG-OLV-2')", [json_encode([$cA])]);
+    $dry = admin_online_plan(['requesterId' => 'NGG-OLV-ADM']);
+    chk('online live · the planner previews without writing', !empty($dry['dryRun']) && count($dry['classes']) === 3 && !db_row('SELECT 1 FROM online_classes'));
+    $plan = admin_online_plan(['requesterId' => 'NGG-OLV-ADM', 'apply' => true]);
+    $cls = db_all("SELECT * FROM online_classes WHERE status = 'active'"); $by = []; foreach ($cls as $c) $by[$c['course']] = $c;
+    chk('online live · one class per course with online members, each with an instructor who teaches it and a private meeting room',
+        count($cls) === 3 && $plan['clashes'] === 0 && $by[$cA]['instructorId'] === 'VOL-OLV-1' && $by[$cC]['instructorId'] === 'VOL-OLV-2'
+        && str_starts_with($by[$cA]['url'], 'https://meet.jit.si/NGG-') && $by[$cA]['url'] !== $by[$cB]['url']);
+    chk('online live · no child is in two classes at once, and no instructor teaches two at once',
+        $by[$cA]['startTime'] !== $by[$cB]['startTime'] && $by[$cA]['startTime'] !== $by[$cC]['startTime']);
+    chk('online live · classes sit after the Saturday session, never on top of it', min(array_column($cls, 'startTime')) >= '10:00');
+    chk('online live · a planned class is for the members placed in it', online_class_for($by[$cB], [$cB], 'NGG-OLV-3') && !online_class_for($by[$cB], [$cB], 'NGG-OLV-4'));
+    $again = admin_online_plan(['requesterId' => 'NGG-OLV-ADM', 'apply' => true]);
+    chk('online live · run again with nothing changed, nothing moves and nobody is told twice', $again['moved'] === 0 && $again['created'] === 0);
+    admin_online_class_save(['requesterId' => 'NGG-OLV-ADM', 'class' => ['classId' => $by[$cA]['classId'], 'time' => '15:00']]);
+    $third = admin_online_plan(['requesterId' => 'NGG-OLV-ADM', 'apply' => true]);
+    $lockedRow = db_row('SELECT * FROM online_classes WHERE classId = ?', [$by[$cA]['classId']]);
+    chk('online live · a class a person changed is locked: the planner keeps its time and plans around it', (int)$lockedRow['locked'] === 1 && $lockedRow['startTime'] === '15:00' && $third['clashes'] === 0);
+    setting_set(ONLINE_SETTINGS_KEY, ['classMaxSize' => 5] + online_settings(), 'test');
+    for ($i = 5; $i <= 9; $i++) $mk('NGG-OLV-' . $i, [$cA]);
+    $split = admin_online_plan(['requesterId' => 'NGG-OLV-ADM', 'apply' => true]);
+    $groups = db_all("SELECT classId, groupNo FROM online_classes WHERE course = ? AND status = 'active' ORDER BY groupNo", [$cA]);
+    chk('online live · a course bigger than a class is split into groups, nobody in two of them',
+        count($groups) === 2 && (int)db_row('SELECT COUNT(*) n FROM online_class_members WHERE classId IN (?, ?)', [$groups[0]['classId'], $groups[1]['classId']])['n'] === 9
+        && (int)db_row('SELECT COUNT(DISTINCT memberId) n FROM online_class_members WHERE classId IN (?, ?)', [$groups[0]['classId'], $groups[1]['classId']])['n'] === 9);
+    $join = backend_dispatch('member.online.class.join', ['memberId' => 'NGG-OLV-3', 'classId' => $by[$cC]['classId']]);
+    chk('online live · a member cannot join a class that is not theirs', ($join['error'] ?? '') === 'not_your_class');
+    $view = backend_dispatch('member.online.classes', ['memberId' => 'NGG-OLV-3']);
+    chk('online live · the portal lists the member’s coming classes in UTC (shown in their own clock) with Lagos time beside',
+        !empty($view['ok']) && count($view['classes']) >= 2 && str_ends_with($view['classes'][0]['start'], 'Z') && $view['tz'] === 'Africa/Lagos' && $view['paused'] === false);
+
+    // 5. Prices in the family's currency.
+    setting_set(FX_SETTING, ['mode' => 'auto', 'fetched' => ['GBP' => 2000.0], 'fetchedAt' => $now, 'pinned' => []], 'test');
+    $r = fx_rates();
+    chk('online live · with no feed, dollars come from the price staff set (₦13,000 ÷ $10), and a fetched rate is used as fetched',
+        abs(($r['USD']['rate'] ?? 0) - 1300) < 0.01 && ($r['USD']['source'] ?? '') === 'price' && (float)($r['GBP']['rate'] ?? 0) === 2000.0 && !isset($r['KES']));
+    admin_fx_save(['requesterId' => 'NGG-OLV-ADM', 'pinned' => ['USD' => 1500]]);
+    chk('online live · a pinned rate wins over everything', (fx_rates()['USD']['rate'] ?? 0) === 1500.0 && fx_usd_text(15000) === '$10');
+    $pub = public_fx();
+    chk('online live · the public rates list only currencies with a rate, and carry the dollar prices staff promise, exactly',
+        in_array('GBP', array_column($pub['currencies'], 'code'), true) && !in_array('KES', array_column($pub['currencies'], 'code'), true) && ($pub['stated']['USD']['13000'] ?? 0) === 10);
+    chk('online live · an unbelievable fetched rate is refused, and the last good rates stay', (function () {
+        $keep = $GLOBALS['__sms_http_mock'] ?? null;
+        $GLOBALS['__sms_http_mock'] = fn() => ['ok' => true, 'body' => json_encode(['result' => 'success', 'rates' => ['USD' => 0.5, 'GBP' => 0.0005]])];
+        $r = fx_refresh(); $GLOBALS['__sms_http_mock'] = $keep;
+        return ($r['error'] ?? '') === 'insane_rate' && (float)(fx_settings()['fetched']['GBP'] ?? 0) === 2000.0;
+    })());
+    chk('online live · rates are naira per unit, fetched the other way round and inverted', (function () {
+        $keep = $GLOBALS['__sms_http_mock'] ?? null;
+        $GLOBALS['__sms_http_mock'] = fn() => ['ok' => true, 'body' => json_encode(['result' => 'success', 'rates' => ['USD' => 0.00064, 'GBP' => 0.0005]])];
+        $r = fx_refresh(); $GLOBALS['__sms_http_mock'] = $keep;
+        return !empty($r['ok']) && abs((fx_settings()['fetched']['USD'] ?? 0) - 1562.5) < 0.01;
+    })());
+
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-OLV-%'"); db_exec("DELETE FROM online_course_enrolments WHERE memberId LIKE 'NGG-OLV-%'");
+    db_exec('DELETE FROM online_classes'); db_exec('DELETE FROM online_class_members'); db_exec('DELETE FROM online_class_joins'); db_exec("DELETE FROM online_access_holds WHERE memberId LIKE 'NGG-OLV-%'");
+    db_exec("DELETE FROM dues_notices WHERE memberId LIKE 'NGG-OLV-%'"); db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-OLV-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-OLV-%'"); db_exec("UPDATE members SET status = 'active' WHERE centre = 'NGG Online' AND status = 'inactive'");
+    setting_set('fees', (string)$keepFees, 'test'); setting_set(ONLINE_SETTINGS_KEY, $keepOn === null || $keepOn === '' ? ONLINE_DEFAULTS : (string)$keepOn, 'test');
+    setting_set(FX_SETTING, $keepFx === null || $keepFx === '' ? [] : (string)$keepFx, 'test');
 })();
 
 /* ── WhatsApp through Kapso (owner, 14 Nov 2026: every text WhatsApp first, SMS as the fallback; replies into the inbox) ── */

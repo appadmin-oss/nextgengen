@@ -101,7 +101,11 @@ function web_cron_jobs(): array {
     $add('dirpush',      3600,   $has('dirpush_tick'), true);
     $add('photos_bucket', 3600,  $has('photo_store_to_bucket_tick'), true);   // held photos into the bucket, a batch an hour until none are left
     $add('shop',         3600,   $has('shop_cron_tick'), true);           // shop-manage.php: expire unpaid orders, one reminder, refunds Paystack has not reported, the low-stock digest
-    $add('regcheck',     3600,   $has('rcl_tick'), true);                     // registration checklist: recount, remind supervisors and families weekly
+    $add('regcheck',     3600,   $has('rcl_tick'), true);
+    $add('online_access', 1800,  $has('online_access_tick'), true);          // online-live.php: payment reminders fitted to the grace period; "open again" when paid
+    $add('online_class',  600,   fn() => function_exists('online_class_remind_tick') ? [online_class_remind_tick(), online_class_followup_tick()] : null, true); // reminders before, follow-up after
+    $add('online_plan',   21600, $has('online_plan_tick'), true);            // the automatic live-class timetable
+    $add('fx',            86400, $has('fx_tick'), true);                     // fx.php: the day's exchange rates for showing prices abroad                     // registration checklist: recount, remind supervisors and families weekly
     $add('photo_sizes',  600,    $has('photo_variants_tick'), true);          // each bucket photo's sizes, made once by Cloudinary, stored beside it
     // Once: tracks that name courses exactly become chosen courses (curriculum.php).
     if (function_exists('member_courses_backfill_once') && defined('MEMBER_COURSES_BACKFILL') && (string)setting_raw(MEMBER_COURSES_BACKFILL) === '')

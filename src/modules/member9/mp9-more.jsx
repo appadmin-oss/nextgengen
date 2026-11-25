@@ -1110,36 +1110,106 @@ function mp9WifiProblem(a, b, username) {
   if (a !== b) return "The two passwords are not the same.";
   return "";
 }
-/* ── NGG Online's Saturday session (domain/online.php) ─────────────────────────────────────────────────────
-   For online members only (the server answers not_online to anyone else, and this renders nothing). Join is
-   the attendance: it is recorded when pressed while the session is on, and only then is the link handed over,
-   so the link is never sitting on a page to be passed round. Re-checked every minute, so Join opens on time. */
+/* ── NGG Online, live (domain/online.php, online-live.php) ──────────────────────────────────────────────────
+   For online members only (the server answers not_online to anyone else, and this renders nothing): the
+   Saturday session, the live classes they are placed in, the lesson each class is on (so they can look at it
+   first), and recordings of the last six weeks. Join is the attendance: it is recorded when pressed while the
+   class is on, and only then is the link handed over. Times are shown in the member's own clock, with Lagos
+   time beside it when they are abroad. When live classes are paused the child reads a plain sentence asking
+   them to talk to a grown-up — never an amount. An instructor sees their own classes and adds recordings.
+   Re-checked every minute, so Join opens on time. */
 function Mp9Online({ toast }) {
-  const [d, setD] = React.useState(null), [err, setErr] = React.useState(""), [busy, setBusy] = React.useState(false);
+  const [d, setD] = React.useState(null), [err, setErr] = React.useState(""), [busy, setBusy] = React.useState("");
+  const [teach, setTeach] = React.useState(null);
   const load = React.useCallback(() => {
-    NGGApi.member.onlineSession().then(r => { setD(r.session || null); setErr(""); })
+    NGGApi.member.onlineClasses().then(r => { setD(r); setErr(""); })
       .catch(e => setErr((e && e.code) === "not_online" ? "skip" : "error"));
+    NGGApi.member.onlineTeaching().then(r => setTeach(r.classes || [])).catch(() => setTeach(null));
   }, []);
   React.useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, [load]);
-  if (err === "skip") return null;
-  const join = async () => {
+  const teaching = teach && teach.length ? <Mp9OnlineTeaching classes={teach} toast={toast} reload={load}/> : null;
+  if (err === "skip") return teaching;
+  const open = async (key, fn) => {
     if (busy) return;
-    setBusy(true);
-    try { const r = await NGGApi.member.onlineJoin(); setD(x => Object.assign({}, x, { joined: true })); window.open(r.url, "_blank", "noopener"); toast("You’re marked present. The session opened in a new tab."); }
+    setBusy(key);
+    try { const r = await fn(); window.open(r.url, "_blank", "noopener"); toast("You’re marked present. It opened in a new tab."); load(); }
     catch (e) { toast((e && e.data && e.data.detail) || "You couldn’t join just now. Try again in a moment."); load(); }
-    finally { setBusy(false); }
+    finally { setBusy(""); }
   };
-  return <section className="m9x-slot m9x-view m9x-online" aria-labelledby="m9x-online-h">
-    <h2 id="m9x-online-h" className="m9x-view-h"><i className="ph ph-video-camera" aria-hidden="true"/> The online session</h2>
-    {err === "error" ? <p className="m9x-wifi-note" role="alert">We couldn’t load the session. <button type="button" className="m9x-wifi-new" onClick={load}>Try again</button></p>
+  const s = d && d.session;
+  const classes = (d && d.classes) || [], recs = (d && d.recordings) || [];
+  return <>
+  <section className="m9x-slot m9x-view m9x-online" aria-labelledby="m9x-online-h">
+    <h2 id="m9x-online-h" className="m9x-view-h"><i className="ph ph-video-camera" aria-hidden="true"/> Live classes</h2>
+    {err === "error" ? <p className="m9x-wifi-note" role="alert">We couldn’t load your classes. <button type="button" className="m9x-wifi-new" onClick={load}>Try again</button></p>
       : !d ? <p className="m9x-wifi-note" role="status">Loading…</p>
       : <>
-        <p className="m9x-online-when">{d.label ? "Next: " + d.label + " (Lagos time), " + d.minutes + " minutes" : "No session is set yet."}</p>
-        <p className="m9x-wifi-note" role="status" aria-live="polite">{d.joined ? "You joined this one. You’re marked present." : d.open ? (d.hasLink ? "It’s on now. Join to be marked present." : "It’s on, but the link isn’t set yet. Your team has been told.") : "Join opens a few minutes before it starts. Joining here is how you’re marked present."}</p>
-        <div className="m9x-wifi-acts">
-          <button type="button" className="m9x-ask-b" onClick={join} disabled={busy || !d.open || !d.hasLink} aria-disabled={busy || !d.open || !d.hasLink}>{busy ? "Opening…" : d.joined ? "Open it again" : "Join the session"}</button>
-        </div>
+        {d.paused ? <p className="m9x-oc-paused" role="status"><i className="ph ph-pause-circle" aria-hidden="true"/> {d.pausedText}</p> : null}
+        <ul className="m9x-oc-list" aria-live="polite">
+          {s && s.label ? <li className="m9x-oc">
+            <div className="m9x-oc-main">
+              <b>The Saturday session</b>
+              <span className="m9x-oc-when">{nggLocalTime(s.start, s.label)} · {s.minutes} minutes</span>
+              <span className="m9x-oc-state">{s.joined ? "You joined this one." : s.open ? (s.hasLink ? "On now." : "On now, but the link isn’t set yet. Your team has been told.") : "Join opens a few minutes before."}</span>
+            </div>
+            <button type="button" className="m9x-ask-b" onClick={() => open("session", () => NGGApi.member.onlineJoin())}
+              disabled={!!busy || d.paused || !s.open || !s.hasLink}>{busy === "session" ? "Opening…" : s.joined ? "Open again" : "Join"}</button>
+          </li> : null}
+          {classes.map(c => <li key={c.classId + c.date} className={"m9x-oc" + (c.cancelled ? " is-off" : "")}>
+            <div className="m9x-oc-main">
+              <b>{c.title}</b>
+              <span className="m9x-oc-when">{nggLocalTime(c.start, c.lagos)} · {c.minutes} minutes{c.instructor ? " · with " + c.instructor : ""}</span>
+              {c.lesson && c.lesson.title ? <span className="m9x-oc-lesson"><i className="ph ph-book-open" aria-hidden="true"/> This class: {c.lesson.title}{c.lesson.unitId ? " — have a look in Learn first" : ""}</span> : null}
+              <span className="m9x-oc-state">{c.cancelled ? "Cancelled." + (c.note ? " " + c.note : "") : c.joined ? "You joined this one." : c.live ? "On now." : c.open ? "Join is open." : "Join opens a few minutes before."}</span>
+            </div>
+            <button type="button" className="m9x-ask-b" onClick={() => open(c.classId, () => NGGApi.member.onlineClassJoin(c.classId))}
+              disabled={!!busy || d.paused || c.cancelled || !c.open || !c.hasLink}>{busy === c.classId ? "Opening…" : c.joined ? "Open again" : "Join"}</button>
+          </li>)}
+        </ul>
+        {!classes.length && !(s && s.label) ? <p className="m9x-wifi-note">No live classes this week yet. They appear here as soon as they are timetabled.</p> : null}
+        {recs.length ? <>
+          <h3 className="m9x-oc-h">Recordings</h3>
+          <ul className="m9x-oc-recs">
+            {recs.map(r => <li key={r.classId + r.date}><a href={r.url} target="_blank" rel="noopener">{r.title} · {new Intl.DateTimeFormat(NGG_LOCALE, { day: "numeric", month: "long" }).format(new Date(r.date + "T12:00:00Z"))}</a>{r.attended ? <span className="m9x-oc-tag">You were there</span> : <span className="m9x-oc-tag is-missed">Missed — catch up</span>}</li>)}
+          </ul>
+        </> : null}
+        <p className="m9x-wifi-note">Joining here is how you’re marked present. Times are shown in your own time zone.</p>
       </>}
+  </section>
+  {teaching}
+  </>;
+}
+/** An instructor's own live classes: when, how many, where the group is, and the recording to add. */
+function Mp9OnlineTeaching({ classes, toast, reload }) {
+  const [rec, setRec] = React.useState({}), [busy, setBusy] = React.useState("");
+  const save = async (c, date) => {
+    const url = String(rec[c.classId + date] || "").trim();
+    if (!/^https:\/\//i.test(url)) { toast("Paste the recording link — it starts with https://"); return; }
+    setBusy(c.classId + date);
+    try { await NGGApi.member.onlineRecording({ classId: c.classId, date, recordingUrl: url }); toast("Saved. The members who missed it have been told."); reload(); }
+    catch (e) { toast((e && e.data && e.data.detail) || "The recording wasn’t saved. Try again."); }
+    finally { setBusy(""); }
+  };
+  return <section className="m9x-slot m9x-view m9x-online" aria-labelledby="m9x-teach-h">
+    <h2 id="m9x-teach-h" className="m9x-view-h"><i className="ph ph-chalkboard-teacher" aria-hidden="true"/> Classes you teach online</h2>
+    <ul className="m9x-oc-list">
+      {classes.map(c => <li key={c.classId} className="m9x-oc is-teach">
+        <div className="m9x-oc-main">
+          <b>{c.title}</b>
+          <span className="m9x-oc-when">{c.next ? nggLocalTime(c.next.start, c.next.lagos) : "No coming date"} · {c.members} member{c.members === 1 ? "" : "s"}</span>
+          {c.lesson && c.lesson.title ? <span className="m9x-oc-lesson">Where the group is: {c.lesson.title}{c.lesson.of ? " (" + c.lesson.done + " of " + c.lesson.of + " have finished it)" : ""}</span> : null}
+          {c.url ? <a className="m9x-oc-link" href={c.url} target="_blank" rel="noopener">Open the class room</a> : null}
+          {(c.past || []).map(o => <div key={o.date} className="m9x-oc-rec">
+            <span>{o.date} · {o.came} joined</span>
+            {o.recording ? <a href={o.recording} target="_blank" rel="noopener">Recording added</a>
+              : <><label className="sr-only" htmlFor={"rec-" + c.classId + o.date}>Recording link for {o.date}</label>
+                <input id={"rec-" + c.classId + o.date} type="url" inputMode="url" placeholder="Paste the recording link" value={rec[c.classId + o.date] || ""}
+                  onChange={e => setRec(x => Object.assign({}, x, { [c.classId + o.date]: e.target.value }))}/>
+                <button type="button" className="m9x-ask-b" disabled={!!busy} onClick={() => save(c, o.date)}>{busy === c.classId + o.date ? "Saving…" : "Add"}</button></>}
+          </div>)}
+        </div>
+      </li>)}
+    </ul>
   </section>;
 }
 function Mp9Wifi({ toast }) {

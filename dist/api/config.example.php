@@ -552,6 +552,7 @@ return [
            page a promotion drives traffic to, which is exactly when a cache
            earns its keep. Purged alongside public.centres on a centre write. */
         'public.summer'    => 300,
+        'public.fx'        => 3600, // exchange rates for showing prices abroad; purged when staff pin a rate or the feed refreshes
         'public.programme' => 300,  // the join form's courses and centres per programme; purged by catalogue and centre writes
         'public.timetable' => 300,  // a centre's public timetable; purged on any timetable or centre write
         'public.formation' => 300,  // the Saturday Formation Schedule; purged when an admin edits a block

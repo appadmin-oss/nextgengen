@@ -2085,12 +2085,77 @@ const CR_ONLINE_ERR = {
   no_online_mentors: "No mentor is at NGG Online yet. Accept a mentor for NGG Online first, under Mentors & volunteers.",
   bad_mentor: "Choose a mentor at NGG Online.", mentors_full: "Every online mentor is at their limit.",
   bad_url: "The session link must start with https://", bad_time: "Write the time as HH:MM, for example 08:30.",
+  bad_grace: "A grace period is 0 to 60 days.", bad_grace_unit: "Choose hours or days.", bad_window: "The last class must end after the first starts.",
+  no_slots: "No class fits in the day as set. Widen the hours or shorten the classes.", reason_required: "Say why, in a few words.",
+  too_long: "At most 90 days. For longer, waive or plan the payments under Money.", unknown_course: "Choose a course from the catalogue.",
+  not_a_class_day: "The class does not meet on that date.", too_many: "Too many live classes at once. Archive one first.",
 };
+/* What a member's live-class access says in the staff's words (online-live.php · online_access_state). */
+function crOnlineAccess(a) {
+  if (!a || a.state === "ok") return { k: "status", t: "Open", tone: "ok" };
+  if (a.state === "grace") return { k: "status", t: "Grace · " + crNum(a.hoursLeft) + "h left", tone: "warn" };
+  if (a.state === "held") return { k: "status", t: "Held open to " + crDate(a.heldUntil), tone: "warn" };
+  if (a.state === "owing") return { k: "status", t: "Owing (pausing off)", tone: "warn" };
+  return { k: "status", t: (a.review ? "Paused · review" : "Paused") + " · " + crNum(a.daysUnpaid) + "d", tone: "bad" };
+}
+/* The live classes, as planned (online-live.php). Each row says when, who teaches, how many it is for, how
+   many came last time, and where the group is in the course. Opening one edits it — which locks it, so the
+   planner keeps it as set. The recording for the last class can be added here or by its instructor. */
+function crOnlineClassesBlock(d, ctx) {
+  const L = d.live;
+  if (!L) return null;
+  const st = L.plan;
+  const rows = (L.classes || []).map(c => ({ key: c.classId, cells: [
+    { k: "person", t: c.title, s: c.course || "Everyone" },
+    { k: "text", t: c.day + " " + c.time + " · " + c.minutes + " min", s: c.next ? "Next " + c.next.lagos : "No coming date" },
+    c.instructor ? { k: "text", t: c.instructor } : { k: "status", t: "No instructor", tone: "warn" },
+    { k: "num", t: crNum(c.members || 0), v: c.members || 0 },
+    c.last ? { k: "text", t: c.last.cancelled ? "Cancelled" : crNum(c.last.came) + " of " + crNum(c.last.for), s: c.last.recording ? "Recording added" : "No recording yet" } : { k: "text", t: "—" },
+    { k: "text", t: c.lesson && c.lesson.title ? c.lesson.title : "—", s: c.lesson && c.lesson.of ? crNum(c.lesson.done) + " of " + crNum(c.lesson.of) + " finished" : "" },
+    { k: "status", t: c.status !== "active" ? "Paused" : c.locked ? "Locked" : c.auto ? "Planned" : "Made by hand", tone: c.status !== "active" ? "warn" : c.locked ? "info" : "ok" },
+  ], open: ctx.can("curriculum") ? () => ctx.form({ title: c.title, submit: "Save", values: { title: c.title, day: c.day, time: c.time, minutes: String(c.minutes), instructor: c.instructor || "",
+      url: c.url || "", status: c.status, locked: c.auto ? true : false, recordingUrl: (c.last && c.last.recording) || "" },
+    fields: [{ id: "title", l: "Name", req: 1 }, { id: "day", l: "Day", type: "select", opts: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map(x => [x, x]) },
+      { id: "time", l: "Starts at (Lagos time)" }, { id: "minutes", l: "Minutes", type: "number" }, { id: "instructor", l: "Instructor" },
+      { id: "url", l: "Meeting link", ph: "https://…" }, { id: "status", l: "Status", type: "select", opts: [["active", "Running"], ["paused", "Paused"], ["archived", "Archived"]] },
+      ...(c.auto ? [{ id: "locked", l: "Keep as set (the planner works around it)", type: "switch" }] : []),
+      ...(c.last ? [{ id: "recordingUrl", l: "Recording of " + crDate(c.last.date), ph: "https://…" }] : [])],
+    onSubmit: async v => {
+      try {
+        await NGGApi.admin.online.classSave({ classId: c.classId, title: v.title, day: v.day, time: v.time, minutes: Number(v.minutes), instructor: v.instructor, url: v.url, status: v.status, locked: !!v.locked });
+        if (c.last && (v.recordingUrl || "") !== (c.last.recording || "")) await NGGApi.admin.online.classSession({ classId: c.classId, date: c.last.date, recordingUrl: v.recordingUrl || "" });
+      } catch (e) { throw new Error(CR_ONLINE_ERR[e.code] || crErr(e, "Couldn’t save the class.")); }
+      ctx.reload(); return true;
+    }, done: () => "Saved" }) : null }));
+  return [{ type: "note", span: 6, icon: "calendar-check", tone: st && (st.clashes || (st.noInstructor || []).length) ? "warn" : undefined,
+    text: st ? "Planned " + crDate(st.at) + (st.clashes ? " · " + crNum(st.clashes) + " clash(es) could not be avoided" : " · no clashes") + ((st.noInstructor || []).length ? " · no instructor yet for " + st.noInstructor.join(", ") : "") : "The live classes are not planned yet.",
+    sub: st ? "The timetable plans itself every six hours from who takes which course. Editing a class locks it." : "Press “Plan the live classes now”, or wait for the next automatic run." },
+    { type: "table", span: 6, title: "Live classes", cols: ["Class", "When (Lagos)", "Instructor", "#Members", "Last time", "Where the group is", "Status"],
+    search: true, filters: ["Instructor", "Status"], sortInit: 1,
+    emptyText: "No live classes yet. They are planned from the courses online members take.", rows }];
+}
 Object.assign(CR_TAB_DEFS, {
   online: {
     skeleton: ["kpis", "table"],
-    load: async () => NGGApi.admin.online.overview(),
-    actions: (d, ctx) => d && d.centre && ctx.can("people") && (d.counts || {}).noMentor > 0 ? [{
+    load: async () => {
+      const [o, cl] = await Promise.all([NGGApi.admin.online.overview(), NGGApi.admin.online.classes().catch(() => null)]);
+      return Object.assign({}, o, { live: cl });
+    },
+    actions: (d, ctx) => [
+      /* The automatic timetable: preview what it would do, then make it. It also runs on its own every six
+         hours; this is for "now", after a batch of new members or a change of hours. */
+      d && d.centre && d.live && ctx.can("curriculum") ? { l: "Plan the live classes now", icon: "calendar-check", run: async () => {
+        let p;
+        try { p = await NGGApi.admin.online.plan(false); } catch (e) { ctx.toast(CR_ONLINE_ERR[e.code] || crErr(e, "Couldn’t plan the classes."), null, true); return; }
+        const body = crNum((p.classes || []).length) + " classes for " + crNum(p.members || 0) + " online members: " + crNum(p.created || 0) + " new, " + crNum(p.moved || 0) + " moving to a new time, " + crNum(p.archived || 0) + " no longer needed."
+          + (p.clashes ? " " + crNum(p.clashes) + " clash" + (p.clashes === 1 ? "" : "es") + " could not be avoided — widen the day under Live classes settings." : " Nobody is in two classes at once.")
+          + ((p.noInstructor || []).length ? " No instructor teaches " + p.noInstructor.join(", ") + " yet." : "")
+          + (p.created || p.moved ? " Families of new and moved classes are told the time." : "");
+        if (!(await ctx.confirm({ title: "Make this timetable?", body, cta: "Make it" }))) return;
+        try { await NGGApi.admin.online.plan(true); ctx.toast("The live classes are planned."); ctx.reload(); }
+        catch (e) { ctx.toast(CR_ONLINE_ERR[e.code] || crErr(e, "Couldn’t plan the classes."), null, true); }
+      } } : null,
+      ...(d && d.centre && ctx.can("people") && (d.counts || {}).noMentor > 0 ? [{
       l: "Pair everyone without a mentor", icon: "handshake", primary: true,
       disabled: !(d.mentors || []).length, why: (d.mentors || []).length ? "" : "No mentor is at NGG Online yet.",
       run: async () => {
@@ -2103,7 +2168,8 @@ Object.assign(CR_TAB_DEFS, {
           ctx.reload();
         } catch (e) { ctx.toast(CR_ONLINE_ERR[e.code] || crErr(e, "Couldn’t pair them."), null, true); }
       },
-    }] : [],
+    }] : []),
+    ].filter(Boolean),
     blocks: (d, ctx) => {
       if (!d.centre) return [{ type: "note", span: 6, icon: "globe", tone: "warn", text: "There is no NGG Online centre.", sub: "Online members need a home: the NGG Online centre is added by the database update. If it was retired, restore it under Members → Centres." }];
       if (d.scoped) return [{ type: "note", span: 6, icon: "lock", text: "NGG Online is not one of your centres.", sub: "Ask a super admin to add it to your centre scope under Access & roles." }];
@@ -2118,21 +2184,24 @@ Object.assign(CR_TAB_DEFS, {
           { l: "No mentor", v: crNum(c.noMentor || 0), tone: c.noMentor ? "down" : "flat" },
           { l: "Missed the last session", v: crNum(c.missedSession || 0), d: d.lastSession ? crDate(d.lastSession) : "", tone: c.missedSession ? "down" : "flat" },
           { l: "Not active this week", v: crNum(c.inactive || 0), tone: c.inactive ? "down" : "flat" },
+          { l: "Live classes paused", v: crNum(c.paused || 0), d: "unpaid past the grace period", tone: c.paused ? "down" : "flat" },
+          { l: "To review", v: crNum(c.review || 0), d: "unpaid " + crNum(s.reviewAfterDays || 90) + "+ days", tone: c.review ? "down" : "flat" },
         ] },
         !s.sessionUrl ? { type: "note", span: 6, icon: "video-camera", tone: "warn", text: "The online session has no link yet.", sub: "Online members press Join in the portal to attend; until a link is set below, Join tells them it isn’t ready." } : null,
         d.capped ? { type: "note", span: 6, icon: "info", text: "Showing the first " + crNum(d.cap) + " online members.", sub: "The counts above are for these; the server caps the list at " + crNum(d.cap) + "." } : null,
-        { type: "table", span: 6, title: "Online members", cols: ["Member", "Courses", "Mentor", "#Owing", "Last session", "This week"],
-          search: true, filters: ["Mentor", "Last session", "This week"], emptyText: "No online members yet. They join through the application form’s “Online” choice.",
+        { type: "table", span: 6, title: "Online members", cols: ["Member", "Courses", "Mentor", "#Owing", "Live classes", "Last session", "This week"],
+          search: true, filters: ["Mentor", "Live classes", "Last session", "This week"], emptyText: "No online members yet. They join through the application form’s “Online” choice.",
           sortInit: 0,
           rows: (d.members || []).map(m => ({ key: m.memberId, cells: [
             { k: "person", t: m.name, s: m.displayId || "" },
             { k: "text", t: (m.courses || []).join(", ") || "None chosen" },
             m.mentor ? { k: "text", t: m.mentor } : { k: "status", t: "No mentor", tone: "warn" },
             { k: "num", t: m.owing ? money(m.owing) : "—", v: m.owing },
+            crOnlineAccess(m.access),
             d.lastSession ? (m.atSession ? { k: "status", t: "Attended", tone: "ok" } : { k: "status", t: "Missed", tone: "warn" }) : { k: "text", t: "—" },
             m.activeWeek ? { k: "status", t: "Active", tone: "ok" } : { k: "status", t: "Quiet", tone: "warn" },
           ], open: () => ctx.go("members", "members", m.memberId) })),
-          bulk: ctx.can("people") ? [{ l: "Pair with a mentor", max: 500, run: async keys => {
+          bulk: (ctx.can("people") ? [{ l: "Pair with a mentor", max: 500, run: async keys => {
             if (!mentorOpts.length) { ctx.toast("No mentor is at NGG Online yet.", null, true); return false; }
             const n = keys.length;
             return ctx.form({ title: "Pair " + crNum(n) + " with a mentor", submit: "Pair", values: { mentorId: "" },
@@ -2144,7 +2213,27 @@ Object.assign(CR_TAB_DEFS, {
                 return r;
               },
               done: (v, r) => crNum((r && r.paired) || 0) + " paired" + (((r && r.results) || []).some(x => !x.ok) ? "; some were not — see the list" : "") });
-          } }] : [] },
+          } }] : []).concat(ctx.can("fees") ? [
+            /* Keep an unpaid member's live classes open until a time (a family that has promised to pay on Friday).
+               Each hold carries its reason; the access column shows it; it lapses on its own. */
+            { l: "Hold live classes open", max: 50, run: async keys => {
+              const n = keys.length;   // read before the form: a refresh underneath cannot change what was agreed
+              return ctx.form({ title: "Hold live classes open for " + crNum(n), submit: "Hold open", values: { hours: "48", reason: "" },
+                fields: [{ id: "hours", l: "For how many hours", type: "number", req: 1 }, { id: "reason", l: "Why", req: 1, ph: "e.g. Paying on Friday" }],
+                onSubmit: async v => {
+                  const res = [];
+                  for (const id of keys) { try { await NGGApi.admin.online.hold({ memberId: id, hours: Number(v.hours), reason: v.reason }); res.push({ ok: true }); } catch (e) { res.push({ ok: false, error: e.code }); } }
+                  ctx.reload(); return { results: res };
+                },
+                done: (v, r) => { const bad = ((r && r.results) || []).filter(x => !x.ok); return crNum(n - bad.length) + " held open" + (bad.length ? "; " + crNum(bad.length) + " not: " + (CR_ONLINE_ERR[bad[0].error] || bad[0].error || "refused") : ""); } });
+            } },
+            { l: "End a hold", max: 50, run: async keys => {
+              if (!(await ctx.confirm({ title: "End the hold for " + crNum(keys.length) + "?", body: "Anyone still unpaid past the grace period has their live classes paused again.", cta: "End it" }))) return false;
+              for (const id of keys) { try { await NGGApi.admin.online.hold({ memberId: id, end: true }); } catch (e) {} }
+              ctx.reload(); return true;
+            } },
+          ] : []) },
+        ...(crOnlineClassesBlock(d, ctx) || []),
         ctx.can("settings") ? { type: "form", span: 6, key: "online-settings", title: "The online session and the offer",
           groups: [
             { h: "The online Saturday session", help: "Online members attend by pressing Join in the portal while the session is on; that is their attendance. The link is shown to nobody else.", rows: [
@@ -2154,14 +2243,38 @@ Object.assign(CR_TAB_DEFS, {
               { id: "sessionMinutes", l: "Length in minutes", c: "input", type: "number", value: String(s.sessionMinutes || 90) },
               { id: "joinOpensMinutes", l: "Join opens this many minutes before", c: "input", type: "number", value: String(s.joinOpensMinutes == null ? 15 : s.joinOpensMinutes) },
             ] },
-            { h: "Joining online", help: "The prices are set under Money → Dues & arrears → Amounts: " + usd(o.monthlyUsd, o.monthly) + " a month" + (o.course ? ", " + usd(o.courseUsd, o.course) + (o.courseBasis === "once" ? " once" : " a month") + " a course" : "") + ".", rows: [
+            { h: "Joining online", help: "The prices, and whether each is charged monthly or once, are set under Money → Dues & arrears → Amounts → NGG Online: " + usd(o.monthlyUsd, o.monthly) + (o.monthlyBasis === "once" ? " once" : " a month") + (o.course ? ", " + usd(o.courseUsd, o.course) + (o.courseBasis === "once" ? " once" : " a month") + " a course" : "") + ".", rows: [
               { id: "enabled", l: "Offer “Online” on the application form", c: "toggle", value: s.enabled !== false },
+            ] },
+            { h: "When a payment is late", help: "From the moment a charge falls due (midnight, Lagos), families get the grace period below. Reminders are spaced to fit it. After it, only the live classes and the Saturday session pause — the portal, Labs, lessons, journal and mentor stay open — and they reopen the moment payment arrives. The child is told to ask a parent; the amount goes only to the family.", rows: [
+              { id: "graceValue", l: "Grace period", c: "input", type: "number", value: String((s.graceHours || 0) % 24 === 0 ? (s.graceHours || 0) / 24 : s.graceHours || 0) },
+              { id: "graceUnit", l: "In", c: "select", opts: [["days", "Days"], ["hours", "Hours"]], value: (s.graceHours || 0) % 24 === 0 ? "days" : "hours" },
+              { id: "pauseLive", l: "Pause live classes after the grace period", c: "toggle", value: s.pauseLive !== false },
+              { id: "reviewAfterDays", l: "Flag for review after this many days unpaid", c: "input", type: "number", value: String(s.reviewAfterDays || 90) },
+            ] },
+            { h: "Live classes", help: "The timetable plans itself every six hours from who takes which course: one class per course (split into groups when big), in slots where no child and no instructor is in two places, with a private meeting room each. Classes keep their time unless they must move, and families are told when they do. Editing a class locks it; the planner works around it.", rows: [
+              { id: "autoPlan", l: "Plan the timetable automatically", c: "toggle", value: s.autoPlan !== false },
+              { id: "classDay", l: "Day", c: "select", opts: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map(x => [x, x]), value: s.classDay || "Saturday" },
+              { id: "classFrom", l: "First class from (Lagos time)", c: "input", value: s.classFrom || "10:15", check: v => /^([01]?\d|2[0-3]):[0-5]\d$/.test(v || "") ? "" : "Write the time as HH:MM." },
+              { id: "classUntil", l: "Last class ends by", c: "input", value: s.classUntil || "16:00", check: v => /^([01]?\d|2[0-3]):[0-5]\d$/.test(v || "") ? "" : "Write the time as HH:MM." },
+              { id: "classMinutes", l: "Class length (minutes)", c: "input", type: "number", value: String(s.classMinutes || 60) },
+              { id: "classGapMinutes", l: "Break between classes (minutes)", c: "input", type: "number", value: String(s.classGapMinutes == null ? 15 : s.classGapMinutes) },
+              { id: "classMaxSize", l: "Largest class before it splits into groups", c: "input", type: "number", value: String(s.classMaxSize || 25) },
+              { id: "linkProvider", l: "Meeting rooms", c: "select", opts: [["jitsi", "Made automatically (Jitsi Meet)"], ["manual", "Staff paste a link for each class"]], value: s.linkProvider || "jitsi" },
+              { id: "classRemindMinutes", l: "Remind families this many minutes before (0 = off)", c: "input", type: "number", value: String(s.classRemindMinutes == null ? 60 : s.classRemindMinutes) },
+              { id: "missedFollowUp", l: "Tell the family and mentor after this many missed in a row (0 = off)", c: "input", type: "number", value: String(s.missedFollowUp == null ? 2 : s.missedFollowUp) },
             ] },
           ],
           save: async patch => {
             const out = Object.assign({}, patch);
             if ("sessionMinutes" in out) out.sessionMinutes = Number(out.sessionMinutes);
             if ("joinOpensMinutes" in out) out.joinOpensMinutes = Number(out.joinOpensMinutes);
+            ["reviewAfterDays", "classMinutes", "classGapMinutes", "classMaxSize", "classRemindMinutes", "missedFollowUp"].forEach(k => { if (k in out) out[k] = Number(out[k]); });
+            // The grace period travels as a value and a unit; the server stores hours.
+            if ("graceValue" in out || "graceUnit" in out) {
+              out.graceValue = Number("graceValue" in out ? out.graceValue : ((s.graceHours || 0) % 24 === 0 ? (s.graceHours || 0) / 24 : s.graceHours));
+              out.graceUnit = out.graceUnit || ((s.graceHours || 0) % 24 === 0 ? "days" : "hours");
+            }
             try { await NGGApi.admin.online.settings(out); } catch (e) { throw new Error(CR_ONLINE_ERR[e.code] || crErr(e, "Couldn’t save the online settings.")); }
           },
           onSaved: () => ctx.reload() } : null,

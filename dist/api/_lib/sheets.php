@@ -118,6 +118,8 @@ function gs_cache_topics(): array {
            opening or closing a term must reach it on the next request, not
            five minutes later. */
         'sessions' => ['public.session'],
+        // Exchange rates for showing prices abroad (fx.php): a pinned rate or the daily refresh.
+        'fx'       => ['public.fx'],
     ];
 }
 

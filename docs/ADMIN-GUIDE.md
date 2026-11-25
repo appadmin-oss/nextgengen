@@ -610,10 +610,14 @@ the child is placed at NGG Online. Summer School cannot be joined online. Accept
 sends the first month's invoice as usual.
 
 **What they pay** (Money → Dues & arrears → Amounts → *NGG Online*):
-- **Online membership**: ₦13,000 a month (said as $10), paid before the month. It is never shortened for a
-  late start, and a mentor is included.
+- **Online membership**: ₦13,000 (said as $10), **every month** before the month starts by default, or
+  **once, when they join** — the *Online membership is charged* setting. It is never shortened for a late
+  start, and a mentor is included.
 - **Each course**: ₦6,500 (said as $5), every month it is taken (or once, if set), with an instructor.
-  Only courses from the catalogue are charged.
+  Only courses from the catalogue are charged. The site records the day a child starts and stops each
+  course, so a course dropped in March is charged for March and not for April, and nobody is charged for
+  months before they took it.
+- Every price, and both "monthly or once" choices, are changed on the same screen.
 - No membership fee, no commitment fee and no training place.
 
 Notices before the 1st, pay-ahead and the family app all show these figures.
@@ -626,11 +630,52 @@ Notices before the 1st, pay-ahead and the family app all show these figures.
 - the **online session**: its meeting link, day, start time (Lagos), length, and how early Join opens;
 - whether the application form offers Online at all.
 
+**When a payment is late** (Members → Online → settings, *When a payment is late*). From midnight (Lagos)
+on the day a charge falls due, the family has a **grace period**, set in **hours or days** (2 days by
+default). Reminders are spaced to fit it: with 2 days, at the start, at the halfway point and 12 hours
+before the end; with a few hours, only at the start. Reminders are not sent between 21:00 and 07:00; they
+wait for the morning. After the grace period, **only the live classes and the Saturday session pause**.
+The portal, the Labs, the lessons, the journal and the mentor stay open. The child reads *"Your live
+classes are paused — ask your parent or guardian"*, with no amount; the family gets the amount. Paying
+reopens everything **straight away**, and the family is told. In the members list the *Live classes*
+column shows *Open*, *Grace · N h left*, *Paused* or *Held open to …*. Tick members and choose **Hold
+live classes open** to give them more time (with a reason; up to 90 days), or **End a hold**. A member
+unpaid for 90 days (a setting) is counted under **To review**. Nothing removes or deletes anyone
+automatically.
+
+**Live classes plan themselves.** Every six hours (or when you press **Plan the live classes now**, which
+previews first) the site:
+- makes one live class for each course that online members take, splitting it into groups (A, B…) above
+  the size you set (25 by default);
+- gives each a slot on the class day (Saturday, 10:15–16:00 by default, after the session) so that **no
+  child and no instructor is in two classes at once**;
+- assigns an instructor who teaches that course (NGG Online's own instructors first, then the one with
+  the fewest classes);
+- makes a private meeting room for each class (Jitsi Meet), unless you choose to paste links yourself.
+
+A class keeps its time unless it has to move; when one moves, or a new one starts, the families are told.
+**Editing a class locks it**: the planner keeps your time, instructor and link, and plans around it.
+The *Live classes* table shows each class's time, instructor, members, how many came last time, whether
+the recording is in, and **where the group is in the course** (the first lesson that fewer than half of
+them have finished), which is also what the reminder tells families to look at before class.
+
+Around each class, it is all automatic: families are reminded before it (60 minutes by default); members
+join from the portal, which is their attendance; afterwards the instructor is asked for the recording
+(from their own portal, *Classes you teach online*), and when it arrives the members who missed it are
+told; a member who misses two in a row (a setting) has their family and their mentor gently told. A
+cancelled class tells its families once. Times are shown in each family's own time zone, with Lagos time
+beside it.
+
+**Prices abroad** (Money → Dues & arrears → Amounts → *Exchange rates*). Families see their own currency
+beside the naira — "₦13,000 (about £7)" — picked from their device's time zone, which they can change.
+Rates refresh daily from a free public feed. Open a currency to **pin** a rate yourself. The dollar
+figures you set for NGG Online are shown exactly to families in dollars. Families always pay in naira.
+
 **Online mentors** apply on the mentor form and choose *Online*. Once accepted they are at NGG Online, and
 the Online page pairs them.
 
-**The online session.** Online members open the **Saturday** screen in their portal and press **Join the
-session** while it is on. That marks them present and opens the meeting link. The link is shown to nobody
+**The online session.** Online members open the **Saturday** screen in their portal (*Live classes*) and press **Join**
+while it is on. That marks them present and opens the meeting link. The link is shown to nobody
 else, and Join is refused outside the session, so "attended" means they joined while it was running. If no
 link is set, Join tells them so and the Online page shows a warning.
 

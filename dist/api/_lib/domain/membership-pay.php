@@ -131,9 +131,11 @@ function membership_invoice_items(array $member, string $start): array {
        they take, and no membership fee. The keys are the accrual's, so the ledger is posted once. */
     if (function_exists('member_is_online') && member_is_online($member)) {
         $mk = substr($start, 0, 7);
+        $once = fees_online_fee_once($cfg); $key = fees_online_fee_key($mk, $cfg);
         if ((int)$cfg['onlineMonthly'] > 0)
-            $items[] = ['kind' => 'dues', 'periodKey' => $mk, 'amount' => (int)$cfg['onlineMonthly'], 'label' => fees_monthly_label($member, $mk),
-                'detail' => 'Paid before the month · your mentor included' . ((int)$cfg['onlineMonthlyUsd'] > 0 ? ' · $' . (int)$cfg['onlineMonthlyUsd'] . ' a month' : '')];
+            $items[] = ['kind' => 'dues', 'periodKey' => $key, 'amount' => (int)$cfg['onlineMonthly'], 'label' => fees_monthly_label($member, $key),
+                'detail' => ($once ? 'Paid once, when you join · your mentor included' : 'Paid before the month · your mentor included')
+                    . ((int)$cfg['onlineMonthlyUsd'] > 0 ? ' · $' . (int)$cfg['onlineMonthlyUsd'] . ($once ? '' : ' a month') : '')];
         return array_merge($items, fees_online_course_items($member, $mk, $cfg));
     }
     if ((int)$cfg['membershipFee'] > 0) {
@@ -508,10 +510,11 @@ function membership_upcoming_charges(array $m, array $cfg, int $months, ?string 
     $out = [];
     $monthly = fees_member_monthly($m, $cfg);
     $online = function_exists('member_is_online') && member_is_online($m);
-    if ($monthly > 0) {
+    if ($monthly > 0 || $online) {
         foreach (fees_due_months($from, $upto, $months) as $mk) {
             if (isset($on['dues|' . $mk]) || ($settled !== '' && $mk <= substr($settled, 0, 7))) continue;
-            $out[] = ['kind' => 'dues', 'key' => $mk, 'due' => $mk . '-01', 'amount' => $monthly];
+            // An online fee charged once (onlineMonthlyBasis) has no monthly line; its courses still fall due monthly.
+            if ($monthly > 0) $out[] = ['kind' => 'dues', 'key' => $mk, 'due' => $mk . '-01', 'amount' => $monthly];
             // An online member's courses fall due on the same day as the month.
             foreach ($online ? fees_online_course_items($m, $mk, $cfg) : [] as $it)
                 if (!isset($on['training|' . $it['periodKey']])) { $out[] = ['kind' => 'training', 'key' => $it['periodKey'], 'due' => $mk . '-01', 'amount' => (int)$it['amount']]; $on['training|' . $it['periodKey']] = true; }
@@ -760,7 +763,7 @@ function membership_send_receipt(array $inv): array {
             . ((string)($inv['purpose'] ?? '') === 'part' ? '' : ((string)($inv['purpose'] ?? '') === 'advance'
                 ? '<p style="margin:12px 0 0;font-size:14px">The payment is held on ' . esc_html($first) . '’s account and meets each charge on the day it falls due, so there is nothing more to pay until it is used up. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>'
                 : (member_is_online($m)
-                    ? '<p style="margin:12px 0 0;font-size:14px">NGG Online is ' . esc_html(fees_money_text(fees_member_monthly($m))) . ' a month, paid before each month starts; we tell you a week ahead. Your mentor will be in touch, and the online Saturday session is in the portal.</p>'
+                    ? '<p style="margin:12px 0 0;font-size:14px">' . (fees_member_monthly($m) > 0 ? 'NGG Online is ' . esc_html(fees_money_text(fees_member_monthly($m))) . ' a month, paid before each month starts; we tell you a week ahead. ' : '') . 'Your mentor will be in touch, and the live Saturday classes are in the portal.</p>'
                     : '<p style="margin:12px 0 0;font-size:14px">From next month the commitment fee is ' . esc_html(fees_money_text((int)fees_settings()['monthlyDues'])) . ' a month. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>'))),
         'ctaLabel' => 'View and print the receipt',
         'ctaUrl' => membership_receipt_url($inv),   // receipt.php renders the frozen receipt (documents.php)

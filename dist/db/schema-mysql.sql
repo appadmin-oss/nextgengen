@@ -5546,3 +5546,48 @@ ALTER TABLE applications ADD COLUMN offeredAt VARCHAR(40) NOT NULL DEFAULT '';
 ALTER TABLE applications ADD COLUMN offerAnswer VARCHAR(16) NOT NULL DEFAULT '';
 ALTER TABLE applications ADD COLUMN offerAnsweredAt VARCHAR(40) NOT NULL DEFAULT '';
 INSERT INTO schema_version (version) VALUES (248) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 249 · NGG Online, live: course start/stop dates, live classes, their occurrences and attendance, access holds ──
+CREATE TABLE IF NOT EXISTS online_course_enrolments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, course VARCHAR(160) NOT NULL,
+  startedOn VARCHAR(10) NOT NULL DEFAULT '', endedOn VARCHAR(10) NOT NULL DEFAULT '', createdAt VARCHAR(40) NOT NULL DEFAULT '',
+  KEY idx_online_enrol_member (memberId, endedOn)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS online_classes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  classId VARCHAR(40) NOT NULL, title VARCHAR(160) NOT NULL DEFAULT '', course VARCHAR(160) NOT NULL DEFAULT '',
+  instructorId VARCHAR(64) NOT NULL DEFAULT '', instructorName VARCHAR(160) NOT NULL DEFAULT '',
+  day VARCHAR(12) NOT NULL DEFAULT 'Saturday', startTime VARCHAR(5) NOT NULL DEFAULT '10:00', minutes INT NOT NULL DEFAULT 60,
+  url VARCHAR(500) NOT NULL DEFAULT '', startsOn VARCHAR(10) NOT NULL DEFAULT '', endsOn VARCHAR(10) NOT NULL DEFAULT '',
+  notes VARCHAR(1000) NOT NULL DEFAULT '', status VARCHAR(16) NOT NULL DEFAULT 'active',
+  autoKey VARCHAR(200) NOT NULL DEFAULT '', groupNo INT NOT NULL DEFAULT 0, locked TINYINT NOT NULL DEFAULT 0,
+  createdBy VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(40) NOT NULL DEFAULT '', updatedAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_online_class_id (classId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS online_class_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  classId VARCHAR(40) NOT NULL, sessionDate VARCHAR(10) NOT NULL,
+  recordingUrl VARCHAR(500) NOT NULL DEFAULT '', cancelled TINYINT NOT NULL DEFAULT 0, note VARCHAR(500) NOT NULL DEFAULT '',
+  remindedAt VARCHAR(40) NOT NULL DEFAULT '', followedUpAt VARCHAR(40) NOT NULL DEFAULT '', updatedBy VARCHAR(64) NOT NULL DEFAULT '', updatedAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_online_class_session (classId, sessionDate)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS online_class_joins (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  classId VARCHAR(40) NOT NULL, memberId VARCHAR(64) NOT NULL, sessionDate VARCHAR(10) NOT NULL, joinedAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_online_class_join (classId, memberId, sessionDate),
+  KEY idx_online_class_join_date (sessionDate)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS online_class_members (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  classId VARCHAR(40) NOT NULL, memberId VARCHAR(64) NOT NULL, addedAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_online_class_member (classId, memberId),
+  KEY idx_online_class_member_m (memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS online_access_holds (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, holdUntil VARCHAR(40) NOT NULL, reason VARCHAR(500) NOT NULL DEFAULT '',
+  createdBy VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(40) NOT NULL DEFAULT '',
+  KEY idx_online_hold_member (memberId, holdUntil)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (249) ON DUPLICATE KEY UPDATE version = version;

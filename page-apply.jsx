@@ -91,14 +91,24 @@ function apfEmailFix(e) {
   return map[m[2]] ? m[1] + "@" + map[m[2]] : null;
 }
 function apfEmailOk(e) { return /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(String(e || "").trim()); }
+/* An NGG Online price as the family reads it: naira, with their own currency beside it (components.jsx,
+   nggLocalPrice) — the dollar figure staff promise shown exactly to a family in dollars. Payment is naira. */
+function apfOnlinePrice(naira) {
+  const money = n => (typeof fmtMoney === "function" ? fmtMoney(n) : "₦" + Number(n).toLocaleString("en-NG"));
+  const local = typeof nggLocalPrice === "function" ? nggLocalPrice(naira, typeof __nggFx !== "undefined" ? __nggFx : null, typeof nggFxCode === "function" ? nggFxCode() : "NGN") : "";
+  return money(naira) + (local ? " (" + local + ")" : "");
+}
 /* What joining costs, from the server's own fee terms, said before anybody applies. */
 function apfFeesText(fees, kid, online) {
   const money = n => (typeof fmtMoney === "function" ? fmtMoney(n) : "₦" + Number(n).toLocaleString("en-NG"));
-  /* NGG Online: the monthly price in dollars and naira, prepaid, mentor included; each course on top. */
-  if (online) return "Nothing to pay today. If " + (kid ? "you are" : "your child is") + " offered a place, we send a private invoice link for the first month: "
-    + (online.monthlyUsd ? "$" + online.monthlyUsd + " (" + money(online.monthly) + ")" : money(online.monthly)) + " a month, paid before each month, with a mentor included"
-    + (online.course > 0 ? ", plus " + (online.courseUsd ? "$" + online.courseUsd + " (" + money(online.course) + ")" : money(online.course)) + (online.courseBasis === "once" ? " once" : " a month") + " for each course, with an instructor" : "")
-    + ". No yearly membership fee.";
+  /* NGG Online: the fee (monthly, or once — a setting), prepaid, mentor included; each course on top. */
+  if (online) {
+    const once = online.monthlyBasis === "once";
+    return "Nothing to pay today. If " + (kid ? "you are" : "your child is") + " offered a place, we send a private invoice link: "
+    + apfOnlinePrice(online.monthly) + (once ? " once, when you join" : " a month, paid before each month") + ", with a mentor included"
+    + (online.course > 0 ? ", plus " + apfOnlinePrice(online.course) + (online.courseBasis === "once" ? " once" : " a month") + " for each course, with an instructor" : "")
+    + ". No yearly membership fee. You always pay in naira.";
+  }
   if (!fees || !fees.enabled || !(fees.membershipFee > 0 || fees.monthlyCommitment > 0)) return "Nothing to pay today. After acceptance we send a private invoice link. The first month covers only the Saturdays left.";
   const parts = [];
   if (fees.membershipFee > 0) parts.push("the " + money(fees.membershipFee) + " membership fee" + (fees.membershipEveryMonths === 12 ? " (once a year)" : ""));
@@ -119,7 +129,7 @@ function apfSteps(v, offer) {
   const online = !!on && v.join === "online";
   const joinField = on ? [{ id: "join", type: "seg", label: "How will " + you + " take part?", req: 1, wide: 1, opts: [
     ["centre", "At a centre", "Scholarship · Saturdays in person", "map-pin"],
-    ["online", "Online", (on.monthlyUsd ? "$" + on.monthlyUsd + " (" + N(on.monthly) + ")" : N(on.monthly)) + " a month · a mentor included", "globe"]] }] : [];
+    ["online", "Online", apfOnlinePrice(on.monthly) + (on.monthlyBasis === "once" ? " once" : " a month") + " · a mentor included", "globe"]] }] : [];
   const centreField = online ? [] : [{ id: "centre", type: "seg", label: "Which centre will you attend?", req: 1, opts: centres, loading: !offer }];
   return [
     { id: "start", l: "Start", t: "Let’s get started", s: "NGG is for ages 10 to 17. Two quick questions so we show you the right form.", f: [
@@ -371,6 +381,14 @@ function ClubApplyPage({ setPage }) {
     const t = setTimeout(() => { NGGApi.public.applyCheck(email, v.dob).then(r => setSeen(r && r.seen ? r : null), () => {}); }, 700);
     return () => clearTimeout(t);
   }, [v.email, v.dob]);
+  /* Prices in the family's own currency: the rates arrive once, then every price on the form re-reads them. */
+  const [, setFxTick] = React.useState(0);
+  React.useEffect(() => {
+    if (typeof nggFxLoad !== "function") return;
+    let live = true; nggFxLoad().then(() => { if (live) setFxTick(n => n + 1); });
+    const on = () => setFxTick(n => n + 1); window.addEventListener("ngg-currency", on);
+    return () => { live = false; window.removeEventListener("ngg-currency", on); };
+  }, []);
   const steps = apfSteps(v, offer);
   const last = steps.length - 1;
   const st = steps[Math.min(step, last)];
@@ -689,7 +707,7 @@ function ApfField({ f, v, set, touch, shown, err, W, offer, offerErr, reloadOffe
       {f.type === "cards" && (f.loading ? <ApfLoading err={offerErr} retry={reloadOffer} what="the courses"/> : <ApfCourses offer={offer} val={val} pick={x => { upd(x); touch(f.id); }} shown={shown}/>)}
       {f.type === "photo" && <ApfPhoto v={v} err={err} W={W} addPhotoFile={addPhotoFile} takePhoto={takePhoto}/>}
       {f.type === "agree" && <ApfAgree v={v} set={set} shown={shown} touch={() => touch("agree")} openPol={openPol} W={W}/>}
-      {f.type === "info" && <div className="apf-info"><i className="ph ph-receipt" aria-hidden="true"/><span>{f.text}</span></div>}
+      {f.type === "info" && <div className="apf-info"><i className="ph ph-receipt" aria-hidden="true"/><span>{f.text}{f.id === "feesInfo" && typeof NggCurrencyPick === "function" ? <NggCurrencyPick/> : null}</span></div>}
       {f.type === "toggle" && (
         <button type="button" role="switch" aria-checked={!!val} className={"apf-switch" + (val ? " is-on" : "")} onClick={() => upd(!val)}>
           <span className="apf-switch-track" aria-hidden="true"><span/></span><span>{f.text}</span>

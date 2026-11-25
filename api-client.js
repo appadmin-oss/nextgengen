@@ -1149,6 +1149,11 @@
       /* NGG Online's Saturday session (domain/online.php): GET the next one; join records attendance and returns the link. */
       onlineSession: () => request('/member/online.php'),
       onlineJoin:    () => request('/member/online.php', { body: { action: 'join' } }),
+      // Live classes (domain/online-live.php): the coming week, recordings, joining (= attendance); an instructor's own.
+      onlineClasses: () => request('/member/online.php' + qs({ view: 'classes' })),
+      onlineClassJoin: (classId) => request('/member/online.php', { body: { action: 'classJoin', classId } }),
+      onlineTeaching: () => request('/member/online.php' + qs({ view: 'instructor' })),
+      onlineRecording: (data) => request('/member/online.php', { body: Object.assign({ action: 'recording' }, data) }),
       wifi:         () => request('/member/wifi.php'),
       wifiPassword: (password) => request('/member/wifi.php', { body: { action: 'password', password } }),
       // Their volunteer wallet, when they volunteer with NGG (domain/volunteer-pay.php); null when they don't.
@@ -1447,6 +1452,8 @@
       timetableTerm: () => request('/public/timetable-term.php'),
       // One programme's own courses and centres, for the join form.
       programme: (program) => request('/public/programme.php' + qs({ program: program === 'summer' ? 'summer' : 'anchor' })),
+      // Exchange rates, to show a price in a family's own currency (domain/fx.php). Rates only.
+      fx: () => request('/public/fx.php'),
       testimonials: () => request('/public/testimonials.php'),
       // A family's joining invoice, by its private token (/pay/<token>).
       // The Membership Agreement by its private link (domain/mou.php).
@@ -2172,6 +2179,19 @@
         overview: () => request('/admin/online.php'),
         settings: (settings) => request('/admin/online.php', { body: { action: 'settings', settings } }),
         pair: (data) => request('/admin/online.php', { body: Object.assign({ action: 'pair' }, data) }),
+        // The live classes and their automatic timetable; holding an unpaid member's classes open.
+        classes: () => request('/admin/online.php' + qs({ view: 'classes' })),
+        classSave: (cls) => request('/admin/online.php', { body: { action: 'classSave', class: cls } }),
+        classSession: (data) => request('/admin/online.php', { body: Object.assign({ action: 'classSession' }, data) }),
+        attendance: (classId, date) => request('/admin/online.php' + qs({ view: 'attendance', classId, date })),
+        plan: (apply) => request('/admin/online.php', { body: { action: 'plan', apply: !!apply } }),
+        hold: (data) => request('/admin/online.php', { body: Object.assign({ action: 'hold' }, data) }),
+      },
+      /* Exchange rates for showing prices abroad (domain/fx.php). */
+      fx: {
+        get: () => request('/admin/fx.php'),
+        save: (data) => request('/admin/fx.php', { body: Object.assign({ action: 'save' }, data) }),
+        refresh: () => request('/admin/fx.php', { body: { action: 'refresh' } }),
       },
       wifi: {
         overview: () => request('/admin/wifi.php'),

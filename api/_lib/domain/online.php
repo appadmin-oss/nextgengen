@@ -49,10 +49,11 @@ function online_offer(): array {
         'available' => !empty($s['enabled']) && $name !== '',
         'centre' => $name,
         'monthly' => (int)$cfg['onlineMonthly'], 'monthlyUsd' => (int)$cfg['onlineMonthlyUsd'],
-        'course' => (int)$cfg['onlineCourseFee'], 'courseUsd' => (int)$cfg['onlineCourseUsd'], 'courseBasis' => (string)$cfg['onlineCourseBasis'],
+        'course' => (int)$cfg['onlineCourseFee'], 'courseUsd' => (int)$cfg['onlineCourseUsd'], 'courseBasis' => (string)$cfg['onlineCourseBasis'], 'monthlyBasis' => (string)($cfg['onlineMonthlyBasis'] ?? 'month'),
+        'graceHours' => function_exists('online_live_settings') ? online_live_settings()['graceHours'] : 48,
         'session' => ['day' => (string)$s['sessionDay'], 'time' => (string)$s['sessionTime'], 'minutes' => (int)$s['sessionMinutes']],
         // The value case, said plainly (docs/ONLINE-MEMBERS-PLAN.md, "make it worth paying for").
-        'includes' => ['A named mentor, with a check-in every month', 'A live online session every ' . (string)$s['sessionDay'],
+        'includes' => ['A named mentor, with a check-in every month', 'A live online session every ' . (string)$s['sessionDay'] . ', and a live class for each course',
             'An instructor for each course, who gives feedback on your work', 'The Maths, Physics and English Labs, with exams and certificates',
             'Your journal, with replies from your mentor', 'The NGG community', 'A progress report to your family every month', 'A digital member card'],
     ];
@@ -101,6 +102,7 @@ function member_online_session(array $p): array {
  */
 function member_online_session_join(array $p): array {
     $m = online_member_from($p); if (!$m) return ['ok' => false, 'error' => 'not_online'];
+    if (function_exists('online_live_open') && !online_live_open($m)) return ['ok' => false, 'error' => 'paused', 'detail' => ONLINE_PAUSED_CHILD];
     $s = online_settings(); $url = trim((string)$s['sessionUrl']);
     if ($url === '' || !preg_match('#^https://#i', $url)) return ['ok' => false, 'error' => 'no_link', 'detail' => 'The session link has not been set yet. Your centre team has been told.'];
     $w = online_session_window(null, $s); $now = time();
@@ -188,7 +190,7 @@ function admin_online_mentor_pair(array $p): array {
 function admin_online_overview(array $p): array {
     $g = admin_cap_gate_any($p, ['people', 'club', 'fees']); if (!$g['ok']) return $g;
     $name = online_centre_name();
-    $base = ['ok' => true, 'centre' => $name, 'settings' => online_settings(), 'offer' => online_offer(), 'members' => [], 'counts' => [], 'capped' => false];
+    $base = ['ok' => true, 'centre' => $name, 'settings' => online_settings() + (function_exists('online_live_settings') ? online_live_settings() : []), 'offer' => online_offer(), 'members' => [], 'counts' => [], 'capped' => false];
     if ($name === '' || !admin_centre_allowed($g['requester'], $name)) return $base + ['scoped' => $name !== ''];
     $rows = db_all("SELECT * FROM members WHERE centre = ? AND status = 'active' AND COALESCE(role,'member') = 'member' ORDER BY fullName LIMIT " . (ONLINE_OVERVIEW_MAX + 1), [$name]);
     $capped = count($rows) > ONLINE_OVERVIEW_MAX; if ($capped) array_pop($rows);
@@ -205,15 +207,23 @@ function admin_online_overview(array $p): array {
             $mentorOf[(string)$r['memberId']] = ['id' => (string)$r['mentorId'], 'name' => (string)($r['fullName'] ?? '')];
     }
     $cfg = fees_settings();
-    $counts = ['members' => count($rows), 'owing' => 0, 'noMentor' => 0, 'missedSession' => 0, 'inactive' => 0];
+    $counts = ['members' => count($rows), 'owing' => 0, 'noMentor' => 0, 'missedSession' => 0, 'inactive' => 0, 'paused' => 0, 'review' => 0];
     $out = [];
     foreach ($rows as $r) {
-        $bal = fees_balance($r, $cfg);
+        $ents = fees_entries((string)$r['memberId']);   // read once, shared by the balance and the access state
+        $bal = fees_balance($r, $cfg, null, $ents);
         $owing = (int)($bal['payable'] ?? 0);
         $mid = (string)($mentorOf[(string)$r['memberId']]['id'] ?? '');
         $row = ['memberId' => (string)$r['memberId'], 'name' => (string)$r['fullName'], 'displayId' => (string)($r['displayId'] ?? ''),
             'courses' => fees_online_courses($r), 'owing' => $owing, 'mentorId' => $mid, 'mentor' => (string)($mentorOf[(string)$r['memberId']]['name'] ?? ''),
             'atSession' => isset($at[(string)$r['memberId']]), 'activeWeek' => isset($active[(string)$r['memberId']]), 'joined' => (string)($r['joinDate'] ?? '')];
+        if (function_exists('online_access_state')) {
+            $acc = online_access_state($r, null, $ents);
+            $row['access'] = ['state' => $acc['state'], 'pauseAt' => $acc['pauseAt'], 'hoursLeft' => $acc['hoursLeft'], 'heldUntil' => $acc['heldUntil'],
+                'holdReason' => $acc['holdReason'], 'review' => $acc['review'], 'daysUnpaid' => $acc['daysUnpaid']];
+            if ($acc['state'] === 'paused') $counts['paused'] = ($counts['paused'] ?? 0) + 1;
+            if ($acc['review']) $counts['review'] = ($counts['review'] ?? 0) + 1;
+        }
         if ($owing > 0) $counts['owing']++;
         if ($mid === '') $counts['noMentor']++;
         if ($last !== '' && !$row['atSession']) $counts['missedSession']++;
@@ -241,7 +251,25 @@ function admin_online_settings_save(array $p): array {
         'sessionUrl' => mb_substr($url, 0, 500),
         'joinOpensMinutes' => max(0, min(60, (int)($in['joinOpensMinutes'] ?? $cur['joinOpensMinutes']))),
     ];
+    /* The live side (online-live.php): grace, reminders, the automatic timetable. The grace period is stored in
+       hours and may be given in hours or days (`graceValue` + `graceUnit`), as the owner asked. */
+    $live = online_live_settings();
+    if (isset($in['graceValue'])) {
+        $unit = (string)($in['graceUnit'] ?? 'hours');
+        if (!in_array($unit, ['hours', 'days'], true)) return ['ok' => false, 'error' => 'bad_grace_unit'];
+        $in['graceHours'] = (int)round((float)$in['graceValue'] * ($unit === 'days' ? 24 : 1));
+    }
+    if (isset($in['graceHours']) && ((int)$in['graceHours'] < 0 || (int)$in['graceHours'] > ONLINE_GRACE_MAX_HOURS))
+        return ['ok' => false, 'error' => 'bad_grace', 'detail' => 'A grace period is 0 to ' . (ONLINE_GRACE_MAX_HOURS / 24) . ' days.'];
+    foreach (['classFrom', 'classUntil'] as $k) if (isset($in[$k]) && !preg_match('/^([01]?\d|2[0-3]):[0-5]\d$/', (string)$in[$k]))
+        return ['ok' => false, 'error' => 'bad_time', 'detail' => 'Write class times as HH:MM, e.g. 10:15.'];
+    if (isset($in['classDay']) && !in_array($in['classDay'], ONLINE_DAYS, true)) return ['ok' => false, 'error' => 'bad_day'];
+    if (isset($in['linkProvider']) && !in_array($in['linkProvider'], ['jitsi', 'manual'], true)) return ['ok' => false, 'error' => 'bad_provider'];
+    foreach (array_keys(ONLINE_LIVE_DEFAULTS) as $k) $clean[$k] = array_key_exists($k, $in)
+        ? (is_bool(ONLINE_LIVE_DEFAULTS[$k]) ? !empty($in[$k]) : (is_int(ONLINE_LIVE_DEFAULTS[$k]) ? (int)$in[$k] : (string)$in[$k])) : $live[$k];
+    if ((string)$clean['classUntil'] <= (string)$clean['classFrom']) return ['ok' => false, 'error' => 'bad_window', 'detail' => 'The last class must end after the first starts.'];
     setting_set(ONLINE_SETTINGS_KEY, $clean, (string)$g['requester']['memberId']);
-    audit('online.settings.save', (string)$g['requester']['memberId'], 'online', ['day' => $clean['sessionDay'], 'time' => $clean['sessionTime'], 'enabled' => $clean['enabled'], 'link' => $clean['sessionUrl'] !== '']);
-    return ['ok' => true, 'settings' => $clean];
+    audit('online.settings.save', (string)$g['requester']['memberId'], 'online', ['day' => $clean['sessionDay'], 'time' => $clean['sessionTime'], 'enabled' => $clean['enabled'], 'link' => $clean['sessionUrl'] !== '',
+        'graceHours' => $clean['graceHours'], 'autoPlan' => $clean['autoPlan']]);
+    return ['ok' => true, 'settings' => $clean + ['live' => online_live_settings()]];
 }

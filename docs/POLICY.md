@@ -314,6 +314,15 @@ thresholds → Stricter than Summer School**:
 Member enforcement is switched on separately ("Enforce for NGG members"); none
 of this applies until it is.
 
+## NGG Online: a late payment
+
+An online member's fee falls due at midnight (Lagos) on its day. The family then has a **grace period** (2 days
+unless the programme sets another, in hours or days) and is reminded within it. After the grace period the
+member's **live classes and Saturday session pause**; nothing else does — their portal, Labs, lessons, journal,
+mentor and work stay theirs. Payment reopens them at once. The centre may keep them open for longer, with a
+reason. A member unpaid for 90 days is reviewed by a person; nobody is removed automatically. The child is never
+told an amount: that conversation is between the programme and the family.
+
 ## Wi-Fi at the centres
 
 - Access follows the record: active members, staff, mentors and instructors are
