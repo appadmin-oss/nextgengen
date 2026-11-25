@@ -170,8 +170,15 @@ function log(...a) { console.log('[build]', ...a); }
  * Per-file hashes, not one build id across all of them: a CSS-only deploy
  * should not make every visitor re-download a 1.3MB bundle that did not change.
  */
+/* A CACHE EPOCH mixed into every file's name. Fingerprinted files are served `immutable` for a year, so a
+ * browser that once received a broken copy keeps it for as long as the name lasts. On 25 Nov 2026 every script and
+ * stylesheet was served double-compressed (the precompressed copies; see .htaccess); a stylesheet whose content did
+ * not change kept its name after the fix, and browsers went on using the unreadable copy they had stored — the site
+ * drew unstyled. Bumping this renames every file at once, so no browser can reuse anything it holds. Bump it only
+ * for that: any other change already renames the files it touches. */
+const CACHE_EPOCH = 'e2-2026-11-25';
 function fileTag(contents) {
-  return crypto.createHash('sha256').update(contents).digest('hex').slice(0, 10);
+  return crypto.createHash('sha256').update(CACHE_EPOCH).update(contents).digest('hex').slice(0, 10);
 }
 /** `styles.css` + a tag → `styles.4f2a1b9c33.css`. Multi-part extensions are
  *  kept intact so `app.min.js` becomes `app.<tag>.min.js`, not `app.min.<tag>.js`
@@ -200,6 +207,7 @@ function walkFiles(dir, acc) {
 
 function hashClientAssets(bundleCode) {
   const h = crypto.createHash('sha256');
+  h.update(CACHE_EPOCH);
   h.update(bundleCode);
   const files = [];
   for (const f of CACHED_FILES) {

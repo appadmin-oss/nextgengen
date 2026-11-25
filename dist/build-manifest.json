@@ -1,14 +1,14 @@
 {
-  "buildId": "9150aa3bf8",
-  "builtAt": "2026-11-25T20:51:08.505Z",
+  "buildId": "5b75bc39ec",
+  "builtAt": "2026-11-25T21:11:37.183Z",
   "bundle": {
-    "file": "app.00146d4ce8.min.js",
+    "file": "app.585ad1d7c7.min.js",
     "bytes": 1685026,
     "gzipBytes": 448363,
     "files": 31
   },
   "more": {
-    "file": "app-more.b0483fa019.min.js",
+    "file": "app-more.54068b09d7.min.js",
     "bytes": 3940863,
     "gzipBytes": 1126210,
     "files": 64,
@@ -80,7 +80,7 @@
     ]
   },
   "study": {
-    "file": "app-study.a1a565d914.min.js",
+    "file": "app-study.0ab70ac438.min.js",
     "bytes": 718701,
     "gzipBytes": 203672,
     "files": 19,
@@ -107,17 +107,17 @@
     ]
   },
   "assets": {
-    "app.min.js": "app.00146d4ce8.min.js",
-    "app-more.min.js": "app-more.b0483fa019.min.js",
-    "app-study.min.js": "app-study.a1a565d914.min.js",
-    "styles.css": "styles.376a3b2509.css",
-    "styles-app.css": "styles-app.9eb187b6ce.css",
-    "data.js": "data.ec97c65376.js",
-    "photos.js": "photos.36b0b4ea72.js",
-    "api-client.js": "api-client.8f90d797fa.js",
-    "outbox.js": "outbox.042a8c9122.js",
-    "styles-app-public.css": "styles-app-public.6710f6e9c7.css",
-    "phosphor.css": "phosphor-used.b0a83a01c8.css"
+    "app.min.js": "app.585ad1d7c7.min.js",
+    "app-more.min.js": "app-more.54068b09d7.min.js",
+    "app-study.min.js": "app-study.0ab70ac438.min.js",
+    "styles.css": "styles.dfd9c65f53.css",
+    "styles-app.css": "styles-app.5f8eca2f46.css",
+    "data.js": "data.cdcdf36616.js",
+    "photos.js": "photos.b605ffc623.js",
+    "api-client.js": "api-client.dce81ce8c3.js",
+    "outbox.js": "outbox.f0688bdc7a.js",
+    "styles-app-public.css": "styles-app-public.e56ccb3e75.css",
+    "phosphor.css": "phosphor-used.2579d59753.css"
   },
   "node": "v22.23.5"
 }

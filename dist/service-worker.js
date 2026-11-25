@@ -18,7 +18,7 @@
      deploy shows up without anybody hunting for a hard refresh.
    ================================================================ */
 
-const CACHE_VERSION = 'ngg-9150aa3bf8';
+const CACHE_VERSION = 'ngg-5b75bc39ec';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 
@@ -36,15 +36,15 @@ const FINGERPRINTED = /\.[0-9a-f]{10}\.(?:min\.)?(?:js|css)$/;
 const PRECACHE = [
   '/',
   '/index.html',
-  '/styles.376a3b2509.css',
+  '/styles.dfd9c65f53.css',
   /* The slim sheet public pages use (build.js). The full one comes with the signed-in bundle, when needed:
      precaching 1.1 MB of Control Room styles in the background of a first visit was data nobody asked for. */
-  '/styles-app-public.6710f6e9c7.css',
-  '/data.ec97c65376.js',
-  '/photos.36b0b4ea72.js',
-  '/api-client.8f90d797fa.js',
-  '/outbox.042a8c9122.js',
-  '/app.00146d4ce8.min.js',
+  '/styles-app-public.e56ccb3e75.css',
+  '/data.cdcdf36616.js',
+  '/photos.b605ffc623.js',
+  '/api-client.dce81ce8c3.js',
+  '/outbox.f0688bdc7a.js',
+  '/app.585ad1d7c7.min.js',
   '/vendor/react.production.min.js',
   '/vendor/react-dom.production.min.js',
   '/assets/logo.png',
