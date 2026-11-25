@@ -3,7 +3,8 @@
    The registration checklist (Control Room → Members → Registration, the
    Mentor Portal's My registrations, and the member's Me), end to end.
 
-   The promises: staff see a new member with nobody helping; the supervisors
+   The promises: a member nobody can be found for is listed as such (one who
+   can be found is given a helper by itself, and the list says so); the supervisors
    offered are the server's, from real presence at the member's centre, with
    the reasons in words; assigning one from the suggestions is recorded and
    audited once; the supervisor finds the member in My registrations, and an
@@ -77,12 +78,14 @@ const until = (pg, fn, arg, ms) => pg.waitForFunction(fn, arg, { timeout: ms || 
         'programme'=>'ngg','memberId'=>'${SUP}','checkedAt'=>$now,'maxMentees'=>8,'createdAt'=>$now]);
       foreach (array_merge(ms_required_modules(), academy_orientation_ids('mentor')) as $mod) db_insert('mentor_academy', ['mentorId'=>'MEN-RC-1','moduleId'=>$mod,'score'=>100,'passedAt'=>$now]);
       db_insert('mentor_policy', ['mentorId'=>'MEN-RC-1','policyVersion'=>MS_POLICY_VERSION,'signedName'=>'x','acceptedAt'=>$now]);
+      // Tobi's checklist starts before anybody has been seen at Egbeda, so nobody can be chosen for him automatically.
+      rcl_start(db_row("SELECT * FROM members WHERE memberId = '${MEM}'"), '${ADMIN}');
       // Ngozi checked in at Egbeda on four of the last five Saturdays, and today.
       $sats = rcl_saturdays($today, 5);
       foreach ([1, 2, 3, 4] as $i) db_insert('attendance', ['cohortId'=>'','studentId'=>'${SUP}','date'=>$sats[$i],'checkInAt'=>$sats[$i].'T08:00:00Z','method'=>'gate','status'=>'present','lateMinutes'=>0,'centreId'=>'CEN-RC-1','createdAt'=>$now]);
       db_insert('attendance', ['cohortId'=>'','studentId'=>'${SUP}','date'=>$today,'checkInAt'=>$today.'T08:00:00Z','method'=>'gate','status'=>'present','lateMinutes'=>0,'centreId'=>'CEN-RC-1','createdAt'=>$now]);
       admin_regcheck_item_save(['requesterId'=>'${ADMIN}','title'=>'Welcome talk given','help'=>'Walk the family through a Saturday.','evidence'=>'none','presence'=>true]);
-      rcl_start(db_row("SELECT * FROM members WHERE memberId = '${MEM}'"), '${ADMIN}');`);
+      rcl_refresh(['${MEM}']);`);
 
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT, path.join(ROOT, '_router.php')], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
@@ -144,6 +147,17 @@ const until = (pg, fn, arg, ms) => pg.waitForFunction(fn, arg, { timeout: ms || 
       return /Your registration: 1 of \d+ done/.test(t) && /Date of birth/.test(t) && /Ngozi at the centre is helping you/.test(t) && !/Ngozi Eke/.test(t);
     }, null, 60000));
     chk('no inline style on anything the feature draws', await M.evaluate(() => !document.querySelector('.rcl-progress [style], .rcl-progress[style]')));
+    await M.context().close().catch(() => {});
+
+    /* Owner, 24 Nov 2026: nobody waits on a person to choose a helper. A member whose checklist starts once
+       Ngozi has been seen at Egbeda gets her by itself, and the list says it was automatic. */
+    console.log('a helper chosen by itself');
+    php(`$now = now_iso(); db_insert('members', ['memberId'=>'NGG-RC-KEMI','fullName'=>'Kemi Bello','email'=>'kemi.bello@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','centreId'=>'CEN-RC-1','createdAt'=>$now,'updatedAt'=>$now]);
+      rcl_start(db_row("SELECT * FROM members WHERE memberId = 'NGG-RC-KEMI'"), '${ADMIN}');`);
+    chk('…recorded as automatic, on the person seen at the centre', php(`$c = db_row("SELECT supervisorId, assignedBy FROM reg_checklists WHERE memberId = 'NGG-RC-KEMI'"); echo $c['supervisorId'] . '|' . $c['assignedBy'];`) === SUP + '|auto');
+    await browser.close().catch(() => {}); browser = await launch();
+    const P2 = await open(ADMIN, true, '/control/members/reg-checklist');
+    chk('…and the list names her, chosen automatically', await until(P2, () => { const r = Array.from(document.querySelectorAll('tr')).find(x => /Kemi Bello/.test(x.innerText)); return !!r && /Ngozi Eke/.test(r.innerText) && /Chosen automatically/.test(r.innerText); }, null, 60000));
     chk('no page errors', errs.length === 0);
     if (errs.length) console.log(errs.slice(0, 5));
   } catch (e) {

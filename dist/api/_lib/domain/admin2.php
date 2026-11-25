@@ -756,6 +756,7 @@ function admin_assign_mentor(array $p): array {
         push_notification($memberId, ['kind' => 'mentor', 'title' => 'You have a mentor', 'body' => staff_public_name($mentorId, 'A mentor') . ' is now guiding your Anchor journey.', 'linkPage' => 'dashboard']);
     }
     $match = admin_assign_mentor_sync_match($memberId, $mentor, (string)$g['requester']['memberId']);
+    if ($mentor && function_exists('rcl_auto_helpers')) rcl_auto_helpers([$memberId]);   // the mentor is the registration helper too
     audit('admin.mentor.assign', $g['requester']['memberId'], $memberId, ['mentorId' => $mentorId, 'sessionId' => $sessionId, 'match' => $match], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'match' => $match];
 }
@@ -844,6 +845,7 @@ function admin_applications_list(array $p): array {
         // The Club application's other answers, and the agreements as given.
         $r['details'] = json_decode((string)($r['details'] ?? ''), true) ?: null;
         if (is_array($r['details'])) unset($r['details']['_edit']);   // a change code's hash is nobody's to read
+        unset($r['offerTokenHash']);
     }
     unset($r);
     /* Agreements: the latest decision per type for each application, in one read. */
@@ -979,6 +981,11 @@ function admin_applications_message(array $p): array {
 
 function admin_application_convert(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    return app_convert($g, $p);
+}
+
+/** Accept an application as the staff member in $g: the admin op, and a family taking an offered centre. */
+function app_convert(array $g, array $p): array {
     $id = (int)($p['id'] ?? 0);
     [$a, $no] = app_for_admin($g, $id); if ($no) return $no;
     if ($a['kind'] !== 'teen') return ['ok' => false, 'error' => 'only_teen_apps'];   // mentor apps → mentors, handled separately
@@ -1151,13 +1158,27 @@ function admin_application_convert(array $p): array {
     $num = (string)($__m['displayId'] ?? '') !== '' ? (string)$__m['displayId'] : $newId;
     $origin = (string)($GLOBALS['CONFIG']['app_origin'] ?? '');
     $steps = [];
-    /* The Membership Agreement (domain/mou.php): started now, its link sent in its own email after this one. */
-    $mou = $type === 'NGG' && function_exists('mou_start') ? mou_start($__m, (string)$g['requester']['memberId'], false) : null;
+    $startTxt = esc_html((string)$a['centre']) . ($start !== '' ? ', from ' . esc_html(gmdate('l j F', (int)strtotime($start . ' UTC'))) : '');
+    if ($type === 'NGG') {
+        /* ACCEPTED, NOT YET CONFIRMED (owner, 24 Nov 2026). One email: the child is accepted, and two steps
+           confirm the place — sign the agreement, pay the joining fee. The place is confirmed by itself the
+           moment both are done (ngg_confirm_if_ready), when the "You're in" welcome goes. Three emails at once
+           (welcome, agreement, invoice) told a family they were in before they had agreed to anything or paid. */
+        $mou = function_exists('mou_start') ? mou_start($__m, (string)$g['requester']['memberId'], false) : null;
+        $sentTo = ngg_accepted_send($__m, $first, $startTxt, $mou && !empty($mou['link']) ? (string)$mou['link'] : '', $invoice && empty($invoice['error']) ? $ir['invoice'] : null);
+        if ($mou && !empty($mou['link'])) db_update('mou_agreements', ['sentAt' => $sentTo ? now_iso() : '', 'sentTo' => implode(', ', $sentTo)], ['mouId' => (string)$mou['mouId']]);
+        if ($invoice && empty($invoice['error'])) { $invoice['sent'] = (bool)$sentTo; $invoice['to'] = $sentTo ? mask_email($sentTo[0]) : ''; }
+        audit('admin.application.convert', $g['requester']['memberId'], $newId, ['applicationId' => $id, 'type' => $type, 'start' => $start, 'centre' => (string)$a['centre']], (string)($p['ip'] ?? ''));
+        if (function_exists('rcl_start_for_new_member')) rcl_start_for_new_member($newId, (string)$g['requester']['memberId'], true);
+        $acc = ngg_confirm_if_ready($newId);   // nothing to sign and nothing to pay (an online member with fees off): confirmed now
+        return ['ok' => true, 'memberId' => $newId, 'invoice' => $invoice, 'accepted' => true, 'confirmed' => !empty($acc['confirmed']), 'emailedTo' => array_map('mask_email', $sentTo),
+                'mou' => $mou ? ['mouId' => (string)($mou['mouId'] ?? ''), 'link' => (string)($mou['link'] ?? '')] : null];
+    }
+    $mou = null;
     if ($mou && !empty($mou['ok']) && !empty($mou['link'])) $steps[] = '<b>Read and sign the Membership Agreement</b>. It follows this email: about ten minutes on a phone, with a short summary of each part and five quick questions. You receive a copy by email.';
     if ($welcome !== '') $steps[] = '<b>Set a password</b> with the button below (the link works for seven days). After that, ' . esc_html($first) . ' signs in with the member number <b>' . esc_html($num) . '</b> and the password, without waiting on this inbox.';
     if ($invoice && empty($invoice['error'])) $steps[] = '<b>Pay the joining invoice</b> (' . esc_html(fees_money_text((int)$invoice['total'])) . '). It follows this email, with a private link to pay.';
     if ($type === 'NGG') $steps[] = '<b>Parents and guardians:</b> follow ' . esc_html($first) . '’s attendance and progress on the NGG Family app at ' . esc_html($origin) . '/family. Sign in with this email address; ' . esc_html($first) . ' appears for our team to confirm, or ask ' . esc_html($first) . ' for their Anchor Circle code to link at once.';
-    $startTxt = esc_html((string)$a['centre']) . ($start !== '' ? ', from ' . esc_html(gmdate('l j F', (int)strtotime($start . ' UTC'))) : '');
     @send_mail($intakeEmail, 'Welcome to Next Generation Genius',
         email_template([
             'title' => 'You\'re in, ' . $first . '.',
@@ -1179,6 +1200,305 @@ function admin_application_convert(array $p): array {
     audit('admin.application.convert', $g['requester']['memberId'], $newId, ['applicationId' => $id, 'type' => $type, 'start' => $start], (string)($p['ip'] ?? ''));
     if (function_exists('rcl_start_for_new_member')) rcl_start_for_new_member($newId, (string)$g['requester']['memberId']);   // registration checklist (domain/registration-checklist.php)
     return ['ok' => true, 'memberId' => $newId, 'invoice' => $invoice, 'mou' => $mou ? ['mouId' => (string)($mou['mouId'] ?? ''), 'link' => (string)($mou['link'] ?? '')] : null];
+}
+
+/* ── Accepted, then confirmed (owner, 24 Nov 2026) ───────────────────────
+ * Staff ACCEPT a child at a centre (or offer a nearer one with room, below).
+ * The family then signs the Membership Agreement online and pays the joining
+ * fee, in either order, and the place is CONFIRMED by itself the moment both are
+ * done: no waiting on a desk. Only then does the "You're in" welcome go, with the
+ * member number and the password link. A step that does not apply is not waited
+ * for: an online member has no agreement (mou_not_for); with membership fees off
+ * there is nothing to pay.
+ */
+
+/** Everybody a family email goes to: the intake email and the family's addresses. */
+function ngg_family_to(array $m): array
+{
+    $to = function_exists('mou_family_emails') ? mou_family_emails($m) : [];
+    $e = strtolower(trim((string)($m['email'] ?? '')));
+    if (filter_var($e, FILTER_VALIDATE_EMAIL)) array_unshift($to, $e);
+    return array_values(array_unique($to));
+}
+
+/** Accepted: ONE email, two steps, one button. Returns the addresses it went to. */
+function ngg_accepted_send(array $m, string $first, string $whereHtml, string $mouLink, ?array $inv): array
+{
+    if ($mouLink === '' && !$inv) return [];   // nothing to do: ngg_confirm_if_ready confirms and welcomes them at once
+    $to = ngg_family_to($m);
+    $value = function_exists('mou_figures') ? (string)mou_figures()['scholarshipValue'] : '';
+    $steps = [];
+    if ($mouLink !== '') $steps[] = '<b>Read and sign the Membership Agreement.</b> About ten minutes on a phone: each part in plain words, then five quick questions (try again as often as you like). '
+        . ($value !== '' ? esc_html($first) . '’s place is an NGG scholarship worth <b>' . esc_html($value) . '</b>; the agreement says what each side commits to.' : '');
+    if ($inv) $steps[] = '<b>Pay the joining fee: ' . esc_html(fees_money_text((int)$inv['total'])) . '</b> — the membership fee and the first month’s commitment fee. <a href="' . esc_html(membership_pay_url($inv)) . '">Pay online</a>, or pay at the centre.';
+    $html = '<p style="margin:0 0 12px">' . (count($steps) > 1 ? 'Two steps confirm the place' : 'One step confirms the place') . ':</p><ol style="margin:0 0 12px;padding-left:20px">'
+        . implode('', array_map(static fn($x) => '<li style="margin:0 0 10px">' . $x . '</li>', $steps)) . '</ol>'
+        . '<p style="margin:0">' . (count($steps) > 1 ? 'Do them in either order. When both are done, ' : 'When it is done, ') . esc_html($first) . '’s place is confirmed straight away, and we email you the welcome with '
+        . esc_html($first) . '’s member number and how to sign in.</p>';
+    foreach ($to as $addr) @send_mail($addr, $first . ' is accepted at NGG', email_template([
+        'eyebrow' => 'Next Generation Genius', 'title' => $first . ' is accepted',
+        'intro' => 'Good news: ' . $first . ' is accepted into Next Generation Genius, at ' . $whereHtml . '.',
+        'bodyHtml' => $html,
+        'ctaLabel' => $mouLink !== '' ? 'Read and sign the agreement' : 'Pay the joining fee',
+        'ctaUrl' => $mouLink !== '' ? $mouLink : membership_pay_url($inv),
+        'footNote' => 'Questions? Reply to this email or ask at the centre.',
+    ]));
+    return $to;
+}
+
+/** Where an accepted NGG member stands: each step true / false, or null when it does not apply. */
+function ngg_confirm_state(array $m): array
+{
+    $mid = (string)$m['memberId'];
+    $agree = null;
+    if (function_exists('mou_not_for') && !mou_not_for($m)) {
+        $r = function_exists('mou_current') ? mou_current($mid) : null;
+        $agree = $r !== null && (string)$r['clientSignedAt'] !== '';
+    }
+    $paid = null;
+    if (function_exists('membership_fee_terms') && !empty(membership_fee_terms()['enabled'])) {
+        $paid = (bool)db_row("SELECT 1 x FROM membership_invoices WHERE memberId = ? AND purpose = 'joining' AND status = 'paid' LIMIT 1", [$mid])
+             || trim((string)($m['feesSettledThrough'] ?? '')) !== '';
+    }
+    $pay = null;
+    if ($paid === false) { $inv = db_row("SELECT * FROM membership_invoices WHERE memberId = ? AND purpose = 'joining' AND status = 'open' ORDER BY id DESC LIMIT 1", [$mid]);
+        if ($inv) $pay = ['url' => membership_pay_url($inv), 'total' => (int)$inv['total'], 'text' => fees_money_text((int)$inv['total'])]; }
+    return ['agreement' => $agree, 'paid' => $paid, 'pay' => $pay, 'ready' => $agree !== false && $paid !== false];
+}
+
+/**
+ * Confirm the place when every step that applies is done: once, ever. Sends the
+ * welcome and tells the member. Called on signing, on paying, and at acceptance.
+ * Only a member accepted through this flow waits to be confirmed: everyone else's
+ * checklist starts confirmed (rcl_start), so an old member who signs an agreement
+ * later is never "welcomed" a second time.
+ * Returns ['confirmed' => bool, 'now' => true when this call confirmed them].
+ */
+function ngg_confirm_if_ready(string $memberId): array
+{
+    try {
+        $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+        if (!$m || !member_is_ngg($m)) return ['confirmed' => false];
+        $c = db_row('SELECT confirmWait, confirmedAt FROM reg_checklists WHERE memberId = ? LIMIT 1', [$memberId]);
+        if (!$c) return ['confirmed' => false];
+        if ((int)$c['confirmWait'] !== 1 || (string)$c['confirmedAt'] !== '') return ['confirmed' => true];
+        $st = ngg_confirm_state($m);
+        if (!$st['ready']) return ['confirmed' => false] + $st;
+        $now = now_iso();
+        if (!db_exec("UPDATE reg_checklists SET confirmedAt = ? WHERE memberId = ? AND confirmWait = 1 AND confirmedAt = ''", [$now, $memberId])) return ['confirmed' => true];
+        ngg_welcome_send($m);
+        push_notification($memberId, ['kind' => 'system', 'title' => 'You’re in! Welcome to NGG', 'body' => 'Your place is confirmed. Come to orientation at ' . ((string)$m['centre'] ?: 'the centre') . ' with a parent.']);
+        audit('member.confirmed', 'system', $memberId, ['agreement' => $st['agreement'], 'paid' => $st['paid']]);
+        return ['confirmed' => true, 'now' => true];
+    } catch (Throwable $e) { error_log('[ngg_confirm] ' . $e->getMessage()); return ['confirmed' => false]; }
+}
+
+/** "You're in": the member number, the password link, and what happens next — in the order a family does it. */
+function ngg_welcome_send(array $m): void
+{
+    $mid = (string)$m['memberId'];
+    $first = explode(' ', trim((string)$m['fullName']))[0] ?: 'your child';
+    $num = (string)($m['displayId'] ?? '') !== '' ? (string)$m['displayId'] : $mid;
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    $centre = (string)($m['centre'] ?? '') ?: 'the centre';
+    $welcome = function_exists('auth_welcome_link') ? auth_welcome_link($mid) : '';
+    $online = function_exists('mou_not_for') && mou_not_for($m);
+    $steps = [];
+    if ($welcome !== '') $steps[] = '<b>Set a password</b> with the button below (the link works for seven days). ' . esc_html($first) . ' then signs in with the member number <b>' . esc_html($num) . '</b>.';
+    if (!$online) $steps[] = '<b>Come to orientation at ' . esc_html($centre) . '</b> on a meeting day, ' . esc_html($first) . ' and a parent. Bring the <b>printed Membership Agreement, signed in ink with a witness</b>, ' . esc_html($first) . '’s file and the latest school report card.';
+    $steps[] = '<b>' . esc_html($first) . ' makes their week</b> on the site — school, homework, clubs — at ' . esc_html($origin) . '/timetable, signed in. It takes a few minutes, all by tapping.';
+    $steps[] = '<b>Parents and guardians:</b> follow ' . esc_html($first) . '’s registration, attendance and progress in the NGG Family app at ' . esc_html($origin) . '/family.';
+    $html = '<p style="margin:0 0 12px">' . esc_html($first) . '’s member number is <b>' . esc_html($num) . '</b>. It is printed on the NGG ID card, and it is how ' . esc_html($first) . ' signs in.</p>'
+        . '<p style="margin:0 0 6px"><b>What happens next</b></p><ol style="margin:0;padding-left:20px">' . implode('', array_map(static fn($x) => '<li style="margin:0 0 8px">' . $x . '</li>', $steps)) . '</ol>'
+        . '<p style="margin:12px 0 0">' . esc_html($first) . ' starts lectures on the day every entry step is done. We will tell you.</p>';
+    foreach (ngg_family_to($m) as $addr) @send_mail($addr, 'Welcome to Next Generation Genius', email_template([
+        'title' => 'You’re in, ' . $first . '.',
+        'intro' => $first . '’s place at Next Generation Genius is confirmed' . ($online ? '' : ': the agreement is signed') . (function_exists('membership_fee_terms') && !empty(membership_fee_terms()['enabled']) ? ($online ? ': the joining fee is paid.' : ' and the joining fee is paid.') : '.'),
+        'bodyHtml' => $html,
+        'ctaLabel' => $welcome !== '' ? 'Set a password' : 'Open the member portal',
+        'ctaUrl' => $welcome !== '' ? $welcome : ($origin . '/dashboard'),
+        'footNote' => 'Welcome to the movement.',
+    ]));
+}
+
+/* ── A nearer centre, offered (owner, 24 Nov 2026) ───────────────────────
+ * When the centre a family chose is not taking new members, staff offer another
+ * that has room, nearest first. The family answers with one tap, from the email:
+ *   · "Yes"  → the child is ACCEPTED at the offered centre at once, as the staff
+ *              member who offered it (re-checked live: still staff, still holding
+ *              `people`, the centre still in their scope), and gets the accepted
+ *              email like anyone else;
+ *   · "Wait" → the application goes on the waiting list for the first choice.
+ * The link opens a page with the two buttons, so a mail scanner that follows the
+ * link answers nothing. One answer, once.
+ */
+const APP_OFFER_DAYS = 14;
+
+/** NGG centres with room, nearest to $from first (straight-line km where both are mapped). */
+function app_centres_with_room(string $from, array $requester): array {
+    $origin = db_row("SELECT name, lat, lng FROM centres WHERE lower(name) = ? LIMIT 1", [mb_strtolower(trim($from))]);
+    $rows = db_all("SELECT name, area, capacity, lat, lng, programmes FROM centres WHERE status = 'active' AND COALESCE(online, 0) = 0 ORDER BY name");
+    $count = [];
+    foreach (db_all("SELECT centre, COUNT(*) n FROM members WHERE status = 'active' AND type = 'NGG' AND role IN ('', 'member') GROUP BY centre") as $r) $count[(string)$r['centre']] = (int)$r['n'];
+    $out = [];
+    foreach ($rows as $c) {
+        $name = (string)$c['name'];
+        if ($origin && mb_strtolower($name) === mb_strtolower((string)$origin['name'])) continue;
+        if (!admin_centre_allowed($requester, $name)) continue;
+        $prog = strtolower((string)($c['programmes'] ?? ''));
+        if ($prog !== '' && !str_contains($prog, 'ngg')) continue;   // a Summer School-only place takes no NGG members
+        $cap = (int)($c['capacity'] ?? 0); $n = $count[$name] ?? 0;
+        if ($cap > 0 && $n >= $cap) continue;
+        $km = null;
+        if ($origin && $origin['lat'] !== null && $origin['lng'] !== null && $c['lat'] !== null && $c['lng'] !== null && function_exists('geo_distance_m'))
+            $km = round(geo_distance_m((float)$origin['lat'], (float)$origin['lng'], (float)$c['lat'], (float)$c['lng']) / 1000, 1);
+        $out[] = ['name' => $name, 'area' => (string)($c['area'] ?? ''), 'km' => $km, 'room' => $cap > 0 ? $cap - $n : null];
+    }
+    usort($out, static fn($a, $b) => [$a['km'] === null, $a['km'] ?? 0, $a['name']] <=> [$b['km'] === null, $b['km'] ?? 0, $b['name']]);
+    return $out;
+}
+
+/** admin.application.centre_options — {id}: where else this child could go, nearest with room first. */
+function admin_application_centre_options(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    [$a, $no] = app_for_admin($g, (int)($p['id'] ?? 0)); if ($no) return $no;
+    $first = db_row('SELECT name, capacity FROM centres WHERE lower(name) = ? LIMIT 1', [mb_strtolower(trim((string)$a['centre']))]);
+    $n = $first ? (int)(db_row("SELECT COUNT(*) n FROM members WHERE centre = ? AND status = 'active' AND type = 'NGG' AND role IN ('', 'member')", [(string)$first['name']])['n'] ?? 0) : 0;
+    return ['ok' => true, 'centre' => (string)$a['centre'], 'full' => $first && (int)$first['capacity'] > 0 && $n >= (int)$first['capacity'],
+            'members' => $n, 'capacity' => $first ? (int)$first['capacity'] : 0, 'options' => array_slice(app_centres_with_room((string)$a['centre'], $g['requester']), 0, 12)];
+}
+
+/** admin.application.offer_centre — {id, centre, note?}: email the family the offer; they answer with one tap. */
+function admin_application_offer_centre(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $id = (int)($p['id'] ?? 0);
+    [$a, $no] = app_for_admin($g, $id); if ($no) return $no;
+    if ((string)$a['kind'] !== 'teen' || (string)($a['program'] ?? '') !== 'anchor') return ['ok' => false, 'error' => 'not_ngg', 'message' => 'Only an NGG membership application can be offered another centre.'];
+    if (trim((string)($a['convertedMemberId'] ?? '')) !== '') return ['ok' => false, 'error' => 'already_accepted'];
+    if ((string)$a['status'] === 'rejected') return ['ok' => false, 'error' => 'rejected'];
+    $email = trim((string)$a['email']);
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'no_email', 'message' => 'There is no email on this application, so the family cannot answer. Call them, then accept at the centre they choose.'];
+    $c = db_row("SELECT name, area FROM centres WHERE lower(name) = ? AND status = 'active' LIMIT 1", [mb_strtolower(trim((string)($p['centre'] ?? '')))]);
+    if (!$c) return ['ok' => false, 'error' => 'bad_centre', 'message' => 'Choose an active centre.'];
+    if (mb_strtolower((string)$c['name']) === mb_strtolower(trim((string)$a['centre']))) return ['ok' => false, 'error' => 'same_centre', 'message' => 'That is the centre they chose. Accept them there instead.'];
+    if (!admin_centre_allowed($g['requester'], (string)$c['name'])) return ['ok' => false, 'error' => 'out_of_scope', 'message' => (string)$c['name'] . ' is not a centre you administer.'];
+    $room = array_column(app_centres_with_room((string)$a['centre'], $g['requester']), null, 'name');
+    if (!isset($room[(string)$c['name']])) return ['ok' => false, 'error' => 'centre_full', 'message' => (string)$c['name'] . ' has no room either. Choose one from the list.'];
+    $note = mb_substr(trim((string)($p['note'] ?? '')), 0, 600);
+    $token = rand_hex(24);
+    $now = now_iso();
+    db_update('applications', ['offeredCentre' => (string)$c['name'], 'offerTokenHash' => hash('sha256', $token), 'offeredBy' => (string)$g['requester']['memberId'],
+        'offeredAt' => $now, 'offerAnswer' => '', 'offerAnsweredAt' => '', 'status' => 'reviewing', 'updatedAt' => $now], ['id' => $id]);
+    $first = explode(' ', trim((string)$a['name']))[0] ?: 'your child';
+    $km = $room[(string)$c['name']]['km'];
+    $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/api/public/centre-offer.php?t=' . $token;
+    $ok = @send_mail($email, 'A place for ' . $first . ' at ' . (string)$c['name'], email_template([
+        'eyebrow' => 'Next Generation Genius', 'title' => 'A place for ' . $first . ' at ' . (string)$c['name'],
+        'intro' => 'Thank you for applying. ' . (string)$a['centre'] . ' is not taking new members at the moment, but we can offer ' . $first . ' a place at '
+            . (string)$c['name'] . ($c['area'] ? ' (' . (string)$c['area'] . ')' : '') . ($km !== null ? ', about ' . $km . ' km away' : '') . '.',
+        'bodyHtml' => ($note !== '' ? '<p style="margin:0 0 12px">' . nl2br(esc_html($note)) . '</p>' : '')
+            . '<p style="margin:0 0 12px">Tap the button to answer: take the place at ' . esc_html((string)$c['name']) . ', or wait for a place at ' . esc_html((string)$a['centre']) . '. One tap, and we take it from there.</p>'
+            . '<p style="margin:0">This offer is held for ' . APP_OFFER_DAYS . ' days.</p>',
+        'ctaLabel' => 'Answer the offer', 'ctaUrl' => $url,
+        'footNote' => 'Questions? Reply to this email or call the centre.',
+    ]));
+    audit('admin.application.offer_centre', (string)$g['requester']['memberId'], 'APP:' . $id, ['from' => (string)$a['centre'], 'to' => (string)$c['name'], 'sent' => (bool)$ok], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'sent' => (bool)$ok, 'to' => mask_email($email), 'centre' => (string)$c['name']];
+}
+
+/** The application an offer link names, live and unanswered — or the reason it is not. */
+function app_offer_by_token(string $token): array {
+    if (!preg_match('/^[a-f0-9]{48}$/', $token)) return [null, 'not_found'];
+    $a = db_row('SELECT * FROM applications WHERE offerTokenHash = ? LIMIT 1', [hash('sha256', $token)]);
+    if (!$a) return [null, 'not_found'];
+    if ((string)$a['offerAnswer'] !== '') return [$a, 'answered'];
+    if (trim((string)($a['convertedMemberId'] ?? '')) !== '') return [$a, 'answered'];
+    if ((string)$a['status'] === 'rejected') return [$a, 'closed'];
+    if (strtotime((string)$a['offeredAt']) < time() - APP_OFFER_DAYS * 86400) return [$a, 'expired'];
+    return [$a, ''];
+}
+
+/** public.centre_offer.get — {t}: the page's words. */
+function public_centre_offer_get(array $p): array {
+    [$a, $why] = app_offer_by_token((string)($p['t'] ?? ''));
+    if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    return ['ok' => true, 'state' => $why ?: 'open', 'first' => explode(' ', trim((string)$a['name']))[0], 'chose' => (string)$a['centre'],
+            'offered' => (string)$a['offeredCentre'], 'answer' => (string)$a['offerAnswer']];
+}
+
+/** public.centre_offer.answer — {t, answer: yes|wait}: once. "yes" accepts the child at the offered centre. */
+function public_centre_offer_answer(array $p): array {
+    $answer = (string)($p['answer'] ?? '');
+    if (!in_array($answer, ['yes', 'wait'], true)) return ['ok' => false, 'error' => 'bad_answer'];
+    [$a, $why] = app_offer_by_token((string)($p['t'] ?? ''));
+    if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    if ($why !== '') return ['ok' => false, 'error' => $why];
+    $id = (int)$a['id'];
+    // Claim the answer: two taps (or two tabs) answer once.
+    if (!db_exec("UPDATE applications SET offerAnswer = ?, offerAnsweredAt = ? WHERE id = ? AND offerAnswer = ''", [$answer, now_iso(), $id])) return ['ok' => false, 'error' => 'answered'];
+    $by = (string)$a['offeredBy'];
+    $name = (string)$a['name'];
+    if ($answer === 'wait') {
+        db_update('applications', ['status' => 'waitlist', 'updatedAt' => now_iso()], ['id' => $id]);
+        audit('application.offer_declined', null, 'APP:' . $id, ['offered' => (string)$a['offeredCentre'], 'waitFor' => (string)$a['centre']], (string)($p['ip'] ?? ''));
+        push_notification($by, ['kind' => 'system', 'linkPage' => 'admin', 'surface' => 'admin', 'title' => $name . '’s family will wait for ' . (string)$a['centre'],
+            'body' => 'They declined ' . (string)$a['offeredCentre'] . '. The application is on the waiting list.']);
+        return ['ok' => true, 'answer' => 'wait'];
+    }
+    // "Yes": accepted at the offered centre, as the staff member who offered it — whose rights are read live.
+    $g = admin_cap_gate(['requesterId' => $by], 'people');
+    $res = $g['ok'] ? app_convert($g, ['id' => $id, 'centre' => (string)$a['offeredCentre'], 'ip' => (string)($p['ip'] ?? '')]) : $g;
+    if (empty($res['ok'])) {
+        // It could not be done by itself: the answer stands, and a person finishes it.
+        db_update('applications', ['centre' => (string)$a['offeredCentre'], 'updatedAt' => now_iso()], ['id' => $id]);
+        push_notification($by, ['kind' => 'system', 'linkPage' => 'admin', 'surface' => 'admin', 'title' => $name . '’s family said yes to ' . (string)$a['offeredCentre'],
+            'body' => 'Accept them from the inbox: it could not be done automatically (' . (string)($res['error'] ?? 'failed') . ').']);
+        audit('application.offer_accepted', null, 'APP:' . $id, ['centre' => (string)$a['offeredCentre'], 'converted' => false, 'error' => (string)($res['error'] ?? '')], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'answer' => 'yes', 'accepted' => false];
+    }
+    audit('application.offer_accepted', null, 'APP:' . $id, ['centre' => (string)$a['offeredCentre'], 'converted' => true, 'memberId' => (string)$res['memberId']], (string)($p['ip'] ?? ''));
+    push_notification($by, ['kind' => 'system', 'linkPage' => 'admin', 'surface' => 'admin', 'title' => $name . ' is accepted at ' . (string)$a['offeredCentre'],
+        'body' => 'The family took the place you offered. They have the agreement to sign and the fee to pay.']);
+    return ['ok' => true, 'answer' => 'yes', 'accepted' => true];
+}
+
+/**
+ * public.centre_offer.page — {t, answered?}: the family's page, as HTML (the route only prints it).
+ * Plain, phone-first, no script: two buttons in a form, so following the link answers nothing.
+ */
+function public_centre_offer_page(array $p): array {
+    $t = (string)($p['t'] ?? '');
+    $ans = is_array($p['answered'] ?? null) ? $p['answered'] : null;
+    $g = public_centre_offer_get(['t' => $t]);
+    $h = static fn($s) => esc_html((string)$s);
+    $shell = static function (string $title, string $body) use ($h): string {
+        return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">'
+            . '<title>' . $h($title) . ' · Next Generation Genius</title><style>'
+            . 'body{margin:0;background:#f6f3ec;color:#1b2333;font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}'
+            . 'main{max-width:520px;margin:0 auto;padding:32px 16px}.c{background:#fff;border-radius:16px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,.08)}'
+            . '.e{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#5b6170}h1{font-size:24px;line-height:1.25;margin:6px 0 12px;color:#0f1c3f}'
+            . 'p{margin:0 0 14px}form{display:flex;flex-direction:column;gap:10px;margin-top:18px}button{font:inherit;font-weight:700;min-height:48px;border-radius:12px;padding:12px 16px;cursor:pointer}'
+            . '.y{background:#0f1c3f;color:#fff;border:0}.w{background:#fff;color:#0f1c3f;border:1.5px solid #0f1c3f}button:focus-visible{outline:3px solid #c99a1e;outline-offset:2px}'
+            . '.q{color:#4a5060;font-size:14px}</style></head><body><main><div class="c"><div class="e">Next Generation Genius</div>' . $body . '</div></main></body></html>';
+    };
+    if (empty($g['ok'])) return ['ok' => true, 'http' => 404, 'html' => $shell('Link not found', '<h1>This link is not valid</h1><p>Ask NGG for a new one: reply to our email, or call the centre.</p>')];
+    $first = $h($g['first']); $off = $h($g['offered']); $chose = $h($g['chose']);
+    if ($ans && !empty($ans['ok'])) {
+        if (($ans['answer'] ?? '') === 'wait') return ['ok' => true, 'html' => $shell('On the waiting list', '<h1>' . $first . ' is on the waiting list for ' . $chose . '</h1><p>We will email you as soon as a place opens. Nothing else to do for now.</p>')];
+        return ['ok' => true, 'html' => $shell('Accepted', !empty($ans['accepted'])
+            ? '<h1>' . $first . ' is accepted at ' . $off . '</h1><p>We have just emailed you the next two steps: sign the Membership Agreement and pay the joining fee. When both are done, ' . $first . '’s place is confirmed.</p>'
+            : '<h1>Thank you — ' . $off . ' it is</h1><p>A member of staff will finish ' . $first . '’s acceptance shortly, and email you the next steps.</p>')];
+    }
+    $state = $ans ? (string)($ans['error'] ?? 'answered') : (string)$g['state'];
+    if ($state === 'answered') return ['ok' => true, 'html' => $shell('Already answered', '<h1>You have already answered</h1><p>' . ($g['answer'] === 'wait' ? $first . ' is on the waiting list for ' . $chose . '.' : 'Your answer for ' . $first . ' is in. Check your email for the next steps.') . '</p>')];
+    if ($state === 'expired') return ['ok' => true, 'html' => $shell('Offer lapsed', '<h1>This offer has lapsed</h1><p>It was held for ' . APP_OFFER_DAYS . ' days. Reply to our email or call the centre, and we will see what is open for ' . $first . ' now.</p>')];
+    if ($state !== 'open') return ['ok' => true, 'html' => $shell('Not available', '<h1>This offer is no longer open</h1><p>Reply to our email or call the centre.</p>')];
+    return ['ok' => true, 'html' => $shell('A place at ' . $g['offered'], '<h1>A place for ' . $first . ' at ' . $off . '</h1>'
+        . '<p>' . $chose . ' is not taking new members at the moment. ' . $first . ' can start at ' . $off . ' instead, or wait for a place at ' . $chose . '.</p>'
+        . '<form method="post"><input type="hidden" name="t" value="' . $h($t) . '">'
+        . '<button class="y" name="answer" value="yes">Yes — take the place at ' . $off . '</button>'
+        . '<button class="w" name="answer" value="wait">No — wait for ' . $chose . '</button></form>'
+        . '<p class="q" style="margin-top:14px">Yes accepts ' . $first . ' straight away. You can only answer once.</p>')];
 }
 
 /** Correct a pending application's data before converting/approving it. Only

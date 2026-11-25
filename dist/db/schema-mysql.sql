@@ -5533,3 +5533,16 @@ CREATE TABLE IF NOT EXISTS online_session_joins (
   KEY idx_online_join_date (sessionDate)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (247) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 248 · Accepted, then confirmed (signed and paid); a nearer centre offered to the family ──
+-- (245 on the brave-faraday line; renumbered at the merge. A database applied from that line also lacks
+-- member_ledger.appliesTo from 245 above: apply that line too; a duplicate-column error means it is in.)
+ALTER TABLE reg_checklists ADD COLUMN confirmWait TINYINT NOT NULL DEFAULT 0;
+ALTER TABLE reg_checklists ADD COLUMN confirmedAt VARCHAR(40) NOT NULL DEFAULT '';
+ALTER TABLE applications ADD COLUMN offeredCentre VARCHAR(160) NOT NULL DEFAULT '';
+ALTER TABLE applications ADD COLUMN offerTokenHash VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE applications ADD COLUMN offeredBy VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE applications ADD COLUMN offeredAt VARCHAR(40) NOT NULL DEFAULT '';
+ALTER TABLE applications ADD COLUMN offerAnswer VARCHAR(16) NOT NULL DEFAULT '';
+ALTER TABLE applications ADD COLUMN offerAnsweredAt VARCHAR(40) NOT NULL DEFAULT '';
+INSERT INTO schema_version (version) VALUES (248) ON DUPLICATE KEY UPDATE version = version;

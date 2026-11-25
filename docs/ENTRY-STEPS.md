@@ -10,11 +10,16 @@ taken. The timetable must be done on the site too."
 
 This page records how each line of the card became the system, and why.
 
+**The order changed on 24 Nov 2026** (owner: "They can register online and make
+payments first. Document submission and ID card are the last"): Online
+registration · Payment · Orientation · Submit documents · ID card. The card's
+lines below are the same; `RCL_STEPS` holds the order.
+
 ## The card, line by line
 
 | Card | In the system | Where |
 |---|---|---|
-| Full name / Supervisor | The member, and the named registration supervisor at their centre (unchanged). | `reg_checklists.supervisorId` |
+| Full name / Supervisor | The member, and their registration helper: their mentor once they have one, else the best person seen at their centre, chosen by itself; staff may choose by hand (owner, 24 Nov 2026). | `reg_checklists.supervisorId`, `rcl_auto_helpers` |
 | Enquiry | Done before a checklist exists: the application at /join is the enquiry. The checklist starts when it is accepted. | `admin_application_convert` → `rcl_start_for_new_member` |
 | Orientation — policies, membership fee, commitment fee, T-shirt | Default item **Orientation attended**: at the centre, a note of who came. | `RCI-ORIENTATION` (migration 240) |
 | Payment — all required fees | **Joining fees paid**: the joining invoice (membership fee + first month's commitment fee). | `RCL_AUTO['fee']` |

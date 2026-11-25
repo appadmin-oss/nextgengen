@@ -1942,6 +1942,9 @@
         // `startDate` prices the first month's commitment fee (only the meeting days left are charged); `centre` when the application has none.
         convert: (id, startDate, centre) => request('/admin/applications.php', { body: { action: 'convert', id, startDate: startDate || '', centre: centre || '' } }),
         update:  (id, data) => request('/admin/applications.php', { body: { action: 'update', id, data } }),
+        // A nearer centre with room, offered to the family: they answer with one tap from the email.
+        centreOptions: (id) => request('/admin/applications.php', { body: { action: 'centreOptions', id } }),
+        offerCentre: (id, centre, note) => request('/admin/applications.php', { body: { action: 'offerCentre', id, centre, note: note || '' } }),
         remove:  (id) => request('/admin/applications.php', { body: { action: 'delete', id } }),
       },
       newsletter:   () => request('/admin/newsletter.php'),

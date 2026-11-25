@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 247;
+const NGG_SCHEMA_TARGET = 248;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6801,6 +6801,26 @@ function db_migrate(PDO $db): void {
         CREATE UNIQUE INDEX IF NOT EXISTS uq_online_join ON online_session_joins(memberId, sessionDate);
         CREATE INDEX IF NOT EXISTS idx_online_join_date ON online_session_joins(sessionDate);
     ";
+
+    /* 248 — ACCEPTED, THEN CONFIRMED (owner, 24 Nov 2026). Staff accept a child at a centre, or offer a
+           nearer centre that has room, which the family takes or declines with one tap (applications.offer*).
+           Accepted, the family signs the agreement and pays the joining fee; the place is CONFIRMED the moment
+           both are done (reg_checklists.confirmedAt), and only then does the "You're in" welcome go.
+           Only a child accepted this way waits (confirmWait = 1): every member already onboarded was welcomed
+           long ago, so no row is rewritten and nothing needs a data fixup on MySQL. 
+           (Written as 245 on the brave-faraday line, whose 245 was not ours; renumbered when the lines were
+           merged, 25 Nov 2026. It re-adds 245's appliesTo too, which a database built from that line skipped.) */
+    $migrations[248] = "
+            ALTER TABLE reg_checklists ADD COLUMN confirmWait INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE reg_checklists ADD COLUMN confirmedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE applications ADD COLUMN offeredCentre TEXT NOT NULL DEFAULT '';
+            ALTER TABLE applications ADD COLUMN offerTokenHash TEXT NOT NULL DEFAULT '';
+            ALTER TABLE applications ADD COLUMN offeredBy TEXT NOT NULL DEFAULT '';
+            ALTER TABLE applications ADD COLUMN offeredAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE applications ADD COLUMN offerAnswer TEXT NOT NULL DEFAULT '';
+            ALTER TABLE applications ADD COLUMN offerAnsweredAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE member_ledger ADD COLUMN appliesTo TEXT NOT NULL DEFAULT '';
+        ";
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
     db_assert_migration_ladder($migrations);
