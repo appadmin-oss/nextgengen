@@ -133,7 +133,7 @@ AddDefaultCharset UTF-8
   # (files.example.org) must be added to connect-src and frame-src here by
   # hand, or uploads and printed photos fail with a CSP error in the console.
   Header always set Content-Security-Policy "default-src 'self'; \
-script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
+script-src 'self' 'sha256-YjP3q340SssGzfDxgdsVZsI24XcgHIdAU3UDhygHUp0=' 'sha256-ASeAsjmszLOr0kt3B2Fj+iQMh8bualLheARFcxKRI9I=' 'sha256-S1T73S5KKHv+6AwflH+9CrYKnMjX7i5xp7D8nnbZ6Ys=' 'sha256-wTtV1fZ1LDkHeQLSubl2Dm/5+Ut1tJdcipzYHpbUkCc=' 'sha256-mKIF9SO7F9PdewecOKNZgV6Rxs27qr2vGcMQWtIUTDI=' 'sha256-1kg2x4XteKTODYzGnkjEe1nQJYOSvlvJY4fdtuKo6OQ=' 'sha256-xHa/pnm6+KO5RpKF+7KJ2uoALZHW93H0tKhWCmyOsas=' 'sha256-0oum4Q4hYuyjH6H7YRlAYOwOsMf5vXmTkbTw7FVaheI=' 'unsafe-hashes' 'sha256-MguIPR6qNR8D3B+eAlK+bIRTZe8t3wkOY4B/56Me9FU=' 'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc='; \
 style-src 'self' 'unsafe-inline'; \
 img-src 'self' data: https: blob:; \
 font-src 'self' data:; \

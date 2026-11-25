@@ -1,10 +1,10 @@
 {
-  "buildId": "eb81defefa",
-  "builtAt": "2026-11-25T19:24:52.681Z",
+  "buildId": "9150aa3bf8",
+  "builtAt": "2026-11-25T19:29:43.614Z",
   "bundle": {
-    "file": "app.70ea372293.min.js",
-    "bytes": 1685280,
-    "gzipBytes": 448437,
+    "file": "app.00146d4ce8.min.js",
+    "bytes": 1685026,
+    "gzipBytes": 448363,
     "files": 31
   },
   "more": {
@@ -107,7 +107,7 @@
     ]
   },
   "assets": {
-    "app.min.js": "app.70ea372293.min.js",
+    "app.min.js": "app.00146d4ce8.min.js",
     "app-more.min.js": "app-more.b0483fa019.min.js",
     "app-study.min.js": "app-study.a1a565d914.min.js",
     "styles.css": "styles.376a3b2509.css",
@@ -116,7 +116,7 @@
     "photos.js": "photos.36b0b4ea72.js",
     "api-client.js": "api-client.8f90d797fa.js",
     "outbox.js": "outbox.042a8c9122.js",
-    "styles-app-public.css": "styles-app-public.d1d585094d.css",
+    "styles-app-public.css": "styles-app-public.6710f6e9c7.css",
     "phosphor.css": "phosphor-used.b0a83a01c8.css"
   },
   "node": "v22.23.5"

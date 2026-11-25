@@ -1,5 +1,5 @@
 {
- "key": "course-depth-2026",
+ "key": "term-depth-2026",
  "title": "Course depth — a full term for every course (2026)",
  "description": "A full term of lessons for the courses that had too few: Music (which had none), Cinematography, Video Production, Branding, Social Media, Graphic Design, Visual Storytelling, Finance, Data Analysis, Human Resources and Operations. Every lesson has a \"Learning online\" section for members who learn from home, and at least three checks.",
  "source": "NGG curriculum team, 25 Nov 2026",
@@ -2894,6 +2894,12 @@
      "title": "Design systems",
      "kind": "link",
      "guide": "Read how big organisations keep products consistent; notice how a design system is a brand guide grown up."
+    },
+    {
+     "url": "https://www.wipo.int/trademarks/en/",
+     "title": "Trademarks",
+     "kind": "link",
+     "guide": "Read this alongside the lesson; it is listed under Read and watch."
     }
    ],
    "checks": [
@@ -2970,6 +2976,12 @@
      "title": "MTN Group",
      "kind": "link",
      "guide": "Look at how the current logo, colour and typeface appear across the site; compare with an older photo of an MTN sign or SIM pack."
+    },
+    {
+     "url": "https://www.interaction-design.org/literature/topics/branding",
+     "title": "Branding",
+     "kind": "link",
+     "guide": "Read this alongside the lesson; it is listed under Read and watch."
     }
    ],
    "checks": [
@@ -3046,6 +3058,12 @@
      "title": "Policy guidance on AI for children",
      "kind": "link",
      "guide": "Skim the summary of children's rights around AI; note one point that applies to how you used AI this term."
+    },
+    {
+     "url": "https://www.wipo.int/trademarks/en/",
+     "title": "Trademarks",
+     "kind": "link",
+     "guide": "Read this alongside the lesson; it is listed under Read and watch."
     }
    ],
    "checks": [
@@ -3467,6 +3485,12 @@
      "title": "Google Digital Garage",
      "kind": "link",
      "guide": "Find a free module on social media or measurement and skim how it explains choosing metrics."
+    },
+    {
+     "url": "https://www.youtube.com/creators/",
+     "title": "YouTube Creators",
+     "kind": "link",
+     "guide": "Read this alongside the lesson; it is listed under Read and watch."
     }
    ],
    "checks": [
@@ -3554,6 +3578,12 @@
      "title": "How to stop cyberbullying",
      "kind": "link",
      "guide": "Read the questions and answers; note what UNICEF says to do if you see someone being bullied online."
+    },
+    {
+     "url": "https://www.internetmatters.org/",
+     "title": "Internet Matters",
+     "kind": "link",
+     "guide": "Read this alongside the lesson; it is listed under Read and watch."
     }
    ],
    "checks": [
@@ -5033,7 +5063,7 @@
      "points": 3
     },
     {
-     "kind": "task",
+     "kind": "project",
      "prompt": "Upload your Google Sheets cash-flow forecast for Tunde: the original three months with negative months highlighted, and a fixed version using at least one fix from the lesson.",
      "answer": "",
      "rubric": "Up to 7 points: formulas link closing to next opening (2); original closing figures correct (2); negative months highlighted (1); a fix applied with correct new figures (2).",
@@ -6117,7 +6147,7 @@
      "points": 3
     },
     {
-     "kind": "task",
+     "kind": "project",
      "prompt": "Upload a scripted conflict scenario (invented names) showing a helper using all five steps, and a wellbeing signpost card with three trusted sources of help and one self-care idea.",
      "answer": "",
      "rubric": "Up to 7 points: all five steps shown clearly (3); 'I' statements and interests used (2); signpost card is practical, safe and respects privacy (2).",

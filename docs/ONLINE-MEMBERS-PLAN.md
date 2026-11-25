@@ -198,7 +198,7 @@ today; the dollar figure is what families are told).
   follow-up, and the class's lesson = where the group actually is.
 - **Prices in local currencies** (`domain/fx.php`): naira stays the account and the payment; families read their
   own currency beside it, chosen from the device's time zone. Daily rates from a free feed, staff can pin.
-- **Course content**: 78 new lessons (`curriculum-course-depth-2026.json`) so every catalogue course has at
+- **Course content**: 78 new lessons (`curriculum-course-depth-2026.json`, key term-depth-2026) so every catalogue course has at
   least a term; Music, the Creative division's major, had none. Each has a *Learning online* section.
 
 Still to decide: whether an online member's paused live classes should also pause instructor marking (it
