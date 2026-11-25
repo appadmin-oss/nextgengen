@@ -3332,12 +3332,6 @@ function useNggFx() {
   }, []);
   return { fx, code };
 }
-/** A naira price with the family's own currency beside it: ₦13,000 · about £7. */
-function NggPrice({ naira, className }) {
-  const { fx, code } = useNggFx();
-  const local = nggLocalPrice(naira, fx, code);
-  return <span className={"ngg-price" + (className ? " " + className : "")}>{fmtMoney(naira)}{local ? <span className="ngg-price-local"> · {local}</span> : null}</span>;
-}
 /** "Show prices in" — the family's own choice, remembered on this device. Hidden until rates exist. */
 function NggCurrencyPick() {
   const { fx, code } = useNggFx();

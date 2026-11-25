@@ -18,7 +18,7 @@
      deploy shows up without anybody hunting for a hard refresh.
    ================================================================ */
 
-const CACHE_VERSION = 'ngg-eb81defefa';
+const CACHE_VERSION = 'ngg-9150aa3bf8';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 
@@ -39,12 +39,12 @@ const PRECACHE = [
   '/styles.376a3b2509.css',
   /* The slim sheet public pages use (build.js). The full one comes with the signed-in bundle, when needed:
      precaching 1.1 MB of Control Room styles in the background of a first visit was data nobody asked for. */
-  '/styles-app-public.d1d585094d.css',
+  '/styles-app-public.6710f6e9c7.css',
   '/data.ec97c65376.js',
   '/photos.36b0b4ea72.js',
   '/api-client.8f90d797fa.js',
   '/outbox.042a8c9122.js',
-  '/app.70ea372293.min.js',
+  '/app.00146d4ce8.min.js',
   '/vendor/react.production.min.js',
   '/vendor/react-dom.production.min.js',
   '/assets/logo.png',
