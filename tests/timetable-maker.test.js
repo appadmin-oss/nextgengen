@@ -349,6 +349,8 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     php(`db_insert('timetable_slots', ['slotId'=>'SL-TM-9','centreId'=>'CEN-TM-1','course'=>'Piano','level'=>'','weekday'=>6,'startTime'=>'12:30','endTime'=>'13:30','room'=>'Music room','instructorId'=>'','note'=>'','status'=>'active','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`);
     const K = await open({ w: 1280, h: 800, mid: 'NGG-TM-2', at: '/timetable/me?centre=egbeda' });
     await K.waitForFunction(() => /your classes at Egbeda, are in/.test((document.querySelector('.tt-note') || {}).innerText || ''), null, { timeout: 30000 });
+    // The note is drawn before the week is saved to this device; wait for the save rather than racing it.
+    await K.waitForFunction(() => !!localStorage.getItem('ngg.timetable.maker.v2'), null, { timeout: 15000 });
     const kOff = async () => (await stored(K)).entries.filter(e => e.official).map(e => e.title).sort().join();
     chk('a member\'s centre link puts only their own classes in, and says how many more run there', await kOff() === 'Chess,Coding'
       && /Chess and Coding, your classes at Egbeda, are in\. 1 more runs there\./.test(await K.innerText('.tt-note')) && (await K.inputValue('.tt-head-title')) === 'Kemi’s week');
