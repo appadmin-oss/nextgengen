@@ -212,6 +212,9 @@ const until = (pg, fn, arg, ms) => pg.waitForFunction(fn, arg, { timeout: ms || 
     const seen = await until(A, () => /Book drive/.test(document.body.innerText) && /Parts done/.test(document.body.innerText), null, 60000);
     chk('Mentorship › Projects lists the projects leads set in the mentor portal, with the countdown and the figures', seen && /past the finish date/.test(await text(A, 'main')));
     await A.click('.cr-head-acts button:has-text("New project")');
+    /* An admin over more than one centre (NGG Online, migration 236, is one) is asked which centre first. */
+    await A.waitForSelector('#crf-title, #crf-centre', { timeout: 20000 });
+    if (await A.$('#crf-centre')) { await A.selectOption('#crf-centre', 'Egbeda'); await A.click('form[role="dialog"] button[type="submit"]'); }
     await A.waitForSelector('#crf-title', { timeout: 20000 });
     await A.fill('#crf-title', 'Open day at the centre');
     await A.fill('#crf-dueOn', due);

@@ -11,6 +11,10 @@ switch ($action) {
     case 'profile':     $res = gs_call('family.profile', $base + ['fullName' => $b['fullName'] ?? '', 'phone' => $b['phone'] ?? '']); break;
     case 'ward.add':    $res = gs_call('family.ward.add', $base + ['method' => $b['method'] ?? 'code', 'code' => $b['code'] ?? '', 'name' => $b['name'] ?? '',
                                                           'memberId' => $b['memberId'] ?? '', 'relationship' => $b['relationship'] ?? 'parent']); break;
+    case 'adult':        $res = gs_call('family.adult', $base + ['dob' => (string)($b['dob'] ?? ''), 'declare' => !empty($b['declare'])]); break;
+    case 'ward.connect': $res = gs_call('family.ward.connect', $base + ['memberId' => (string)($b['memberId'] ?? ''), 'relationship' => (string)($b['relationship'] ?? 'parent')]); break;
+    case 'phone.find':   rate_limit_check_actor('family.code', 'guardian:' . (string)$f['gid']); $res = gs_call('family.phone.find', $base + ['phone' => (string)($b['phone'] ?? ''), 'relationship' => (string)($b['relationship'] ?? 'parent')]); break;
+    case 'code.confirm': $res = gs_call('family.code.confirm', $base + ['codeId' => (string)($b['codeId'] ?? ''), 'code' => (string)($b['code'] ?? '')]); break;
     case 'ward.remove': $res = gs_call('family.ward.remove', $base + ['linkId' => $b['linkId'] ?? '']); break;
     case 'ward.notify': $res = gs_call('family.ward.notify', $base + ['linkId' => $b['linkId'] ?? '', 'notify' => is_array($b['notify'] ?? null) ? $b['notify'] : []]); break;
     case 'request':     $res = gs_call('family.request.create', $base + ['linkId' => $b['linkId'] ?? '', 'kind' => $b['kind'] ?? '', 'subject' => $b['subject'] ?? '',

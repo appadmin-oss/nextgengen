@@ -554,25 +554,76 @@ class Fp3Portal extends React.Component {
       out.adCode = S.adCode; out.adName = S.adName; out.onAdCode = e => this.setState({ adCode: e.target.value.replace(/\D/g, "").slice(0, 6), adErr: "" }); out.onAdName = e => this.setState({ adName: e.target.value, adErr: "" });
       out.rels = Object.keys(rels).map(k => { const on = S.adRel === k; return { l: rels[k], sel: on ? "true" : "false", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c", bd: on ? "#0b0b0c" : "#d9d6cd", onClick: () => this.setState({ adRel: k }) }; });
       out.adHasErr = !!S.adErr; out.adErr = S.adErr;
+      const gx = D.guardian || {}, done = (h, sub, linkId) => { this.setState({ adDone: [h, sub], adCode: "", adName: "", adConf: null, adCCode: "", adPhone: "", adPh: null, adPCode: "", childId: linkId || S.childId }); this.boot(); };
+      /* A family account is an adult's (domain/family-connect.php): date of birth and the declaration, once. */
+      out.needAdult = gx.adult === false; out.isAdult = gx.adult !== false;
+      out.adDob = S.adDob || ""; out.onAdDob = e => this.setState({ adDob: e.target.value, adultErr: "" });
+      out.adDecl = !!S.adDecl; out.onAdDecl = e => this.setState({ adDecl: e.target.checked, adultErr: "" });
+      out.adultHasErr = !!S.adultErr; out.adultErr = S.adultErr || "";
+      out.adAdultGo = () => {
+        if (S.adBusy || !this.can()) return;
+        if (!S.adDob) return this.setState({ adultErr: "Give your date of birth." });
+        if (!S.adDecl) return this.setState({ adultErr: "Tick the box to confirm you are the parent or guardian, and 18 or over." });
+        this.setState({ adBusy: true });
+        NGGApi.family.act("adult", { dob: S.adDob, declare: true }).then(() => { this.setState({ adBusy: false, adultErr: "" }); this.boot(); })
+          .catch(e => this.setState({ adBusy: false, adultErr: (e && e.data && e.data.detail) || fp3Err(e) }));
+      };
+      /* The Anchor code, with the second layer: the code goes to the parent contact on the child's record. */
+      out.codeConfirm = !!S.adConf; out.codeConfirmS = S.adConf ? S.adConf.detail : "";
+      out.adCCode = S.adCCode || ""; out.onAdCCode = e => this.setState({ adCCode: e.target.value.replace(/\D/g, "").slice(0, 6), adErr: "" });
+      out.adGoL = S.adBusy ? "Checking…" : S.adConf ? "Confirm" : "Connect";
       out.adGo = () => {
         if (S.adBusy || !this.can()) return;
+        if (S.adConf) {
+          if ((S.adCCode || "").length !== 6) return this.setState({ adErr: "Enter the 6-digit code we sent." });
+          this.setState({ adBusy: true, adErr: "" });
+          return NGGApi.family.act("code.confirm", { codeId: S.adConf.codeId, code: S.adCCode }).then(r => {
+            const l = (r.links || [])[0]; this.setState({ adBusy: false });
+            done("Connected to " + S.adConf.first, S.adConf.first + " has been told that a family account is now following their record. You’ll find them in your list.", l && l.linkId);
+          }).catch(e => this.setState({ adBusy: false, adErr: (e && e.data && e.data.detail) || fp3Err(e) }));
+        }
         if (count >= max) return this.setState({ adErr: "A family account holds up to " + max + " children." });
         if (S.adCode.length !== 6 || S.adName.trim().length < 2) return this.setState({ adErr: "Enter the 6-digit code and at least two letters of their name." });
         this.setState({ adBusy: true, adErr: "" });
         NGGApi.family.act("ward.add", { method: "code", code: S.adCode, name: S.adName.trim(), relationship: S.adRel }).then(r => {
+          if (r.confirm) return this.setState({ adBusy: false, adConf: r.confirm, adCCode: "" });
           const f = fp3First((r.link && r.link.fullName) || S.adName);
-          this.setState({ adBusy: false, adCode: "", adName: "", adDone: ["Connected to " + f, f + " has been told that a family account is now following their record. You’ll find them in your list."], childId: r.link ? r.link.linkId : S.childId });
-          this.boot();
-        }).catch(e => this.setState({ adBusy: false, adErr: fp3Err(e) }));
+          this.setState({ adBusy: false });
+          if (r.link && r.link.status === "pending") done("Asked to connect to " + f, "Their record has no parent contact to confirm with, so the " + ((r.link && r.link.centre) || "centre") + " desk will check and email you, usually within two days.");
+          else done("Connected to " + f, f + " has been told that a family account is now following their record. You’ll find them in your list.", r.link && r.link.linkId);
+        }).catch(e => this.setState({ adBusy: false, adErr: (e && e.data && e.data.detail) || fp3Err(e) }));
+      };
+      /* By phone: a code to the number on the child's record connects every child whose record names it. */
+      out.adPhone = S.adPhone || ""; out.onAdPhone = e => this.setState({ adPhone: e.target.value, phErr: "" });
+      out.phoneSent = !!S.adPh; out.phoneSentS = S.adPh ? S.adPh.detail : "";
+      out.adPCode = S.adPCode || ""; out.onAdPCode = e => this.setState({ adPCode: e.target.value.replace(/\D/g, "").slice(0, 6), phErr: "" });
+      out.phHasErr = !!S.phErr; out.phErr = S.phErr || "";
+      out.phGoL = S.phBusy ? "Sending…" : S.adPh ? "Confirm" : "Send me a code";
+      out.phGo = () => {
+        if (S.phBusy || !this.can()) return;
+        if (!S.adPh) {
+          if ((S.adPhone || "").replace(/\D/g, "").length < 10) return this.setState({ phErr: "Type the full phone number, e.g. 0803 123 4567." });
+          this.setState({ phBusy: true, phErr: "" });
+          return NGGApi.family.act("phone.find", { phone: S.adPhone, relationship: S.adRel }).then(r => this.setState({ phBusy: false, adPh: r, adPCode: "" }))
+            .catch(e => this.setState({ phBusy: false, phErr: (e && e.data && e.data.detail) || fp3Err(e) }));
+        }
+        if ((S.adPCode || "").length !== 6) return this.setState({ phErr: "Enter the 6-digit code." });
+        this.setState({ phBusy: true, phErr: "" });
+        NGGApi.family.act("code.confirm", { codeId: S.adPh.codeId, code: S.adPCode }).then(r => {
+          this.setState({ phBusy: false });
+          const n = r.connected || 0;
+          if (!n) return this.setState({ phErr: "That number isn’t on a child’s NGG record. Try the Anchor code instead.", adPh: null });
+          done(n === 1 ? "Connected to your child" : "Connected to " + n + " children", "Your phone is now confirmed on this account. Each child has been told that a family account is following their record.", (r.links[0] || {}).linkId);
+        }).catch(e => this.setState({ phBusy: false, phErr: (e && e.data && e.data.detail) || fp3Err(e) }));
       };
       out.addDone = !!S.adDone; out.addDoneH = S.adDone ? S.adDone[0] : ""; out.addDoneS = S.adDone ? S.adDone[1] : "";
       const sugg = D.suggestions || [];
       out.hasSugg = sugg.length > 0;
-      out.sugg = sugg.map(s => ({ first: s.firstName, ini: (s.firstName || "?")[0], centre: s.centre, ask: () => {
+      out.sugg = sugg.map(s => ({ first: s.firstName, ini: (s.firstName || "?")[0], centre: s.centre, how: s.how === "phone" ? "your phone is on their record" : "your email is on their record", ask: () => {
         if (!this.can()) return;
-        NGGApi.family.act("ward.add", { method: "record", memberId: s.memberId, relationship: S.adRel })
-          .then(() => { this.setState({ adDone: ["Asked to connect to " + s.firstName, "The " + s.centre + " desk will check and email you, usually within two days."] }); this.boot(); })
-          .catch(e => this.setState({ adErr: fp3Err(e) }));
+        NGGApi.family.act("ward.connect", { memberId: s.memberId, relationship: S.adRel })
+          .then(r => done("Connected to " + s.firstName, s.firstName + " has been told that a family account is now following their record.", r.link && r.link.linkId))
+          .catch(e => this.setState({ adErr: (e && e.data && e.data.detail) || fp3Err(e) }));
       } }));
     }
 
@@ -585,7 +636,7 @@ class Fp3Portal extends React.Component {
       const cs = (w && w.consents && w.consents.length ? w.consents : (wards.find(x => x.consents && x.consents.length) || {}).consents) || [];
       out.consents = (cs.length ? cs : [{ label: "Taking part in NGG" }, { label: "Emergency medical care" }, { label: "Keeping and using their records" }, { label: "Photos and videos in NGG materials" }, { label: "First name and work on the website", key: "site_visibility" }])
         .map(c => ({ l: c.label, s: "Given " + (c.given ? fp3Long(c.given) : "") + " on the application" + (c.key === "site_visibility" ? ". First name only: never a surname, age or school with a photo." : "") }));
-      out.accWards = wards.map(x => ({ name: x.member.fullName, ini: this.ini(x.member.fullName), tone: x.member.tone, sub: x.status === "active" ? ((D.relationships || FP3_RELATIONSHIPS_FALLBACK)[x.relationship] || "Parent") + " · connected " + (x.since || "") + (x.via === "code" ? " with their code" : " by the centre") : "Waiting for the " + x.member.centre + " desk", removeL: x.status !== "active" ? "Withdraw" : S.confirmRemove === x.linkId ? "Disconnect " + x.member.first + "?" : "Disconnect",
+      out.accWards = wards.map(x => ({ name: x.member.fullName, ini: this.ini(x.member.fullName), tone: x.member.tone, sub: x.status === "active" ? ((D.relationships || FP3_RELATIONSHIPS_FALLBACK)[x.relationship] || "Parent") + " · connected " + (x.since || "") + (x.via === "code" ? " with their code" : x.via === "phone" ? " with your phone" : x.via === "email" || x.via === "record" ? " with your email" : " by the centre") : "Waiting for the " + x.member.centre + " desk", removeL: x.status !== "active" ? "Withdraw" : S.confirmRemove === x.linkId ? "Disconnect " + x.member.first + "?" : "Disconnect",
         /* Disconnecting is two taps: the first turns the button into the question
            (and says it out loud), so a stray tap on a phone undoes nothing. */
         remove: () => {

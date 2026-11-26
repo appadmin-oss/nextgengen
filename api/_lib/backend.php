@@ -364,6 +364,11 @@ function backend_dispatch(string $op, array $args = []): array {
             'family.profile'           => 'family_profile',
             'family.ward.add'          => 'family_ward_add',
             'family.ward.remove'       => 'family_ward_remove',
+            // Connecting smarter, and an adult's account (domain/family-connect.php)
+            'family.adult'             => 'family_adult_set',
+            'family.ward.connect'      => 'family_ward_connect',
+            'family.phone.find'        => 'family_phone_find',
+            'family.code.confirm'      => 'family_code_confirm',
             'family.ward.notify'       => 'family_ward_notify',
             'family.ward'              => 'family_ward',
             'family.request.create'    => 'family_request_create',

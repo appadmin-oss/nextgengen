@@ -187,16 +187,15 @@ function family_me(array $p): array {
     $links = db_all("SELECT w.*, m.fullName, m.displayId, m.centre, m.photoUrl FROM guardian_wards w JOIN members m ON m.memberId = w.memberId
                       WHERE w.guardianId = ? AND w.status IN ('active','pending','refused') ORDER BY w.status, m.fullName", [(string)$g['guardianId']]);
     $linked = array_flip(array_map(static fn($l) => (string)$l['memberId'], array_filter($links, static fn($l) => $l['status'] !== 'refused')));
-    $suggest = [];
-    foreach (db_all("SELECT memberId, fullName, centre, type FROM members WHERE lower(parentEmail) = ? AND status = 'active' LIMIT 20", [(string)$g['email']]) as $m) {
-        if (!member_is_ngg($m) || isset($linked[(string)$m['memberId']])) continue;
-        $suggest[] = ['memberId' => (string)$m['memberId'], 'firstName' => explode(' ', trim((string)$m['fullName']))[0] ?? '', 'centre' => (string)$m['centre']];
-    }
+    /* The children whose record names this account's verified email or phone (family-connect.php) — offered only to an
+       account that has said it is an adult's. */
+    $adult = function_exists('family_is_adult') ? family_is_adult($g) : true;
+    $suggest = $adult && function_exists('family_found_children') ? family_found_children($g) : [];
     $notices = array_map(static fn($n) => ['id' => (string)$n['noticeId'], 'kind' => (string)$n['kind'], 'title' => (string)$n['title'], 'body' => (string)$n['body'],
         'from' => (string)$n['fromName'], 'at' => (string)$n['createdAt'], 'read' => (string)$n['readAt'] !== ''],
         db_all('SELECT * FROM guardian_notices WHERE guardianId = ? ORDER BY createdAt DESC, id DESC LIMIT ' . FAMILY_NOTICES_SHOWN, [(string)$g['guardianId']]));
     $unread = (int)(db_row("SELECT COUNT(*) c FROM guardian_notices WHERE guardianId = ? AND readAt = ''", [(string)$g['guardianId']])['c'] ?? 0);
-    return ['ok' => true, 'guardian' => family_guardian_public($g),
+    return ['ok' => true, 'guardian' => family_guardian_public($g) + ['adult' => $adult, 'phoneVerified' => (string)($g['phoneVerifiedAt'] ?? '') !== ''],
             'wards' => array_map(static fn($l) => family_link_public($l, $l), $links),
             'suggestions' => $suggest, 'relationships' => FAMILY_RELATIONSHIPS, 'max' => FAMILY_WARDS_MAX,
             'notices' => $notices, 'unread' => $unread];
@@ -253,15 +252,20 @@ function family_profile(array $p): array {
     return ['ok' => false, 'error' => 'read_only', 'detail' => 'Your details can’t be edited here. Ask the centre to change them.'];
 }
 /**
- * family.ward.add — two ways in.
- *   code:   the child's Anchor code + a part of their name. The child gave the
- *           code, so the link is active at once, and the child is told.
- *   record: an NGG record that names this account's address as the parent's.
- *           Pending until staff with `people` at the child's centre approve.
+ * family.ward.add — two ways in (family-connect.php has the smarter ones: auto-find, phone, and the second layer).
+ *   code:   the child's Anchor code + a part of their name. Knowing the code proves you know the child, not that you
+ *           are their parent (owner, 26 Nov 2026: "the code backup requires extra layer verification"): unless the
+ *           account's own email is the parent email on the record, a code goes to the parent contact ON THE RECORD
+ *           (family.code.confirm); a record with no parent contact waits for the desk.
+ *   record: an NGG record that names this account's VERIFIED address as the parent's — connected at once, because
+ *           signing in with that address is the proof (family_ward_connect).
+ * Either way the account must be an adult's first (family_adult_set).
  */
 function family_ward_add(array $p): array {
     $g = db_row('SELECT * FROM guardians WHERE guardianId = ? LIMIT 1', [(string)($p['guardianId'] ?? '')]);
     if (!$g) return ['ok' => false, 'error' => 'not_found'];
+    if (function_exists('family_is_adult') && !family_is_adult($g)) return ['ok' => false, 'error' => 'adult_required', 'detail' => 'Confirm your date of birth first.'];
+    if ((string)($p['method'] ?? 'code') === 'record' && function_exists('family_ward_connect')) return family_ward_connect($p);
     $gid = (string)$g['guardianId'];
     $rel = (string)($p['relationship'] ?? 'parent');
     if (!isset(FAMILY_RELATIONSHIPS[$rel])) $rel = 'parent';
@@ -285,6 +289,23 @@ function family_ward_add(array $p): array {
         if (!$m || !member_is_ngg($m)) return ['ok' => false, 'error' => 'not_ngg_member'];
         if ((string)$m['status'] !== 'active') return ['ok' => false, 'error' => 'member_inactive'];
         $status = 'active'; $method = 'code';
+        /* The second layer. The account's own verified email on the record IS the proof; otherwise the parent contact
+           the centre registered is asked, and with none, the desk decides (pending, below). */
+        if (strtolower((string)$m['parentEmail']) !== strtolower((string)$g['email']) && function_exists('family_code_send')) {
+            $dests = [];
+            if (filter_var((string)($m['parentEmail'] ?? ''), FILTER_VALIDATE_EMAIL)) $dests[] = ['email', strtolower((string)$m['parentEmail'])];
+            if (family_phone_tail((string)($m['parentPhone'] ?? '')) !== '') $dests[] = ['phone', function_exists('sms_normalize') ? (sms_normalize((string)$m['parentPhone']) ?: (string)$m['parentPhone']) : (string)$m['parentPhone']];
+            if ($dests) {
+                if (family_codes_recent($gid) >= FAMILY_LINK_CODES_PER_HOUR) return ['ok' => false, 'error' => 'too_many_attempts', 'detail' => 'Too many codes this hour. Try again later.'];
+                if (db_row("SELECT 1 FROM guardian_wards WHERE guardianId = ? AND memberId = ? AND status = 'active'", [$gid, (string)$m['memberId']])) return ['ok' => false, 'error' => 'already_linked'];
+                $first = explode(' ', trim((string)$m['fullName']))[0] ?? '';
+                [$codeId, $masked] = family_code_send($g, 'anchor', [(string)$m['memberId']], $rel, $dests, $first);
+                audit('family.ward.confirm_sent', $gid, (string)$m['memberId'], ['to' => count($dests)], $ip);
+                return ['ok' => true, 'confirm' => ['codeId' => $codeId, 'sentTo' => $masked, 'first' => $first,
+                    'detail' => 'To confirm you are ' . $first . '’s parent or guardian, we sent a code to the contact on their NGG record (' . implode(' and ', $masked) . ').']];
+            }
+            $status = 'pending';   // nobody on the record to ask: the desk confirms
+        }
     }
 
     $mid = (string)$m['memberId'];

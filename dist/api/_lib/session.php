@@ -240,7 +240,7 @@ function session_issue_family(array $guardian, bool $remember = false, array $ex
     global $CONFIG;
     $now = time();
     $exp = $now + ($remember ? SESSION_REMEMBER_TTL : max(3600, (int)($CONFIG['session_ttl'] ?? 86400)));
-    $payload = ['k' => 'family', 'gid' => (string)$guardian['guardianId'], 'ep' => (int)($guardian['sessionEpoch'] ?? 1), 'iat' => $now, 'exp' => $exp];
+    $payload = ['k' => 'family', 'gid' => (string)$guardian['guardianId'], 'ep' => (int)($guardian['sessionEpoch'] ?? 1), 'iat' => $now, 'exp' => $exp, 'rm' => $remember ? 1 : 0];
     if (!empty($extra['mfaP'])) $payload['mfaP'] = (string)$extra['mfaP'];
     return family_cookie_write($payload);
 }
@@ -288,6 +288,12 @@ function require_family(): array {
     if (!empty($p['mfaP']) && empty($GLOBALS['__mfa_pending_ok'])) json_error('mfa_required', 401);
     if (time() - (strtotime((string)($g['lastSeenAt'] ?? '')) ?: 0) > 300) {
         try { db_update('guardians', ['lastSeenAt' => now_iso()], ['id' => (int)$g['id']]); } catch (Throwable $e) {}
+    }
+    /* A remembered device stays signed in while it is used: once a day the cookie is re-signed with a fresh 30 days,
+       so a parent who opens the app weekly is never asked to sign in again. "Sign out everywhere" still ends it (epoch). */
+    if (!empty($p['rm']) && empty($p['mfaP']) && time() - (int)($p['iat'] ?? 0) > 86400 && !headers_sent()) {
+        $p['iat'] = time(); $p['exp'] = time() + SESSION_REMEMBER_TTL;
+        family_cookie_write($p);
     }
     return ['gid' => (string)$g['guardianId'], 'guardian' => $g, 'mfaP' => (string)($p['mfaP'] ?? ''), 'payload' => $p];
 }

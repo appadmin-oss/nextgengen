@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 249;
+const NGG_SCHEMA_TARGET = 250;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -6872,6 +6872,34 @@ function db_migrate(PDO $db): void {
           createdBy TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX IF NOT EXISTS idx_online_hold_member ON online_access_holds(memberId, holdUntil);
+    ";
+
+    /* 250 — THE FAMILY ACCOUNT, SMARTER (owner, 26 Nov 2026: "the child and parent should still be connected even when the
+       parent logs on another device. There'll just be a notice and a minor layer of verification"; and "we must be able to
+       verify that the user is an adult").
+         guardians.dob / adultDeclaredAt: a family account is an adult's; no child is linked until both are given (18+).
+         guardians.phoneVerifiedAt: the parent proved their phone with a code, so children whose record names it connect.
+         family_link_codes: a code sent to the parent contact ON THE CHILD'S RECORD, which is what turns "I know their
+           Anchor code" into "I am the parent the centre registered" (the extra layer on the code), and what links by phone.
+         guardian_devices: the devices an account has signed in on; a new one is told to the account (email and the other
+           devices' inbox) — the links never depend on the device. */
+    $migrations[250] = "
+        ALTER TABLE guardians ADD COLUMN dob TEXT NOT NULL DEFAULT '';
+        ALTER TABLE guardians ADD COLUMN adultDeclaredAt TEXT NOT NULL DEFAULT '';
+        ALTER TABLE guardians ADD COLUMN phoneVerifiedAt TEXT NOT NULL DEFAULT '';
+        CREATE TABLE IF NOT EXISTS family_link_codes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          codeId TEXT NOT NULL UNIQUE, guardianId TEXT NOT NULL, purpose TEXT NOT NULL, memberIds TEXT NOT NULL DEFAULT '',
+          relationship TEXT NOT NULL DEFAULT 'parent', dest TEXT NOT NULL DEFAULT '', otpHash TEXT NOT NULL DEFAULT '',
+          attempts INTEGER NOT NULL DEFAULT 0, createdAt TEXT NOT NULL DEFAULT '', expiresAt TEXT NOT NULL DEFAULT '', usedAt TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_family_link_codes_g ON family_link_codes(guardianId, createdAt);
+        CREATE TABLE IF NOT EXISTS guardian_devices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          guardianId TEXT NOT NULL, deviceHash TEXT NOT NULL, label TEXT NOT NULL DEFAULT '',
+          firstSeenAt TEXT NOT NULL DEFAULT '', lastSeenAt TEXT NOT NULL DEFAULT ''
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_guardian_device ON guardian_devices(guardianId, deviceHash);
     ";
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

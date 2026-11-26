@@ -807,6 +807,24 @@ on its timetable counts them among its *uses* when you try to delete it.
 | Parents | their **family account** (`/family`), on each child's card |
 | Anybody | **`/timetable`** — the **Timetable maker** (menu: *The room → Timetable maker*; also linked from the Centres and Parents pages). *Start from* a centre's week, or share `/timetable?centre=<centre>` to open on it |
 
+### How a parent connects to a child (family account)
+
+A family account belongs to an **adult**. The first time a parent opens *Add a child* they give their date of birth
+and tick that they are the parent or guardian and 18 or over; under 18 is refused. Then:
+
+- **Found for them.** Every child whose NGG record has the parent's email (they signed in with it) or their phone
+  (proved with a code) is listed by first name and centre. One tap connects. No wait for the desk.
+- **By phone.** They type the number they gave the centre; a code goes to it by WhatsApp, or text if WhatsApp fails, and
+  the code connects every child whose record has that number, however it was written.
+- **With the child's Anchor code** (in the child's app under Me → Family). Knowing the code proves they know the child,
+  not that they are the parent, so a code also goes to the **parent contact on the child's record**. If the record has
+  no parent contact, the request comes to **Families** for the desk to decide, as before.
+
+The link is the account's, not the phone's: signing in on another phone or computer shows the same children. A device
+the account has not used before is **told to the account** (an email and a notice in the family app) and needs the
+emailed sign-in code. Families stay signed in on their own device while they keep using it; *Sign out everywhere*
+ends every device at once.
+
 The public page never shows instructors' names. The staff, member and family
 versions print on one clean sheet (**Print**), list classes under a heading per
 day as a real table, say "Your course" in words rather than by colour alone,

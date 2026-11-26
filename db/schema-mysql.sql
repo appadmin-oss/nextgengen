@@ -5591,3 +5591,24 @@ CREATE TABLE IF NOT EXISTS online_access_holds (
   KEY idx_online_hold_member (memberId, holdUntil)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (249) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 250 · The family account: an adult's (dob, declaration), a verified phone, link codes, known devices ──
+ALTER TABLE guardians ADD COLUMN dob VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE guardians ADD COLUMN adultDeclaredAt VARCHAR(40) NOT NULL DEFAULT '';
+ALTER TABLE guardians ADD COLUMN phoneVerifiedAt VARCHAR(40) NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS family_link_codes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  codeId VARCHAR(40) NOT NULL, guardianId VARCHAR(64) NOT NULL, purpose VARCHAR(16) NOT NULL, memberIds VARCHAR(2000) NOT NULL DEFAULT '',
+  relationship VARCHAR(16) NOT NULL DEFAULT 'parent', dest VARCHAR(190) NOT NULL DEFAULT '', otpHash VARCHAR(64) NOT NULL DEFAULT '',
+  attempts INT NOT NULL DEFAULT 0, createdAt VARCHAR(40) NOT NULL DEFAULT '', expiresAt VARCHAR(40) NOT NULL DEFAULT '', usedAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_family_link_code (codeId),
+  KEY idx_family_link_codes_g (guardianId, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS guardian_devices (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  guardianId VARCHAR(64) NOT NULL, deviceHash VARCHAR(64) NOT NULL, label VARCHAR(120) NOT NULL DEFAULT '',
+  firstSeenAt VARCHAR(40) NOT NULL DEFAULT '', lastSeenAt VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_guardian_device (guardianId, deviceHash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (250) ON DUPLICATE KEY UPDATE version = version;
+

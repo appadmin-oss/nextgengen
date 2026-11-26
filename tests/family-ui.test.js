@@ -143,15 +143,26 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     chk('…nor reads a member route', (await get(BASE + '/api/member/self.php?view=requests', { Cookie: 'ngg_sess=' + fam.value })).status === 401);
 
     /* ── Add a child with their code ── */
-    chk('with no child yet, the parent lands on "Add a child", offered the records naming their email by first name only',
-      /We found a record with your email/.test(await bodyText(fp)) && /Kemi/.test(await bodyText(fp)) && !/Kemi Adeyemi/.test(await bodyText(fp)));
-    await fp.fill('input[placeholder="6 digits"]', '482913');
+    /* A family account is an adult's (domain/family-connect.php): the date of birth and the declaration come first, and
+       nothing about any child is shown before them. */
+    await waitText(fp, /First, confirm you’re an adult/);
+    chk('with no child yet, the parent lands on "Add a child" and is asked first to confirm they are an adult — no child is offered yet',
+      /First, confirm you’re an adult/.test(await bodyText(fp)) && !/Kemi/.test(await bodyText(fp)));
+    await fp.fill('input[type="date"]', '1984-06-01');
+    await fp.check('section[aria-labelledby="ad-adult"] input[type="checkbox"]');
+    await btn(fp, /^Continue$/).click();
+    await waitText(fp, /We found your children/);
+    chk('…then the records naming their email are offered by first name only, one tap each',
+      /Kemi/.test(await bodyText(fp)) && !/Kemi Adeyemi/.test(await bodyText(fp)) && /your email is on their record/.test(await bodyText(fp)));
+    chk('…and the adult step is kept', php(`echo db_row("SELECT dob FROM guardians WHERE email = 'mum@example.org'")['dob'];`) === '1984-06-01');
+    const codeGo = () => fp.click('section[aria-labelledby="ad-code"] button:has-text("Connect")');
+    await fp.fill('section[aria-labelledby="ad-code"] input[placeholder="6 digits"]', '482913');
     await fp.fill('input[placeholder="e.g. their first name"]', 'Bello');
-    await btn(fp, /^Connect this child$/).click();
+    await codeGo();
     await waitText(fp, /don’t match a member/);
     chk('a code with the wrong name connects nothing, and says why', true);
     await fp.fill('input[placeholder="e.g. their first name"]', 'Tobi');
-    await btn(fp, /^Connect this child$/).click();
+    await codeGo();
     await waitText(fp, /Connected to Tobi/);
     chk('the child\'s code + name connects at once', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-KID'")['status'];`) === 'active');
     chk('…and the child is told', php(`echo db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-FU-KID' AND title = 'A family account is connected to you'")['c'];`) === '1');
@@ -221,10 +232,17 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
 
     /* ── The Control Room approves the sibling ── */
     await fp.goto(BASE + '/family?view=add', { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
-    await waitText(fp, /Ask to connect/, 40000);
-    await btn(fp, 'Ask to connect').click();
-    await waitText(fp, /Asked to connect to Kemi/);
-    chk('asking through the record waits for the centre', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-SIB'")['status'];`) === 'pending');
+    await waitText(fp, /We found your children/, 40000);
+    await fp.click('section[aria-labelledby="ad-rec"] button:has-text("Connect")');
+    await waitText(fp, /Connected to Kemi/);
+    chk('a record naming the parent\'s verified email connects in one tap, no wait for the centre', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-SIB'")['status'];`) === 'active');
+    /* The desk still decides a request whose record has nobody to confirm with: a cousin with no parent contact. */
+    php(`db_insert('members', ['memberId'=>'NGG-FU-COU','fullName'=>'Kola Adeyemi','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','parentEmail'=>'','parentPhone'=>'','anchorCode'=>'519274','createdAt'=>gmdate('Y-m-d\\TH:i:s\\Z'),'updatedAt'=>gmdate('Y-m-d\\TH:i:s\\Z')]);`);
+    await fp.fill('section[aria-labelledby="ad-code"] input[placeholder="6 digits"]', '519274');
+    await fp.fill('input[placeholder="e.g. their first name"]', 'Kola');
+    await fp.click('section[aria-labelledby="ad-code"] button:has-text("Connect")');
+    await waitText(fp, /Asked to connect to Kola/);
+    chk('a code for a child whose record has no parent contact waits for the centre', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-COU'")['status'];`) === 'pending');
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = 'NGG-FU-ADM'"), true);`, ['session']);
     const actx = await browser.newContext({ viewport: { width: 1360, height: 1000 } });
     await actx.addCookies([
@@ -236,13 +254,13 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await ap.goto(BASE + '/nextadmin?s=families', { waitUntil: 'domcontentloaded' });
     await waitForBoot(ap);
     await ap.waitForSelector('.cr-tbl tbody tr', { timeout: 40000 });
-    chk('the Families section lists the request, with the parent email on the record beside it', /Kemi Adeyemi[\s\S]*mum@example\.org/.test(await ap.$eval('.cr-tbl tbody', el => el.innerText)));
+    chk('the Families section lists the request', /Kola Adeyemi/.test(await ap.$eval('.cr-tbl tbody', el => el.innerText)));
     await ap.click('.cr-tbl tbody tr [role=checkbox]');
     await ap.click('.cr-selbar button:has-text("Approve")');
     await ap.waitForSelector('.cr-confirm');
     await ap.click('.cr-confirm .cr-confirm-acts .is-primary');
     await ap.waitForFunction(() => !document.querySelector('.cr-tbl tbody tr') || /Nobody is waiting/.test(document.body.innerText), null, { timeout: 15000 });
-    chk('approving connects the parent', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-SIB'")['status'];`) === 'active');
+    chk('approving connects the parent', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-COU'")['status'];`) === 'active');
 
     /* ── Announcements reach the inbox; switching child ── */
     php(`$g = db_row("SELECT guardianId FROM guardians WHERE email = 'mum@example.org'");
@@ -386,8 +404,10 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await btn(lp, 'Email me a sign-in code').click();
     await lp.waitForSelector('input[autocomplete=one-time-code]');
     await lp.goto(BASE + '/family?fsignin=' + latestToken(), { waitUntil: 'domcontentloaded' }); await waitForBoot(lp);
-    await waitText(lp, /Your children · 2/, 40000);
+    await waitText(lp, /Your children · 3/, 40000);
     chk('the emailed link signs in, and on a desktop the children are in the sidebar', true);
+    chk('another device sees the same children (the links are the account\'s, never the device\'s), and the account is told about the new device',
+      php(`echo db_row("SELECT COUNT(*) c FROM guardian_notices n JOIN guardians g ON g.guardianId = n.guardianId WHERE g.email = 'mum@example.org' AND n.kind = 'device'")['c'];`) === '1');
     chk('…and is stripped from the address bar', !/fsignin/.test(lp.url()));
     await settle(lp);
     await lp.screenshot({ path: path.join(SHOTS, 'family-desktop.png') });

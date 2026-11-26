@@ -447,7 +447,9 @@ async function as(memberId, admin, viewport) {
     await waitForBoot(ad);
     await ad.waitForSelector('.m15-app', { timeout: 60000 });
     const cs = await ad.$('.m15x-centre select');
-    chk('a coordinator over two NGG centres gets a centre switcher, NGG centres only', !!cs && JSON.stringify(await cs.evaluate(el => Array.from(el.options).map(o => o.value))) === JSON.stringify(['Egbeda', 'Ikeja']));
+    /* NGG Online (migration 236) is an NGG centre too — online members have online mentors — so an admin over every
+       NGG centre sees it in the switcher. Summer School centres must still never appear. */
+    chk('a coordinator over the NGG centres gets a centre switcher, NGG centres only (NGG Online among them)', !!cs && JSON.stringify(await cs.evaluate(el => Array.from(el.options).map(o => o.value))) === JSON.stringify(['Egbeda', 'Ikeja', 'NGG Online']));
     await ad.click('nav >> text=Mentees');
     await ad.waitForFunction(() => /Mariam Yusuf/.test(document.querySelector('main').innerText), null, { timeout: 60000 }).catch(async e => { console.error('DEBUG ngg', ad.errs.join('\n'), (await ad.innerText('main')).slice(0, 800), JSON.stringify(q(`backend_dispatch('member.mentor.caseload', ['requesterId' => 'NGG-MS-ADM'])`)).slice(0, 600)); throw e; });
     chk('a coordinator with no mentor record has no Academy to fail on (no tab, no request)', !(await ad.innerText('.m15-app')).includes('Academy') && !ad.bad400);

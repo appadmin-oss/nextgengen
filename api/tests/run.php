@@ -3422,7 +3422,9 @@ $SU = 'NGG-2025-0099';
     $mc = member_programme_settings();
     chk('members: a one-term window (the old copy) becomes every term', $mc['startDate'] === '' && count($mc['sessionWindows']) >= 2);
     chk('members: a Saturday in the NEXT term is still a member day', programme_is_day('2027-01-09', $mc) === true);
-    chk('members: a Saturday between terms is not', programme_is_day('2026-12-26', $mc) === false);
+    /* Between THIS block's two terms. Asked of these two windows only: an earlier block's term is dated relative to today
+       (a week ago to a month ahead), and from 26 Nov 2026 it reached 26 December, so the date stopped being between terms. */
+    chk('members: a Saturday between terms is not', programme_is_day('2026-12-26', array_merge($mc, ['sessionWindows' => [['2026-09-07', '2026-12-13'], ['2027-01-06', '2027-03-29']]])) === false);
     // Each centre's own days.
     chk('centres: meeting days are read from the centre\'s own words', centre_meet_weekdays('Wednesdays & Saturdays') === [3, 6]
         && centre_meet_weekdays('weekends') === [6, 7] && centre_meet_weekdays('Mon, Wed, Fri') === [1, 3, 5] && centre_meet_weekdays('After school') === []);
@@ -4255,6 +4257,10 @@ db_exec("DELETE FROM guardians WHERE guardianId IN ('GDN-ACE0000001','GDN-ACE000
 db_insert('guardians', ['guardianId' => 'GDN-ACE0000001', 'email' => 'other.anchor@example.org', 'fullName' => 'Another Adult', 'status' => 'active', 'createdAt' => now_iso()]);
 db_insert('guardians', ['guardianId' => 'GDN-ACE0000002', 'email' => 'parent.anchor@example.org', 'fullName' => 'A Parent', 'status' => 'active', 'createdAt' => now_iso()]);
 $OTH = 'GDN-ACE0000001'; $PAR = 'GDN-ACE0000002';
+/* Both are adults (family-connect.php: no child is connected to an account that has not said so), and Tunde's record
+   names A Parent, so their code connects at once; a code from anyone else needs the record's contact to confirm. */
+db_exec("UPDATE guardians SET dob = '1985-04-02', adultDeclaredAt = ? WHERE guardianId IN ('GDN-ACE0000001','GDN-ACE0000002')", [now_iso()]);
+db_exec("UPDATE members SET parentEmail = 'parent.anchor@example.org' WHERE memberId = 'NGG-2025-0001'");
 /* The block above deliberately walks every way a lookup can be refused, all
    against the same code — which is exactly the shape the guess ceiling exists
    to stop, and no real guardian ever does. Clear the count so what follows
@@ -27230,20 +27236,26 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('family: signing in again finds the same account, not a second one', ($v2['error'] ?? '') === 'already_used' || ($v2['guardian']['guardianId'] ?? '') === $gid);
     chk('family: one account per address', (int)db_row("SELECT COUNT(*) c FROM guardians WHERE email = 'mum@example.com'")['c'] === 1);
 
+    // An adult's account first (family-connect.php): nothing is suggested, and nothing connects, before it says so.
+    chk('family: before the adult step, nothing is suggested and nothing connects', !(backend_dispatch('family.me', ['guardianId' => $gid])['suggestions'] ?? [])
+        && (backend_dispatch('family.ward.add', ['guardianId' => $gid, 'code' => '482913', 'name' => 'tobi'])['error'] ?? '') === 'adult_required'
+        && (backend_dispatch('family.me', ['guardianId' => $gid])['guardian']['adult'] ?? null) === false);
+    chk('family: a date of birth under 18 is refused, by name', (backend_dispatch('family.adult', ['guardianId' => $gid, 'dob' => gmdate('Y-m-d', strtotime('-15 years')), 'declare' => true])['error'] ?? '') === 'not_adult');
+    chk('family: …and the declaration is required', (backend_dispatch('family.adult', ['guardianId' => $gid, 'dob' => '1984-06-01'])['error'] ?? '') === 'declaration_required');
+    chk('family: an adult\'s date of birth and declaration are kept', !empty(backend_dispatch('family.adult', ['guardianId' => $gid, 'dob' => '1984-06-01', 'declare' => true])['adult']));
     // Records naming this address are suggested, NGG only, first name only.
     $me = backend_dispatch('family.me', ['guardianId' => $gid]);
     $sugg = array_column($me['suggestions'] ?? [], 'memberId');
     chk('family: the NGG records naming this address are suggested — not Summer, not anyone else\'s', $sugg && !array_diff($sugg, ['NGG-FA-KID', 'NGG-FA-SIB']) && count($sugg) === 2);
     chk('family: …by first name, not the whole record', ($me['suggestions'][0]['firstName'] ?? '') !== '' && !isset($me['suggestions'][0]['fullName']));
 
-    // A record match only ASKS; the desk at the child's centre decides.
+    /* A record naming the address the parent SIGNED IN WITH connects at once (owner, 26 Nov 2026: no wait for the desk):
+       proving that address is a better check than the desk can make by looking. */
     $GLOBALS['__mail_sink'] = [];
     $ask = backend_dispatch('family.ward.add', ['guardianId' => $gid, 'method' => 'record', 'memberId' => 'NGG-FA-SIB', 'relationship' => 'parent']);
-    chk('family: asking through the record makes a pending link, not an active one', ($ask['link']['status'] ?? '') === 'pending');
-    chk('family: …and the desk is told, in the app and by email', (bool)array_filter($inbox('NGG-FA-ADM'), fn($t) => strpos($t, 'New approval') === 0)
-        && count($mailTo('ngg-fa-adm@example.com')) === 1 && !$inbox('NGG-FA-SCOPED'));
-    chk('family: a record that does not name this address cannot be asked for', (backend_dispatch('family.ward.add', ['guardianId' => $gid, 'method' => 'record', 'memberId' => 'NGG-FA-OTHER'])['error'] ?? '') === 'not_found');
-    chk('family: a pending ward is not readable', (backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $ask['link']['linkId']])['error'] ?? '') === 'not_found');
+    chk('family: a record naming the verified address connects at once, with no wait for the desk', ($ask['link']['status'] ?? '') === 'active' && ($ask['link']['via'] ?? '') === 'email');
+    chk('family: a record that does not name this address cannot be connected', (backend_dispatch('family.ward.add', ['guardianId' => $gid, 'method' => 'record', 'memberId' => 'NGG-FA-OTHER'])['error'] ?? '') === 'not_found');
+    chk('family: …nor through the one-tap op', (backend_dispatch('family.ward.connect', ['guardianId' => $gid, 'memberId' => 'NGG-FA-OTHER'])['error'] ?? '') === 'not_found');
 
     // The child's code + name links at once, and the child is told.
     $GLOBALS['__mail_sink'] = [];
@@ -27350,7 +27362,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     family_notice_add($gid, 'announcement', 'A-1', 'Closed on Saturday', 'Public holiday.', 'Egbeda desk');
     family_reports_run(substr($now, 0, 7) . '-02');
     $ib = backend_dispatch('family.inbox', ['guardianId' => $gid]);
-    $rep = array_values(array_filter($ib['rows'] ?? [], fn($r) => $r['cat'] === 'report'))[0] ?? null;
+    $rep = array_values(array_filter($ib['rows'] ?? [], fn($r) => $r['cat'] === 'report' && ($r['wardLinkId'] ?? '') === $lid))[0] ?? null;   // the parent has two children connected
     chk('family v3: the monthly report lands in the inbox, about the child, asking for a signature', $rep && $rep['sign'] === true && $rep['wardLinkId'] === $lid);
     chk('family v3: …once, however often the job runs', family_reports_run(substr($now, 0, 7) . '-02')['made'] === 0);
     chk('family v3: the inbox filters by category', count(backend_dispatch('family.inbox', ['guardianId' => $gid, 'cat' => 'report'])['rows']) >= 1
@@ -27461,7 +27473,9 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM results_uploads WHERE memberId LIKE 'NGG-FA-%'");
     db_exec("DELETE FROM results_log WHERE memberId LIKE 'NGG-FA-%'");
 
-    // The desk: scope per row, a reason to refuse, one audit event per run.
+    /* The desk: scope per row, a reason to refuse, one audit event per run. A request reaches the desk now only when the
+       child's record has no parent contact to confirm with (family-connect.php); the sibling's link stands in for one. */
+    db_exec("UPDATE guardian_wards SET status = 'pending', decidedBy = '', decidedAt = '' WHERE linkId = ?", [$ask['link']['linkId']]);
     chk('family: a scoped admin cannot approve outside their centres', (backend_dispatch('admin.families.decide', ['requesterId' => 'NGG-FA-SCOPED', 'action' => 'approve', 'linkIds' => [$ask['link']['linkId']]])['results'][0]['error'] ?? '') === 'out_of_scope');
     chk('family: refusing needs a reason', (backend_dispatch('admin.families.decide', ['requesterId' => 'NGG-FA-ADM', 'action' => 'refuse', 'linkIds' => [$ask['link']['linkId']]])['error'] ?? '') === 'need_reason');
     $GLOBALS['__mail_sink'] = [];
@@ -40625,6 +40639,67 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM online_session_joins WHERE memberId LIKE 'NGG-ONP-%'"); db_exec("DELETE FROM mentors WHERE mentorId = 'MEN-ONP-1'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-ONP-%'");
     setting_set('fees', (string)$keepFees, 'test'); setting_set(ONLINE_SETTINGS_KEY, $keepOn === null || $keepOn === '' ? ONLINE_DEFAULTS : (string)$keepOn, 'test');
+})();
+
+/* ── Connecting a family account, smarter (26 Nov 2026): an adult's account, the record's contact as the second layer
+   on the Anchor code, linking by phone, and a new device told — never re-linked. ── */
+(function () {
+    $now = now_iso();
+    $GLOBALS['__family_otp'] = '246810';
+    db_insert('guardians', ['guardianId' => 'GDN-FC-1', 'email' => 'aunty.fc@example.org', 'fullName' => 'Aunty Fc', 'status' => 'active', 'sessionEpoch' => 1, 'dob' => '1980-02-02', 'adultDeclaredAt' => $now, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-FC-1', 'fullName' => 'Ife Coded', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'anchorCode' => '731905',
+        'parentEmail' => 'mama.fc@example.org', 'parentPhone' => '0803 555 0101', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-FC-2', 'fullName' => 'Uche Nocontact', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'anchorCode' => '731906',
+        'parentEmail' => '', 'parentPhone' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-FC-3', 'fullName' => 'Bayo Phone', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'parentEmail' => '', 'parentPhone' => '+234 803 555 0202', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-FC-4', 'fullName' => 'Tola Phone', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Ikeja',
+        'parentEmail' => '', 'parentPhone' => '08035550202', 'createdAt' => $now, 'updatedAt' => $now]);
+    attempt_reset('circle.code', '731905'); attempt_reset('circle.code', '731906');
+
+    // The Anchor code, and the second layer.
+    $r = backend_dispatch('family.ward.add', ['guardianId' => 'GDN-FC-1', 'code' => '731905', 'name' => 'Ife', 'relationship' => 'relative']);
+    chk('family connect: knowing a child\'s code is not enough — a code goes to the parent contact on their record', !empty($r['confirm']['codeId']) && empty($r['link'])
+        && !db_row("SELECT 1 FROM guardian_wards WHERE guardianId = 'GDN-FC-1' AND memberId = 'NGG-FC-1'"));
+    chk('family connect: …to both contacts on the record, masked', count($r['confirm']['sentTo'] ?? []) === 2 && !str_contains(json_encode($r['confirm']), 'mama.fc@example.org') && !str_contains(json_encode($r['confirm']), '5550101'));
+    $bad = backend_dispatch('family.code.confirm', ['guardianId' => 'GDN-FC-1', 'codeId' => $r['confirm']['codeId'], 'code' => '000000']);
+    chk('family connect: a wrong code connects nothing, and says how many tries are left', ($bad['error'] ?? '') === 'invalid' && str_contains((string)$bad['detail'], 'left'));
+    chk('family connect: another account cannot spend this account\'s code', in_array(backend_dispatch('family.code.confirm', ['guardianId' => 'GDN-ACE0000002', 'codeId' => $r['confirm']['codeId'], 'code' => '246810'])['error'] ?? '', ['invalid', 'not_found'], true)
+        && !db_row("SELECT 1 FROM guardian_wards WHERE guardianId = 'GDN-ACE0000002' AND memberId = 'NGG-FC-1'"));
+    $ok = backend_dispatch('family.code.confirm', ['guardianId' => 'GDN-FC-1', 'codeId' => $r['confirm']['codeId'], 'code' => '246810']);
+    chk('family connect: the right code connects the child, active, as their relative', ($ok['connected'] ?? 0) === 1 && ($ok['links'][0]['status'] ?? '') === 'active' && ($ok['links'][0]['relationship'] ?? '') === 'relative');
+    chk('family connect: …and a code works once', (backend_dispatch('family.code.confirm', ['guardianId' => 'GDN-FC-1', 'codeId' => $r['confirm']['codeId'], 'code' => '246810'])['error'] ?? '') === 'already_used');
+    $p = backend_dispatch('family.ward.add', ['guardianId' => 'GDN-FC-1', 'code' => '731906', 'name' => 'Uche']);
+    chk('family connect: a record with nobody to ask waits for the desk', ($p['link']['status'] ?? '') === 'pending' && empty($p['confirm']));
+
+    // By phone.
+    $none = backend_dispatch('family.phone.find', ['guardianId' => 'GDN-FC-1', 'phone' => '0809 000 0000']);
+    $some = backend_dispatch('family.phone.find', ['guardianId' => 'GDN-FC-1', 'phone' => '0803-555-0202']);
+    chk('family connect: by phone, the answer is the same whether or not a record names the number', !empty($none['ok']) && !empty($some['ok']) && $none['detail'] === $some['detail'] && !isset($some['found']));
+    $c = backend_dispatch('family.code.confirm', ['guardianId' => 'GDN-FC-1', 'codeId' => $some['codeId'], 'code' => '246810']);
+    $g = db_row("SELECT phone, phoneVerifiedAt FROM guardians WHERE guardianId = 'GDN-FC-1'");
+    chk('family connect: the phone code connects every child whose record names the number, however it was written', ($c['connected'] ?? 0) === 2
+        && (int)db_row("SELECT COUNT(*) n FROM guardian_wards WHERE guardianId = 'GDN-FC-1' AND memberId IN ('NGG-FC-3','NGG-FC-4') AND status = 'active' AND via = 'phone'")['n'] === 2);
+    chk('family connect: …and the phone is saved to the account as proved', $g['phoneVerifiedAt'] !== '' && family_phone_tail($g['phone']) === '8035550202');
+    chk('family connect: a number on no record was sent nothing, so no code connects anybody', (backend_dispatch('family.code.confirm', ['guardianId' => 'GDN-FC-1', 'codeId' => $none['codeId'], 'code' => '246810'])['error'] ?? '') === 'invalid');
+    chk('family connect: codes are capped per hour, by name', (function () { for ($i = 0; $i < 6; $i++) $l = backend_dispatch('family.phone.find', ['guardianId' => 'GDN-FC-1', 'phone' => '0809 000 000' . $i]); return ($l['error'] ?? '') === 'too_many_attempts'; })());
+
+    // Devices: a link is the account's; a new device is told.
+    $g = db_row("SELECT * FROM guardians WHERE guardianId = 'GDN-FC-1'");
+    $first = family_device_seen($g, str_repeat('a', 32), 'Mozilla/5.0 (Linux; Android 14) Chrome/131.0 Mobile Safari/537.36');
+    $n0 = (int)db_row("SELECT COUNT(*) n FROM guardian_notices WHERE guardianId = 'GDN-FC-1' AND kind = 'device'")['n'];
+    $again = family_device_seen($g, str_repeat('a', 32), 'same');
+    $second = family_device_seen($g, str_repeat('b', 32), 'Mozilla/5.0 (Windows NT 10.0) Chrome/131.0 Safari/537.36');
+    $note = db_row("SELECT body FROM guardian_notices WHERE guardianId = 'GDN-FC-1' AND kind = 'device' ORDER BY id DESC LIMIT 1");
+    chk('family connect: the first device says nothing; the same device again says nothing', $first === true && $n0 === 0 && $again === false);
+    chk('family connect: a new device is told to the account, named, and the children stay connected', $second === true && $note && str_contains($note['body'], 'Chrome on Windows') && str_contains($note['body'], 'stay connected')
+        && (int)db_row("SELECT COUNT(*) n FROM guardian_wards WHERE guardianId = 'GDN-FC-1' AND status = 'active'")['n'] === 3);
+    chk('family connect: an adult is 18 on their birthday, not the day after', family_age('2008-11-26', '2026-11-26') === 18 && family_age('2008-11-27', '2026-11-26') === 17 && family_age('2030-01-01', '2026-11-26') === null);
+
+    unset($GLOBALS['__family_otp']);
+    db_exec("DELETE FROM guardian_wards WHERE guardianId = 'GDN-FC-1'"); db_exec("DELETE FROM guardian_notices WHERE guardianId = 'GDN-FC-1'");
+    db_exec("DELETE FROM guardian_devices WHERE guardianId = 'GDN-FC-1'"); db_exec("DELETE FROM family_link_codes WHERE guardianId = 'GDN-FC-1'");
+    db_exec("DELETE FROM guardians WHERE guardianId = 'GDN-FC-1'"); db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-FC-%'");
 })();
 
 /* ── NGG Online, live (owner, 25 Nov 2026): fees monthly or once, courses charged by the months they were taken,

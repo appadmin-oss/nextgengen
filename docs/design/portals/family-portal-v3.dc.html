@@ -464,20 +464,44 @@ button{cursor:pointer}
           <sc-if value="{{ addDone }}">
             <div role="status" style="border-radius:18px; background:#e8f5ec; color:#17663a; padding:16px; display:flex; gap:12px; align-items:flex-start;"><i class="ph ph-check-circle" aria-hidden="true" style="font-size:24px;"></i><div style="display:flex; flex-direction:column; gap:2px;"><b style="font-size:16px; font-weight:600;">{{ addDoneH }}</b><span style="font-size:14px; text-wrap:pretty;">{{ addDoneS }}</span></div></div>
           </sc-if>
+          <sc-if value="{{ needAdult }}">
+            <section aria-labelledby="ad-adult" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:12px;">
+              <div style="display:flex; flex-direction:column; gap:2px;"><h2 id="ad-adult" style="margin:0; font-size:17px; font-weight:600;">First, confirm you’re an adult</h2><span style="font-size:13.5px; color:#4a4a50; text-wrap:pretty;">A family account is for a parent or guardian aged 18 or over. You only do this once.</span></div>
+              <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Your date of birth<input type="date" value="{{ adDob }}" onChange="{{ onAdDob }}" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:16px; outline:none;"></label>
+              <label style="display:flex; gap:10px; align-items:flex-start; font-size:14px; text-wrap:pretty;"><input type="checkbox" checked="{{ adDecl }}" onChange="{{ onAdDecl }}" style="width:22px; height:22px; margin:0; flex-shrink:0;"><span>I am the parent or legal guardian of the children I connect, and I am 18 or over.</span></label>
+              <sc-if value="{{ adultHasErr }}"><span role="alert" style="font-size:13.5px; color:#a12a2a; text-wrap:pretty;">{{ adultErr }}</span></sc-if>
+              <button onClick="{{ adAdultGo }}" style="height:50px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600;">Continue</button>
+            </section>
+          </sc-if>
+          <sc-if value="{{ isAdult }}">
+          <sc-if value="{{ hasSugg }}">
+            <section aria-labelledby="ad-rec" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:12px;">
+              <div style="display:flex; flex-direction:column; gap:2px;"><h2 id="ad-rec" style="margin:0; font-size:17px; font-weight:600;">We found your children</h2><span style="font-size:13.5px; color:#4a4a50; text-wrap:pretty;">Their NGG record has your email or your phone, which you’ve proved, so one tap connects them.</span></div>
+              <sc-for list="{{ sugg }}" as="s" hint-placeholder-count="1"><div style="display:flex; align-items:center; gap:12px; padding:12px; border-radius:14px; background:#f6f4f0;"><span style="width:40px; height:40px; border-radius:50%; background:#d9dcf0; display:grid; place-items:center; font-weight:600;">{{ s.ini }}</span><span style="flex:1; display:flex; flex-direction:column;"><b style="font-weight:600;">{{ s.first }}</b><span style="font-size:12.5px; color:#6b6b72;">{{ s.centre }} centre · {{ s.how }}</span></span><button onClick="{{ s.ask }}" style="height:40px; padding:0 14px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:14px; font-weight:600;">Connect</button></div></sc-for>
+            </section>
+          </sc-if>
+          <section aria-labelledby="ad-phone" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; flex-direction:column; gap:2px;"><h2 id="ad-phone" style="margin:0; font-size:17px; font-weight:600;">With your phone number</h2><span style="font-size:13.5px; color:#4a4a50; text-wrap:pretty;">The number you gave the centre when your child joined. We send it a code by WhatsApp or text.</span></div>
+            <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Your phone number<input type="tel" inputMode="tel" autoComplete="tel" value="{{ adPhone }}" onChange="{{ onAdPhone }}" placeholder="e.g. 0803 123 4567" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:16px; outline:none;"></label>
+            <sc-if value="{{ phoneSent }}">
+              <span role="status" style="font-size:13.5px; color:#17663a; text-wrap:pretty;">{{ phoneSentS }}</span>
+              <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">The code<input inputMode="numeric" autoComplete="one-time-code" value="{{ adPCode }}" onChange="{{ onAdPCode }}" placeholder="6 digits" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:20px; letter-spacing:.2em; font-family:'Geist Mono', monospace; outline:none;"></label>
+            </sc-if>
+            <sc-if value="{{ phHasErr }}"><span role="alert" style="font-size:13.5px; color:#a12a2a; text-wrap:pretty;">{{ phErr }}</span></sc-if>
+            <button onClick="{{ phGo }}" style="height:50px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600;">{{ phGoL }}</button>
+          </section>
           <section aria-labelledby="ad-code" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:12px;">
-            <div style="display:flex; flex-direction:column; gap:2px;"><h2 id="ad-code" style="margin:0; font-size:17px; font-weight:600;">With their Anchor code</h2><span style="font-size:13.5px; color:#4a4a50; text-wrap:pretty;">It’s on their member app under Circle. Giving you the code is their yes, so you connect straight away, and they’re told.</span></div>
+            <div style="display:flex; flex-direction:column; gap:2px;"><h2 id="ad-code" style="margin:0; font-size:17px; font-weight:600;">With their Anchor code</h2><span style="font-size:13.5px; color:#4a4a50; text-wrap:pretty;">It’s in their member app, under Me → Family. We then send a code to the parent contact on their NGG record to confirm it’s you. After a few wrong tries we pause for 15 minutes.</span></div>
             <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Anchor code<input inputMode="numeric" value="{{ adCode }}" onChange="{{ onAdCode }}" placeholder="6 digits" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:20px; letter-spacing:.2em; font-family:'Geist Mono', monospace; outline:none;"></label>
             <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Part of their name<input value="{{ adName }}" onChange="{{ onAdName }}" placeholder="e.g. their first name" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:16px; outline:none;"></label>
             <div role="radiogroup" aria-label="You are their" style="display:flex; gap:6px; flex-wrap:wrap;"><span style="font-size:14px; font-weight:500; width:100%;">You are their</span><sc-for list="{{ rels }}" as="r" hint-placeholder-count="4"><button role="radio" aria-checked="{{ r.sel }}" onClick="{{ r.onClick }}" style="height:40px; padding:0 14px; border-radius:999px; border:1px solid {{ r.bd }}; background:{{ r.bg }}; color:{{ r.fg }}; font-size:14px; font-weight:500;">{{ r.l }}</button></sc-for></div>
+            <sc-if value="{{ codeConfirm }}">
+              <span role="status" style="font-size:13.5px; color:#17663a; text-wrap:pretty;">{{ codeConfirmS }}</span>
+              <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">The code we sent<input inputMode="numeric" autoComplete="one-time-code" value="{{ adCCode }}" onChange="{{ onAdCCode }}" placeholder="6 digits" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:20px; letter-spacing:.2em; font-family:'Geist Mono', monospace; outline:none;"></label>
+            </sc-if>
             <sc-if value="{{ adHasErr }}"><span role="alert" style="font-size:13.5px; color:#a12a2a; text-wrap:pretty;">{{ adErr }}</span></sc-if>
-            <button onClick="{{ adGo }}" style="height:50px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600;">Connect</button>
-            <span style="font-size:12px; color:#6b6b72;">Prototype: try code 482913 with the name “Bisi”.</span>
+            <button onClick="{{ adGo }}" style="height:50px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600;">{{ adGoL }}</button>
           </section>
-          <sc-if value="{{ hasSugg }}">
-            <section aria-labelledby="ad-rec" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:12px;">
-              <div style="display:flex; flex-direction:column; gap:2px;"><h2 id="ad-rec" style="margin:0; font-size:17px; font-weight:600;">We found a record with your email</h2><span style="font-size:13.5px; color:#4a4a50; text-wrap:pretty;">You can ask to connect. The centre checks it’s really you first, usually within two days.</span></div>
-              <sc-for list="{{ sugg }}" as="s" hint-placeholder-count="1"><div style="display:flex; align-items:center; gap:12px; padding:12px; border-radius:14px; background:#f6f4f0;"><span style="width:40px; height:40px; border-radius:50%; background:#d9dcf0; display:grid; place-items:center; font-weight:600;">{{ s.ini }}</span><span style="flex:1; display:flex; flex-direction:column;"><b style="font-weight:600;">{{ s.first }}</b><span style="font-size:12.5px; color:#6b6b72;">{{ s.centre }} centre</span></span><button onClick="{{ s.ask }}" style="height:40px; padding:0 14px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:14px; font-weight:600;">Ask to connect</button></div></sc-for>
-            </section>
           </sc-if>
           <span style="font-size:12.5px; color:#6b6b72;">{{ addMax }}</span>
         </sc-if>

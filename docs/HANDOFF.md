@@ -8110,3 +8110,21 @@ gzip-only request got the Brotli copy. Files with no copy (React) were fine. The
 (build.js, .htaccess, docs/PERFORMANCE.md); the perf-shell test holds it. The new build has new file names, so a
 browser that cached the broken bundle (served `immutable` for a year) asks for the new one.
 
+## 26 Nov 2026 — the family account: an adult's, smarter connecting, and devices
+
+- Owner: "Fix the child connection. It is not smart at all"; "the child and parent should still be connected even when
+  the parent logs on another device. There'll just be a notice and a minor layer of verification"; "we must be able to
+  verify that the user is an adult".
+- **Migration 250**: guardians.dob / adultDeclaredAt / phoneVerifiedAt; family_link_codes; guardian_devices.
+- **domain/family-connect.php**: `family_adult_set` (18+ on a Lagos calendar, declaration required); `family_found_children`
+  (verified email or verified phone, first name only); `family.ward.connect` (one tap, re-checked server-side);
+  `family.phone.find` (same reply whether or not a record names the number; phones matched digits-only in SQL both
+  engines read); `family.code.confirm` (5 tries, claimed with a relative increment, one use); `family_device_seen`.
+- **family.ward.add (code)**: the second layer — a confirmation code to the record's parent contact unless the account's
+  own email is on the record; with no contact, pending for the desk. **record** now connects at once (email proved).
+- **Sessions**: remembered families get a sliding 30 days (re-signed daily while used); `ngg_fdev` device cookie.
+- Not built: a face-based age check. It needs a specialist provider (Yoti, Smile ID) and an account with them.
+- Tests: two browser suites (mentor v15, projects) were already failing because NGG Online made an admin's NGG centres
+  three; their expectations were updated. The "Saturday between terms" check was made independent of a fixture whose
+  term is dated relative to today.
+
