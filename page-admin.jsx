@@ -3832,7 +3832,7 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
     e.preventDefault();
     setBusy(true);
     try {
-      await NGGApi.admin.members.upsert(d);
+      await (d.photoUrl ? nggSaveWithPhotoOverride(x => NGGApi.admin.members.upsert(x), d) : NGGApi.admin.members.upsert(d));
       onSaved();
     } catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(false); }
@@ -9633,7 +9633,7 @@ function volunteerEditForm(v, centres, onSaved, titles) {
       if (out.courses !== undefined) out.courses = out.courses.split(",").map(c => c.trim()).filter(Boolean);
       if (out.visibilityConsent !== undefined) out.visibilityConsent = out.visibilityConsent ? 1 : 0;
       if (!Object.keys(out).length) return { unchanged: true };
-      try { await NGGApi.admin.volunteers.update(v.volunteerId, out); }
+      try { await (out.photoUrl ? nggSaveWithPhotoOverride(d => NGGApi.admin.volunteers.update(v.volunteerId, d), out) : NGGApi.admin.volunteers.update(v.volunteerId, out)); }
       catch (e) {
         if (e.code === "unknown_course") return { fieldErrors: { courses: e.detail || "One of those is not a course in the catalogue." } };
         const fe = VOL_ERR_FIELD[e.code]; if (fe) return { fieldErrors: { [fe[0]]: fe[1] } }; throw e;
@@ -9685,7 +9685,7 @@ function VolunteerMore({ v, onSaved, onDelete }) {
   const [busy, setBusy] = React.useState(false);
   const savePhoto = async val => {
     const prev = photo; setPhoto(val); setBusy(true);
-    try { await NGGApi.admin.volunteers.update(v.volunteerId, { photoUrl: val || "" }); toast.success(val ? "Photo saved." : "Photo removed."); onSaved(); }
+    try { await (val ? nggSaveWithPhotoOverride(d => NGGApi.admin.volunteers.update(v.volunteerId, d), { photoUrl: val }) : NGGApi.admin.volunteers.update(v.volunteerId, { photoUrl: "" })); toast.success(val ? "Photo saved." : "Photo removed."); onSaved(); }
     catch (e) { setPhoto(prev); toast.error("Couldn’t save the photo (" + (e.code || e.message) + "). Try again."); }
     finally { setBusy(false); }
   };

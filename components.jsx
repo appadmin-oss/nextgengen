@@ -2173,6 +2173,23 @@ async function photoQaCheckFile(file) {
   } catch (_) { return { issues: ["unreadable"], words: PHOTO_QA_WORDS.unreadable }; }
   finally { URL.revokeObjectURL(url); }
 }
+/**
+ * A staff save that carries a photo: when the photo check doubts it (`photo_low_quality`, overridable), the person
+ * saving — who is looking at the photo — is asked once whether to use it anyway, and the save is sent again with
+ * `photoQaOverride`, which the server records (photo_qa_gate_staff). `send(data)` makes the request.
+ */
+async function nggSaveWithPhotoOverride(send, data) {
+  try { return await send(data); }
+  catch (e) {
+    const d = (e && e.data) || {};
+    if (!e || e.code !== "photo_low_quality" || d.overridable === false) throw e;
+    const why = d.message || photoQaServerWords(e) || "The photo check doubts this photo.";
+    const ok = typeof window !== "undefined" && window.confirm(why + "\n\nYou can see the photo. If the face is clear and sharp, use it anyway? This is recorded.");
+    if (!ok) throw e;
+    return await send(Object.assign({}, data, { photoQaOverride: true }));
+  }
+}
+
 /** The server's refusal (`photo_low_quality`) in the family's words. */
 function photoQaServerWords(e) {
   const d = (e && e.data) || {}, issues = Array.isArray(d.issues) ? d.issues : [];

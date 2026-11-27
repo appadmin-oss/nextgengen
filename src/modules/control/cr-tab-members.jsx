@@ -227,7 +227,7 @@ function crMemEdit(ctx, m, after) {
       const photoUrl = await crMbPhotoUrl(v.photo);
       if (photoUrl) patch.photoUrl = photoUrl;
       if (!Object.keys(patch).length) return { nothing: true };
-      const r = await crMemQueued(NGGApi.admin.members.upsert(Object.assign({ memberId: m.memberId }, patch)));
+      const r = await crMemQueued(patch.photoUrl ? nggSaveWithPhotoOverride(d => NGGApi.admin.members.upsert(d), Object.assign({ memberId: m.memberId }, patch)) : NGGApi.admin.members.upsert(Object.assign({ memberId: m.memberId }, patch)));
       ctx.setData(x => Object.assign({}, x, { rev: (x.rev || 0) + 1 }));
       if (after) after();
       return Object.assign({ n: Object.keys(patch).length }, r);
@@ -272,7 +272,7 @@ function crMemAdd(ctx) {
       if (Object.keys(prof).length) row.profile = prof;
       const photoUrl = await crMbPhotoUrl(v.photo);
       if (photoUrl) row.photoUrl = photoUrl;
-      const r = await crMemQueued(NGGApi.admin.members.upsert(row));
+      const r = await crMemQueued(row.photoUrl ? nggSaveWithPhotoOverride(d => NGGApi.admin.members.upsert(d), row) : NGGApi.admin.members.upsert(row));
       ctx.setData(x => Object.assign({}, x, { rev: (x.rev || 0) + 1 }));
       return r;
     },

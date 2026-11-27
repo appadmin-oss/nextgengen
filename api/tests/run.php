@@ -42235,6 +42235,21 @@ if (function_exists('imagecreatetruecolor')) {
     chk('photo quality · …and a small original is still refused, whatever transform it is delivered through',
         (function () use ($small) { $GLOBALS['__photo_qa_fetch_mock'] = fn($u) => $small; return (photo_qa_gate('https://res.cloudinary.com/ngg/image/upload/c_fill,g_face,w_600,h_750/v9/ngg/headshot/tiny.jpg')['issues'] ?? []) === ['too_small']; })());
     unset($GLOBALS['__photo_qa_fetch_mock']);
+    /* Staff can see the face (photo_qa_gate_staff): a doubtful photo on a volunteer's record is refused with a way past
+       it, and "use it anyway" saves it and is recorded. */
+    $adm = (string)(db_row("SELECT memberId FROM members WHERE role = 'super_admin' AND status = 'active' ORDER BY id LIMIT 1")['memberId'] ?? '');
+    $vref = db_row("SELECT volunteerId, centre FROM volunteers WHERE status = 'active' ORDER BY id LIMIT 1");
+    if ($adm !== '' && $vref) {
+        $soft = 'data:image/jpeg;base64,' . base64_encode($blur);
+        $r1 = backend_dispatch('admin.volunteers.update', ['requesterId' => $adm, 'volunteerId' => $vref['volunteerId'], 'data' => ['photoUrl' => $soft]]);
+        chk('photo quality · staff: a doubtful photo on a volunteer is refused, and the refusal says it can be overridden', ($r1['error'] ?? '') === 'photo_low_quality' && !empty($r1['overridable']));
+        $audits = (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'photo.qa.override'")['c'];
+        $r2 = backend_dispatch('admin.volunteers.update', ['requesterId' => $adm, 'volunteerId' => $vref['volunteerId'], 'data' => ['photoUrl' => $soft, 'photoQaOverride' => true]]);
+        chk('photo quality · staff: "use it anyway" saves the photo and records who decided', !empty($r2['ok'])
+            && (string)db_row('SELECT photoUrl FROM volunteers WHERE volunteerId = ?', [$vref['volunteerId']])['photoUrl'] !== ''
+            && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'photo.qa.override'")['c'] === $audits + 1);
+        chk('photo quality · …but a file that is not a photo is never overridable', ($q = photo_qa_gate_staff('data:image/jpeg;base64,' . base64_encode('not a photo'), ['photoQaOverride' => true], $adm, 'x')) !== null && ($q['overridable'] ?? true) === false);
+    } else chk('photo quality · staff override fixtures exist', false);
     chk('photo quality · another host is not ours and is never fetched', photo_qa_fetch('https://example.org/a.jpg') === null);
     // Through the application: refused before anything is written, with the reason.
     $before = (int)db_row("SELECT COUNT(*) n FROM applications")['n'];

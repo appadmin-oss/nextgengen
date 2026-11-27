@@ -753,7 +753,8 @@ function admin_volunteer_update(array $p): array {
         $row['photoUrl'] = function_exists('photo_intake_url')
             ? photo_intake_url((string)$d['photoUrl'])
             : substr(trim((string)$d['photoUrl']), 0, 512);
-        if ($row['photoUrl'] !== '' && ($q = photo_qa_gate($row['photoUrl'])) !== null) return $q;   // the same bar for everyone's card
+        // The same bar for everyone's card — with a recorded way past it for staff, who can see the face (photo_qa_gate_staff).
+        if ($row['photoUrl'] !== '' && ($q = photo_qa_gate_staff($row['photoUrl'], $d, (string)$g['requester']['memberId'], $volunteerId)) !== null) return $q;
     }
     if (array_key_exists('email', $d)) {
         // Stored the way the sign-in door compares it: no spaces, lower case.

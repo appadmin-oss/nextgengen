@@ -796,7 +796,7 @@ function admin_members_upsert(array $p): array {
         if ($data['photoUrl'] === '') return ['ok' => false, 'error' => 'bad_photo',
             'detail' => 'That photo could not be stored. Try a JPEG or PNG under 10 MB.'];
         // Staff photos print on the same card: the same bar as a family's.
-        if (($q = photo_qa_gate($data['photoUrl'])) !== null) return $q;
+        if (($q = photo_qa_gate_staff($data['photoUrl'], is_array($data) ? $data : [], (string)$g['requester']['memberId'], $memberId)) !== null) return $q;
     }
     $v = admin_member_validate($data, $existing);
     if (!$v['ok']) return $v;

@@ -249,6 +249,24 @@ function photo_qa_gate(string $url): ?array {
             'message' => implode(' ', array_map(static fn($i) => PHOTO_QA_WORDS[$i] ?? '', array_slice($issues, 0, 2)))];
 }
 
+/**
+ * The gate for a photo STAFF are saving (a volunteer's or a member's record), with a way past it.
+ *
+ * The check measures pixels; it cannot see a face. Staff adding a photo are looking at it, so when the check doubts a
+ * photo they may say "use it anyway" (`photoQaOverride`) — owner, 27 Nov 2026: "it says their photo is low quality
+ * even if it's not". The override is recorded (who, which record, what the check measured) so it is a decision, not
+ * a loophole, and a family's own form stays strict. A refusal tells the screen it may be overridden.
+ */
+function photo_qa_gate_staff(string $url, array $data, string $staffId, string $subject): ?array {
+    $q = photo_qa_gate($url);
+    if ($q === null) return null;
+    if (!empty($data['photoQaOverride']) && $staffId !== '' && ($q['issues'] ?? []) !== ['unreadable']) {
+        if (function_exists('audit')) audit('photo.qa.override', $staffId, $subject, ['issues' => $q['issues'] ?? [], 'metrics' => $q['metrics'] ?? []]);
+        return null;
+    }
+    return $q + ['overridable' => ($q['issues'] ?? []) !== ['unreadable']];
+}
+
 /** On unless a super-admin turns it off (setting `photo_quality_gate` = off), e.g. during a storage outage. */
 function photo_qa_enforced(): bool {
     $v = function_exists('setting_raw') ? strtolower(trim((string)setting_raw('photo_quality_gate'))) : '';
