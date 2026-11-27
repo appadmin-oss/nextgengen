@@ -2013,6 +2013,23 @@ async function validateHeadshot(el, w, h) {
 function loadImageEl(src) {
   return new Promise((res, rej) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => res(im); im.onerror = () => rej(new Error("load_failed")); im.src = src; });
 }
+/**
+ * Where to cut a 4:5 card portrait from a camera frame of vw × vh, at the camera's own resolution — never enlarged.
+ * The output is at most 900 × 1125 (the card's art size) and must reach the print floor (600 × 800, PHOTO_QA_RULES):
+ * a 4:5 crop reaches it at 640 × 800. A frame too small for that is refused with what to do, rather than stretched
+ * into a soft picture the sharpness check would call blurry.
+ */
+function photoCaptureRect(vw, vh) {
+  if (!vw || !vh) return { ok: false, reason: "The camera isn’t ready yet — wait a second and try again." };
+  const r = 4 / 5;
+  let sw = vw, sh = vh;
+  if (vw / vh > r) sw = Math.round(vh * r); else sh = Math.round(vw / r);
+  const sx = Math.round((vw - sw) / 2), sy = Math.round((vh - sh) / 2);
+  const ow = Math.min(900, sw), oh = Math.round(ow / r);
+  const need = Math.max(PHOTO_QA_RULES.minShort, Math.ceil(PHOTO_QA_RULES.minLong * r));
+  if (ow < need) return { ok: false, sw, sh, reason: "This camera only gives a small picture (" + vw + " × " + vh + "), too small to print on a card. Take the photo with a phone’s camera app and use Upload instead." };
+  return { ok: true, sx, sy, sw, sh, ow, oh };
+}
 function canvasToBlob(c, type, q) { return new Promise((res) => c.toBlob(res, type || "image/jpeg", q == null ? 0.9 : q)); }
 // Swap (or insert) the transform segment right after /upload/. Leaves non-
 // Cloudinary URLs (pasted links) untouched so the compare simply hides itself.
@@ -2210,7 +2227,9 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     // A phone will not hand out both lenses at once — release before asking.
     stop();
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: side, width: { ideal: 720 } }, audio: false });
+      /* Ask for a large frame. "ideal 720" gave a laptop's 720 × 540, which had to be ENLARGED to fill the card's
+         portrait — and an enlarged frame is soft, so the quality check rightly called a sharp face blurry. */
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: side, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false });
       streamRef.current = s;
       setStream(s);
       setFacing(side);
@@ -2256,9 +2275,6 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   // running behind the frozen still so retake is instant.
   const capture = async () => {
     const v = videoRef.current; if (!v) return;
-    const c = document.createElement("canvas");
-    c.width = 720; c.height = 900;
-    const ctx = c.getContext("2d");
     // Cover-crop the video frame to a 4:5 portrait. The live front-camera
     // preview is shown mirrored, because that is how people expect to see
     // themselves while they line up — but the photo is NOT saved mirrored.
@@ -2266,10 +2282,16 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     // it; a baked-in mirror reversed the face and any lettering on the
     // clothing on every selfie-camera card. The frozen still shows the true
     // image, so what is reviewed is exactly what is saved.
-    const vw = v.videoWidth || 720, vh = v.videoHeight || 900;
-    const scale = Math.max(c.width / vw, c.height / vh);
-    const dw = vw * scale, dh = vh * scale;
-    ctx.drawImage(v, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
+    /* Cropped at the camera's OWN size and never enlarged (photoCaptureRect): a small frame stretched to 720 × 900
+       printed soft and was refused as blurry. A camera that cannot give a printable portrait is told so instead. */
+    const vw = v.videoWidth || 0, vh = v.videoHeight || 0;
+    const R = photoCaptureRect(vw, vh);
+    if (!R.ok) { setErr(R.reason); return; }
+    const c = document.createElement("canvas");
+    c.width = R.ow; c.height = R.oh;
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingEnabled = true; if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(v, R.sx, R.sy, R.sw, R.sh, 0, 0, R.ow, R.oh);
     setBusy(true); setErr(""); setAdvice(null);
     const check = await validateHeadshot(c, c.width, c.height);
     setBusy(false);

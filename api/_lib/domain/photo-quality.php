@@ -198,6 +198,12 @@ function photo_qa_blur(array $L, int $w, int $h): float {
 function photo_qa_fetch(string $url): ?string {
     $url = trim($url);
     if ($url === '') return null;
+    /* Judge the photo as it was TAKEN, not a copy our own pipeline made of it. The picker and the editor deliver a
+       face-crop at 600 × 750 (CLD_ENHANCE, cloudinary_edit) — under the 600 × 800 floor — so fetching the delivered
+       URL refused every Cloudinary photo as "too small to print", however sharp the original (owner, 27 Nov 2026:
+       "it says their photo is low quality even if it's not", volunteers above all, because their photos come in
+       through that picker). A crop or an enhancement we apply is not a measure of the photo. */
+    if (preg_match('#^https://res\.cloudinary\.com/#', $url) && function_exists('cloudinary_base')) $url = cloudinary_base($url);
     if (isset($GLOBALS['__photo_qa_fetch_mock']) && is_callable($GLOBALS['__photo_qa_fetch_mock'])) {
         $r = ($GLOBALS['__photo_qa_fetch_mock'])($url);
         if ($r !== false) return $r;

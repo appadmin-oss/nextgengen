@@ -42224,6 +42224,17 @@ if (function_exists('imagecreatetruecolor')) {
     $GLOBALS['__photo_qa_fetch_mock'] = fn($u) => strpos($u, 'res.cloudinary.com') !== false ? $small : false;
     chk('photo quality · Cloudinary: the image is fetched and judged like any other', (photo_qa_gate('https://res.cloudinary.com/ngg/image/upload/v1/headshot/a.jpg')['issues'] ?? []) === ['too_small']);
     unset($GLOBALS['__photo_qa_fetch_mock']);
+    /* Our own delivery transforms are not the photo (owner, 27 Nov 2026: "it says their photo is low quality even if it's
+       not"). The picker saves a 600 × 750 face crop (CLD_ENHANCE) — under the floor — so the delivered URL was judged
+       and every Cloudinary photo was refused. The ORIGINAL is what is judged now. */
+    $asked = [];
+    $GLOBALS['__photo_qa_fetch_mock'] = function ($u) use (&$asked, $good, $small) { $asked[] = $u; return str_contains($u, '/upload/c_') ? $small : $good; };
+    chk('photo quality · a good photo delivered through our 600 × 750 face crop is judged on the original, and passes',
+        photo_qa_gate('https://res.cloudinary.com/ngg/image/upload/c_thumb,g_face,w_600,h_750,e_improve,q_auto/v17/ngg/headshot/vol.jpg') === null
+        && ($asked[0] ?? '') === 'https://res.cloudinary.com/ngg/image/upload/v17/ngg/headshot/vol.jpg');
+    chk('photo quality · …and a small original is still refused, whatever transform it is delivered through',
+        (function () use ($small) { $GLOBALS['__photo_qa_fetch_mock'] = fn($u) => $small; return (photo_qa_gate('https://res.cloudinary.com/ngg/image/upload/c_fill,g_face,w_600,h_750/v9/ngg/headshot/tiny.jpg')['issues'] ?? []) === ['too_small']; })());
+    unset($GLOBALS['__photo_qa_fetch_mock']);
     chk('photo quality · another host is not ours and is never fetched', photo_qa_fetch('https://example.org/a.jpg') === null);
     // Through the application: refused before anything is written, with the reason.
     $before = (int)db_row("SELECT COUNT(*) n FROM applications")['n'];

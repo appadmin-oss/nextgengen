@@ -4469,7 +4469,7 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
     // Release the previous facing before asking for the next: a phone will not
     // hand out both lenses at once, so re-requesting without stopping fails.
     stopStream();
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1080 }, height: { ideal: 1350 } }, audio: false })
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false })
       .then(s => {
         if (cancelled) { s.getTracks().forEach(t => t.stop()); return; }
         streamRef.current = s;
@@ -4530,15 +4530,18 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
   };
   const capture = () => {
     const v = videoRef.current; if (!v || !v.videoWidth) return;
+    /* Cropped at the camera's own size, never enlarged (photoCaptureRect in components.jsx): a small frame stretched
+       to 720 × 900 printed soft and the quality check refused it as blurry. */
+    const R = photoCaptureRect(v.videoWidth, v.videoHeight);
+    if (!R.ok) { setUErr(R.reason); return; }
     const c = document.createElement("canvas");
-    c.width = 720; c.height = 900;
+    c.width = R.ow; c.height = R.oh;
     const ctx = c.getContext("2d");
-    const scale = Math.max(c.width / v.videoWidth, c.height / v.videoHeight);
-    const dx = (c.width - v.videoWidth * scale) / 2, dy = (c.height - v.videoHeight * scale) / 2;
+    ctx.imageSmoothingEnabled = true; if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
     // Saved as the camera sees it, never mirrored. The front preview is shown
     // mirrored so lining up feels natural, but this photo goes on an ID card:
     // a mirrored save reversed the face and any lettering on the clothing.
-    ctx.drawImage(v, dx, dy, v.videoWidth * scale, v.videoHeight * scale);
+    ctx.drawImage(v, R.sx, R.sy, R.sw, R.sh, 0, 0, R.ow, R.oh);
     c.toBlob(b => b && uploadBlob(b), "image/jpeg", 0.9);
   };
 
