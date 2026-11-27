@@ -8128,3 +8128,27 @@ browser that cached the broken bundle (served `immutable` for a year) asks for t
   three; their expectations were updated. The "Saturday between terms" check was made independent of a fixture whose
   term is dated relative to today.
 
+
+## 27 Nov 2026 — volunteer photos refused as "low quality"; handoff for the next agent
+
+- Owner: "I have issues upload photos especially for volunteers, it says their photo is low quality even if its not";
+  then "Uploads too, not just camera."
+- **Cause 1 (fixed, `379ee0e5`)**: the server judged the Cloudinary-DELIVERED 600×750 crop (`CLD_ENHANCE`), under the
+  800px floor. `photo_qa_fetch()` now strips transforms with `cloudinary_base()` and judges the photo as taken.
+- **Cause 2 (fixed)**: camera capture enlarged 640×480 frames and they read as blurry. `photoCaptureRect()`
+  (components.jsx) crops 4:5 at native size, never enlarges, refuses below 640 wide ("use Upload instead");
+  `getUserMedia` asks for 1920×1440 (picker and `GatePhoto`).
+- **Cause 3 (mitigated, `45463bee`)**: the zone-based exposure/blur rules (`PHOTO_QA`, mirrored by `PHOTO_QA_RULES`)
+  refuse clear faces on uploads not framed like a passport shot (dark backgrounds read as too_dark/blurry).
+  Staff now get "use it anyway": `nggSaveWithPhotoOverride()` retries with `photoQaOverride`, and
+  `photo_qa_gate_staff()` lets it through with a `photo.qa.override` audit row. Wired on volunteers.update and
+  members.upsert (page-admin.jsx, cr-tab-members.jsx). A non-photo (`unreadable`) is never overridable.
+- **OPEN for the next agent**: the check itself is still mis-calibrated for uploads. Asked the owner for one or two
+  wrongly refused photos (with consent) to calibrate against. Do NOT loosen thresholds blind: a "sharpest tile" blur
+  rule was tried in a scratch script and lowered every score, so it needs recalibration, not adoption. Any change
+  must move PHOTO_QA and PHOTO_QA_RULES together (tests/photo-quality.test.js). Self-service uploads (members,
+  guardians) have no override — only staff do — so that is where the remaining complaints will come from.
+- Suite: `php api/tests/run.php` 7695 passed, 0 failed. Build clean.
+- Still not built: face-based age check for family accounts (needs Yoti / Smile ID).
+- Africa GATES has its own open item (the announcement pop-up not appearing): see that repo's
+  `docs/handoff/NEXT-AGENT.md`.
