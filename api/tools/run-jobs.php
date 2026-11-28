@@ -56,6 +56,7 @@ require_once $root . '/_lib/domain/summer.php';
 require_once $root . '/_lib/domain/policy.php';
 $log['policy_sweep'] = policy_sweep_absences();
 $log['policy_sweep_member'] = policy_sweep_member_absences();
+$log['policy_barred_repair'] = policy_barred_repair();
 $log['policy_reentry_relink'] = policy_reentry_relink_all();
 // 7a) Ask guardians about those absences; announce Summer School dates (domain/make.php).
 require_once $root . '/_lib/bus.php';

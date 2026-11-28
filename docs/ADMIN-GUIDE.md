@@ -2460,7 +2460,15 @@ the Management notice states it, every figure editable:
   ₦5,000 gets the child back in; the older charges stay owed. (A payment the
   family pointed at particular charges is left as they chose.) Payments made
   before this rule that went to older charges are re-pointed at the fee by the
-  daily job. Lifting the suspension lifts its fee.
+  daily job. Lifting the suspension lifts its fee, and **a lift made by a
+  person stays lifted**: re-checking the record never puts it back, though
+  the absences it was for are still on file. (Only a lift the system made,
+  because an absence was corrected, can come back if the threshold is
+  crossed again.)
+- **A suspended child is not absent.** The gate refuses them for the whole
+  suspension, and afterwards until the re-entry fee is settled; those days
+  are never logged as absences, so they cost no fines, frog jumps or further
+  suspensions. The same holds for Summer School participants and volunteers.
 - **Permission:** at most 5 absences with permission are accepted in a
   session — a request that would go over is refused when it is made, and the
   desk cannot approve past it either. An absence longer than 21 days is a

@@ -38254,6 +38254,55 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('re-entry repair · run again, it changes nothing', policy_reentry_relink('NGG-RB-9') === 0);
     chk('re-entry repair · a payment that named its charges is never re-pointed', db_row("SELECT appliesTo FROM member_ledger WHERE memberId = 'NGG-RB-8' AND kind = 'payment'")['appliesTo'] === json_encode([$abs8]));
 
+    /* The owner's second report: "lifting a suspension sanction does not lift the suspension". The absences are
+       still on record, so the next re-evaluation reactivated a lift made by a person. A person's lift now sticks. */
+    $mk('NGG-RB-10'); foreach ([$ago(30), $ago(29), $ago(28)] as $d) $absent('NGG-RB-10', $d);
+    [$s10] = policy_session_bounds('NGG-RB-10', $ago(28)); $t10 = policy_day_number($s10) * 10 + 1;
+    $up = backend_dispatch('admin.policy.sanction.update', ['requesterId' => $ADM, 'sanctionId' => (int)$sc('NGG-RB-10', 'suspension', POLICY_T_SUSPENSION + $t10)['id'], 'status' => 'lifted', 'note' => 'overturned']);
+    chk('staff lift · lifting the suspension lets the child in, and takes its re-entry fee off', !empty($up['ok']) && ($up['state']['state'] ?? '') === 'clear'
+        && $sc('NGG-RB-10', 'fine', POLICY_T_REENTRY + $t10)['status'] === 'lifted');
+    policy_apply('NGG-RB-10', 'member'); policy_relift('NGG-RB-10', 'member'); policy_apply('NGG-RB-10', 'member');
+    chk('staff lift · …and it STAYS lifted when the record is evaluated again (the absences are still there)', $sc('NGG-RB-10', 'suspension', POLICY_T_SUSPENSION + $t10)['status'] === 'lifted'
+        && $sc('NGG-RB-10', 'fine', POLICY_T_REENTRY + $t10)['status'] === 'lifted' && policy_state('NGG-RB-10', 'member')['state'] === 'clear'
+        && !empty(policy_gate_checkin('NGG-RB-10', 'member')['ok']) && (string)$sc('NGG-RB-10', 'suspension', POLICY_T_SUSPENSION + $t10)['clearedBy'] === $ADM);
+
+    /* A suspended child is refused at the gate; the nightly sweep marked those days absent all the same, and
+       every third was another suspension and another fee. A barred day is not an absence. */
+    $mk('NGG-RB-11'); foreach ([$ago(30), $ago(29), $ago(28)] as $d) $absent('NGG-RB-11', $d);   // suspended from ago(27), fee unpaid: barred until today
+    $mk('NGG-RB-12');                                                                              // the control: nothing barring them
+    $keepSw = setting_raw('policy_member_swept_through');
+    $others = array_column(db_all("SELECT memberId FROM members WHERE type = 'NGG' AND status = 'active' AND memberId NOT IN ('NGG-RB-11', 'NGG-RB-12')"), 'memberId');
+    foreach (array_chunk($others, 400) as $ch) db_exec('UPDATE members SET status = ? WHERE memberId IN (' . implode(',', array_fill(0, count($ch), '?')) . ')', array_merge(['test-hold'], $ch));
+    setting_set('policy_member_swept_through', $ago(27), 'system');
+    policy_sweep_member_absences($ago(24));
+    foreach (array_chunk($others, 400) as $ch) db_exec('UPDATE members SET status = ? WHERE memberId IN (' . implode(',', array_fill(0, count($ch), '?')) . ')', array_merge(['active'], $ch));
+    if ($keepSw === null) db_exec("DELETE FROM settings WHERE settingKey = 'policy_member_swept_through'"); else setting_set('policy_member_swept_through', $keepSw, 'system');
+    $absIn = fn($id) => (int)db_row("SELECT COUNT(*) c FROM infractions WHERE personId = ? AND kind = 'absence' AND date >= ? AND date <= ? AND (voidedAt IS NULL OR voidedAt = '')", [$id, $ago(26), $ago(24)])['c'];
+    chk('barred days · the sweep marks the control absent on those three days (it ran)', $absIn('NGG-RB-12') === 3);
+    chk('barred days · …and not the suspended child, who was refused at the gate — no fines, no second suspension', $absIn('NGG-RB-11') === 0
+        && !$sc('NGG-RB-11', 'suspension', POLICY_T_SUSPENSION + policy_day_number(policy_session_bounds('NGG-RB-11', $ago(28))[0]) * 10 + 2));
+
+    /* Repair for live members: a lift the system undid, and absences logged on barred days, as the old code left them. */
+    $mk('NGG-RB-13'); foreach ([$ago(30), $ago(29), $ago(28)] as $d) $absent('NGG-RB-13', $d);
+    [$s13] = policy_session_bounds('NGG-RB-13', $ago(28)); $t13 = policy_day_number($s13) * 10 + 1;
+    $sus13 = $sc('NGG-RB-13', 'suspension', POLICY_T_SUSPENSION + $t13); $fee13 = $sc('NGG-RB-13', 'fine', POLICY_T_REENTRY + $t13);
+    backend_dispatch('admin.policy.sanction.update', ['requesterId' => $ADM, 'sanctionId' => (int)$sus13['id'], 'status' => 'lifted', 'note' => 'overturned']);
+    $later = gmdate('Y-m-d\TH:i:s\Z', time() + 5);
+    db_exec("UPDATE sanctions SET status = 'active', clearedAt = '', clearedBy = '', issuedAt = ? WHERE id = ?", [$later, (int)$sus13['id']]);
+    db_exec("UPDATE sanctions SET status = 'pending', clearedAt = '', clearedBy = '', issuedAt = ? WHERE id = ?", [$later, (int)$fee13['id']]);
+    db_exec("UPDATE member_ledger SET voidedAt = '', voidedBy = '', voidReason = '' WHERE memberId = 'NGG-RB-13' AND periodKey = ?", ['sanction-' . $fee13['id']]);
+    foreach ([$ago(26), $ago(25), $ago(24)] as $d) $absent('NGG-RB-13', $d);
+    chk('barred repair · (as the old code left it: lift undone, three barred "absences", a second suspension, ₦16,000 owed)', policy_state('NGG-RB-13', 'member')['state'] === 'suspended'
+        && (bool)$sc('NGG-RB-13', 'suspension', POLICY_T_SUSPENSION + $t13 + 1) && fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-RB-13'"))['outstanding'] === 16000);
+    $rep = policy_barred_repair(true);
+    chk('barred repair · the staff lift is put back, as that person, and its re-entry fee is off', $rep['restored'] >= 1 && $sc('NGG-RB-13', 'suspension', POLICY_T_SUSPENSION + $t13)['status'] === 'lifted'
+        && (string)$sc('NGG-RB-13', 'suspension', POLICY_T_SUSPENSION + $t13)['clearedBy'] === $ADM && $sc('NGG-RB-13', 'fine', POLICY_T_REENTRY + $t13)['status'] === 'lifted');
+    chk('barred repair · the barred-day absences are voided and what they caused is taken back: their fines, the second suspension and its fee', $absIn('NGG-RB-13') === 0
+        && $sc('NGG-RB-13', 'suspension', POLICY_T_SUSPENSION + $t13 + 1)['status'] === 'lifted' && $sc('NGG-RB-13', 'fine', POLICY_T_REENTRY + $t13 + 1)['status'] === 'lifted');
+    chk('barred repair · the child may come back, and owes only the three real absences (₦3,000)', policy_state('NGG-RB-13', 'member')['state'] === 'clear'
+        && !empty(policy_gate_checkin('NGG-RB-13', 'member')['ok']) && fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-RB-13'"))['outstanding'] === 3000);
+    chk('barred repair · runs once: a second call is skipped', ($r2 = policy_barred_repair()) && ($r2['skipped'] ?? '') === 'done');
+
     // Voiding one of the three lifts the suspension and its unpaid re-entry fee.
     foreach ([$ago(30), $ago(29), $ago(28)] as $d) $absent('NGG-RB-3', $d);
     [$sb] = policy_session_bounds('NGG-RB-3', $ago(28));

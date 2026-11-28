@@ -1211,6 +1211,9 @@ const POLICY_SANCTIONS = ['warning', 'dormant', 'suspension', 'fine', 'eviction'
 /** Issue a sanction once per threshold crossing. `tier` is the count that
  *  triggered it, so re-evaluating after a third absence cannot re-issue the
  *  warning the first one earned. */
+/** Who may clear a sanction such that crossing its threshold again re-issues it: the system, never a person. */
+const POLICY_SYSTEM_CLEARERS = ['', 'system', 'rule'];
+
 function policy_issue(string $personId, string $type, string $kind, int $tier, array $extra = []): bool {
     if (!in_array($kind, POLICY_SANCTIONS, true)) return false;
     $now = now_iso();
@@ -1242,8 +1245,14 @@ function policy_issue(string $personId, string $type, string $kind, int $tier, a
         // logged infraction was voided, and the person has since crossed the
         // same threshold again — the unique index would otherwise make that
         // threshold un-re-crossable for the rest of their record. Reactivate.
-        $row = db_row('SELECT id, status FROM sanctions WHERE personId = ? AND kind = ? AND tier = ?', [$personId, $kind, $tier]);
+        $row = db_row('SELECT id, status, clearedBy FROM sanctions WHERE personId = ? AND kind = ? AND tier = ?', [$personId, $kind, $tier]);
         if (!$row || (string)$row['status'] !== 'lifted') return false;
+        /* Only a lift the SYSTEM made (a record it was for was corrected) is re-crossable.
+           A lift by a person — staff overturning it, an appeal upheld — is a decision: the
+           absences it was for are still on record, so re-evaluating used to reactivate the
+           suspension (and a new re-entry fee) at the next check-in or nightly sweep, and the
+           owner's report was "lifting a suspension does not lift the suspension". */
+        if (!in_array((string)($row['clearedBy'] ?? ''), POLICY_SYSTEM_CLEARERS, true)) return false;
         db_update('sanctions', [
             'status' => (string)($extra['status'] ?? 'active'),
             'reason' => substr((string)($extra['reason'] ?? ''), 0, 240),
@@ -1905,6 +1914,131 @@ function policy_reentry_relink_all(): int {
     return $n;
 }
 
+/* ── Barred days ─────────────────────────────────────────────────────────────
+ *
+ * A suspension is a total ban: the gate refuses the child (policy_gate_checkin), from
+ * its first day until its last, and after that until its re-entry fee is settled. The
+ * nightly sweep used to mark those days ABSENT all the same, so a suspended child earned
+ * ₦1,000 and frog jumps for every day they were forbidden to come, and every third such
+ * "absence" was another suspension with another re-entry fee. A barred day is not an
+ * absence; these say which days were barred.
+ */
+
+/** [[from, to], …] (Y-m-d, inclusive) for each id — the days its live suspensions bar. */
+function policy_barred_windows(array $ids, ?string $today = null): array {
+    $today = $today ?? attendance_today();
+    $ids = array_values(array_unique(array_filter(array_map('strval', $ids), fn($s) => $s !== '')));
+    $out = [];
+    foreach (array_chunk($ids, 400) as $chunk) {
+        $ph = implode(',', array_fill(0, count($chunk), '?'));
+        $rows = db_all("SELECT personId, kind, tier, status, startsAt, endsAt FROM sanctions WHERE personId IN ($ph)
+                         AND ((kind = 'suspension' AND status = 'active') OR (kind = 'fine' AND status = 'pending'))", $chunk);
+        $by = []; foreach ($rows as $r) $by[(string)$r['personId']][] = $r;
+        foreach ($by as $pid => $list) foreach ($list as $s) {
+            if ((string)$s['kind'] !== 'suspension') continue;
+            $from = substr((string)$s['startsAt'], 0, 10); if ($from === '') continue;
+            $to = substr((string)$s['endsAt'], 0, 10);
+            if ($to === '' || policy_reentry_owed($list, $s)) $to = max($to, $today);   // the door stays shut until the fee is paid
+            $out[$pid][] = [$from, $to];
+        }
+    }
+    return $out;
+}
+
+function policy_day_barred(array $windows, string $day): bool {
+    foreach ($windows as [$a, $b]) if ($day >= $a && $day <= $b) return true;
+    return false;
+}
+
+/**
+ * Repair the members this already happened to — run once (setting `policy_barred_repair`).
+ *
+ *  1. A suspension (or anything else) a PERSON lifted that the system then reactivated
+ *     is lifted again, as that person, from the audit log of the lift (the reactivation
+ *     wiped clearedBy on the row). Its re-entry fee goes with it; a fee already paid
+ *     becomes credit on the account, as any overturned fine does.
+ *  2. Every absence logged on a day a suspension barred the child is voided, then each
+ *     person is re-evaluated (policy_relift), which takes back what those absences
+ *     caused: their fines (paid ones become credit), frog jumps, and any further
+ *     suspension and re-entry fee they triggered.
+ *
+ * Returns counts, and writes one audit row listing who was repaired.
+ */
+function policy_barred_repair(bool $force = false): array {
+    if (!$force && (string)(setting_raw('policy_barred_repair') ?? '') !== '') return ['ok' => true, 'skipped' => 'done'];
+    $today = attendance_today(); $now = now_iso();
+    $out = ['restored' => 0, 'feesLifted' => 0, 'absencesVoided' => 0, 'people' => []];
+    $restoredIds = []; $types = [];
+    // 1. Lifts a person made, undone since by the system.
+    $last = [];
+    foreach (db_all("SELECT at, actorId, meta FROM audit_log WHERE event = 'policy.sanction.update' ORDER BY id") as $a) {
+        $m = json_decode((string)$a['meta'], true); if (!is_array($m) || empty($m['sanctionId'])) continue;
+        $last[(int)$m['sanctionId']] = ['at' => (string)$a['at'], 'by' => (string)$a['actorId'], 'status' => (string)($m['status'] ?? '')];
+    }
+    foreach ($last as $sid => $l) {
+        if ($l['status'] !== 'lifted') continue;
+        $s = db_row('SELECT * FROM sanctions WHERE id = ?', [$sid]);
+        if (!$s || !in_array((string)$s['status'], ['active', 'proposed', 'pending'], true) || (string)$s['issuedAt'] <= $l['at']) continue;
+        $pid = (string)$s['personId'];
+        db_update('sanctions', ['status' => 'lifted', 'clearedAt' => $l['at'], 'clearedBy' => $l['by'],
+            'note' => mb_substr('Lifted by staff on ' . substr($l['at'], 0, 10) . '; the system had wrongly put it back on ' . substr((string)$s['issuedAt'], 0, 10) . '.', 0, 240)], ['id' => $sid]);
+        if ((string)$s['kind'] === 'fine') policy_fine_void_ledger($pid, $sid, 'Lifted by staff — wrongly put back by the system');
+        $restoredIds[$sid] = true; $out['restored']++; $out['people'][$pid] = true; $types[$pid] = (string)$s['personType'];
+        $st = (int)$s['tier'];
+        $feeTier = $st >= POLICY_T_RULE_ESC && $st < POLICY_T_RULE_REENTRY ? $st - POLICY_T_RULE_ESC + POLICY_T_RULE_REENTRY
+                 : ($st >= POLICY_T_SUSPENSION && $st < POLICY_T_REENTRY ? $st - POLICY_T_SUSPENSION + POLICY_T_REENTRY : 0);
+        if ((string)$s['kind'] === 'suspension' && $feeTier) {
+            $fee = db_row("SELECT id FROM sanctions WHERE personId = ? AND kind = 'fine' AND tier = ? AND status IN ('pending','paid')", [$pid, $feeTier]);
+            if ($fee) {
+                db_update('sanctions', ['status' => 'lifted', 'clearedAt' => $now, 'clearedBy' => $l['by'], 'note' => 'The suspension was lifted by staff — no re-entry fee is owed.'], ['id' => (int)$fee['id']]);
+                policy_fine_void_ledger($pid, (int)$fee['id'], 'The suspension was lifted by staff — no re-entry fee is owed');
+                $out['feesLifted']++;
+            }
+        }
+    }
+    // 2. Absences logged on barred days. The windows a suspension really barred: a live one to
+    //    its end (or today while its fee is owed); one a person ended (served/lifted) up to the day
+    //    before; one just restored above up to today, since the reactivated copy barred the child until now.
+    $wins = [];
+    foreach (db_all("SELECT * FROM sanctions WHERE kind = 'suspension' AND COALESCE(startsAt,'') <> ''") as $s) {
+        $pid = (string)$s['personId']; $types[$pid] = (string)$s['personType']; $from = substr((string)$s['startsAt'], 0, 10);
+        $status = (string)$s['status']; $by = (string)($s['clearedBy'] ?? '');
+        if (isset($restoredIds[(int)$s['id']])) $to = $today;
+        elseif ($status === 'active') {
+            $to = substr((string)$s['endsAt'], 0, 10);
+            $sib = db_all("SELECT kind, tier, status FROM sanctions WHERE personId = ? AND kind = 'fine' AND status = 'pending'", [$pid]);
+            if ($to === '' || policy_reentry_owed($sib, $s)) $to = $today;
+            else {
+                // A fee paid: the door was shut until the day it was settled.
+                $st = (int)$s['tier'];
+                $feeTier = $st >= POLICY_T_RULE_ESC && $st < POLICY_T_RULE_REENTRY ? $st - POLICY_T_RULE_ESC + POLICY_T_RULE_REENTRY
+                         : ($st >= POLICY_T_SUSPENSION && $st < POLICY_T_REENTRY ? $st - POLICY_T_SUSPENSION + POLICY_T_REENTRY : 0);
+                $paid = $feeTier ? db_row("SELECT clearedAt FROM sanctions WHERE personId = ? AND kind = 'fine' AND tier = ? AND status = 'paid'", [$pid, $feeTier]) : null;
+                if ($paid && substr((string)$paid['clearedAt'], 0, 10) > $to) $to = gmdate('Y-m-d', (int)strtotime(substr((string)$paid['clearedAt'], 0, 10) . ' UTC') - 86400);
+            }
+        } elseif (in_array($status, ['served', 'lifted', 'waived'], true) && !in_array($by, POLICY_SYSTEM_CLEARERS, true) && (string)($s['clearedAt'] ?? '') !== '') {
+            $to = gmdate('Y-m-d', (int)strtotime(substr((string)$s['clearedAt'], 0, 10) . ' UTC') - 86400);
+        } else continue;   // a suspension the system withdrew (its absences were corrected) barred nobody that counts
+        if ($to >= $from) $wins[$pid][] = [$from, $to];
+    }
+    foreach ($wins as $pid => $w) {
+        foreach ($w as [$a, $b]) {
+            $n = db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = 'system', voidReason = ? WHERE personId = ? AND kind IN ('absence','halfday','no_checkout')
+                           AND date >= ? AND date <= ? AND (voidedAt IS NULL OR voidedAt = '')",
+                         [$now, 'Suspended that day — barred from attending, not absent.', $pid, $a, $b]);
+            if ($n) { $out['absencesVoided'] += $n; $out['people'][$pid] = true; }
+        }
+    }
+    foreach (array_keys($out['people']) as $pid) {
+        $t = $types[$pid] ?? 'member';
+        try { policy_relift((string)$pid, $t); if ($t === 'member') policy_fines_sync((string)$pid); } catch (Throwable $e) { error_log('[policy] barred repair ' . $pid . ': ' . $e->getMessage()); }
+    }
+    $people = array_keys($out['people']); $out['people'] = count($people);
+    setting_set('policy_barred_repair', $now, 'system');
+    audit('policy.barred.repair', 'system', '', ['restored' => $out['restored'], 'feesLifted' => $out['feesLifted'], 'absencesVoided' => $out['absencesVoided'], 'members' => array_slice($people, 0, 500)], '');
+    return ['ok' => true] + $out;
+}
+
 /** The older name, kept for any caller still using it. */
 function policy_reentry_sync(string $memberId): int { return policy_fines_sync($memberId); }
 
@@ -2036,6 +2170,8 @@ function policy_sweep_absences(?string $upto = null): array {
     $students = db_all("SELECT studentId, COALESCE(centre,'') centre FROM summer_students WHERE status = 'active'");
     $vols = db_all("SELECT volunteerId, COALESCE(centre,'') centre FROM volunteers WHERE status = 'active'");
     $absences = 0; $noCheckout = 0; $heldDays = 0;
+    // A suspension bars them from the premises: a day it bars is not an absence (policy_barred_windows).
+    $barred = policy_barred_windows(array_merge(array_column($students, 'studentId'), array_column($vols, 'volunteerId')), attendance_today());
     foreach ($days as $d) {
         $present = [];
         foreach (db_all("SELECT studentId, checkOutAt FROM attendance WHERE date = ?", [$d]) as $r) {
@@ -2056,6 +2192,7 @@ function policy_sweep_absences(?string $upto = null): array {
                 // Their own calendar: a participant's group may meet on other days.
                 if (!programme_is_day($d, $type === 'student' ? participant_calendar_for($id, $cfg, $groupDays) : $cfg)) continue;
                 if (isset($held[(string)$row['centre']])) continue;
+                if (isset($barred[$id]) && policy_day_barred($barred[$id], $d)) continue;
                 if (!array_key_exists($id, $present)) {
                     if (policy_log($id, $type, 'absence', $d, 'No check-in scan on a programme day.')) $absences++;
                 } elseif (!empty($pol['checkoutRequired']) && $present[$id] === '' && !isset($outHeld[(string)$row['centre']])) {
@@ -2114,6 +2251,8 @@ function policy_sweep_member_absences(?string $upto = null): array {
 
     $members = db_all("SELECT memberId, centre FROM members WHERE type = 'NGG' AND status = 'active'");
     $absences = 0; $heldDays = 0;
+    // A suspended child is refused at the gate: a day their suspension bars is not an absence.
+    $barred = policy_barred_windows(array_column($members, 'memberId'), $today);
     /* A sign-out is required of members only from the day the rule first
        applied: before it, nobody could sign out at all, and counting those
        days would turn every past attendance into an absence. */
@@ -2143,6 +2282,7 @@ function policy_sweep_member_absences(?string $upto = null): array {
             if (isset($held[(string)($row['centre'] ?? '')])) continue;                           // the feed failed there, not the members
             // Approved academic leave: the day is not theirs to attend, so it is not an absence.
             if (function_exists('member_absence_cover') && member_absence_cover($id, $d) === 'academic') continue;
+            if (isset($barred[$id]) && policy_day_barred($barred[$id], $d)) continue;
             if (!array_key_exists($id, $present)) {
                 if (policy_log($id, 'member', 'absence', $d, 'No check-in on a member programme day.')) $absences++;
             } elseif ($since !== '' && $d >= $since && $present[$id] === '' && !isset($outHeld[(string)($row['centre'] ?? '')])) {

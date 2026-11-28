@@ -8171,3 +8171,25 @@ browser that cached the broken bundle (served `immutable` for a year) asks for t
   attached and is still lifted by staff. A suspension inside its week stays until the week ends, as the rulebook says;
   paying early only means the child returns the day it ends.
 - Tests: `re-entry first ·` and `re-entry repair ·` in `api/tests/run.php`.
+
+
+## 28 Nov 2026 (later) — lifting a suspension did not lift it; barred days counted as absences
+
+- Owner: "Uplifting a suspension sanction also does not lift the suspension. Also, these happened to live members,
+  what happens to them?"
+- **Cause 1**: `policy_issue()` reactivates a `lifted` sanction when its threshold is crossed again — meant for a
+  system lift after a corrected absence. A staff lift leaves the absences on record, so the next `policy_apply`
+  (a check-in, the nightly sweep) put the suspension and a new re-entry fee straight back, and wiped `clearedBy`.
+  **Fix**: only a lift by `POLICY_SYSTEM_CLEARERS` ('', system, rule) is re-crossable; a person's lift stands.
+- **Cause 2**: a suspension is a total ban (the gate refuses), yet `policy_sweep_member_absences` and
+  `policy_sweep_absences` marked barred days absent: ₦1,000 + frog jumps each, and every third another
+  suspension and re-entry fee — a suspended child's debt grew by itself. **Fix**: `policy_barred_windows()` /
+  `policy_day_barred()`; both sweeps skip a day a live suspension bars (to its end, or today while its fee is owed).
+- **Repair for live members** — `policy_barred_repair()`, once (setting `policy_barred_repair`), from the daily job:
+  1. every lift a person made (latest `policy.sanction.update` audit row says `lifted`) that the system reissued
+     afterwards is lifted again as that person, with its re-entry fee (a paid fee becomes credit);
+  2. absences/half-days logged on barred days are voided ("Suspended that day — barred from attending, not
+     absent."), then `policy_relift` takes back their fines (paid → credit), frog jumps, and any later
+     suspension and fee they triggered.
+  One `policy.barred.repair` audit row lists the members repaired (Control Room → audit log).
+- Tests: `staff lift ·`, `barred days ·`, `barred repair ·` in `api/tests/run.php`.
