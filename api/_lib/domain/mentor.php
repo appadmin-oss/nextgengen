@@ -99,6 +99,37 @@ function mentor_email_taken(string $email, string $exceptMentorId = ''): bool {
     return count(mentor_rows_for_email($email, $exceptMentorId)) > 0;
 }
 
+/* ── Mentor dormancy (owner, 28 Nov 2026, voice note) ─────────────────────────────────────────────────────
+ *
+ * "We already said that mentors can be here just two times in the month. So I don't think we should shut down
+ *  mentors from not being available … when they are not available, they should be able to assess their mentees.
+ *  But when it falls into complacency, or dormancy, after maybe two or three months … as a protocol, then he or
+ *  she will not be able to assess."
+ *
+ * So a mentor is never held to a daily or weekly register (policy_sweep_absences skips them — see
+ * policy_volunteer_is_mentor). What closes their reach is a long silence: no check-in at any centre for
+ * MENTOR_DORMANT_DAYS. Then they keep the portal (to read why, do the Academy, report a concern) but reach no
+ * child's record until they check in at a centre again, which reopens it the same moment. The clock starts no
+ * earlier than the day this rule first ran (`mentor_dormancy_since`), so nobody is locked out on the day it ships
+ * for months nobody was asked to record. */
+const MENTOR_DORMANT_DAYS = 90;   // "two or three months": three, so nobody is shut out at the edge of it
+
+function mentor_dormancy(array $mentor, ?string $today = null): array {
+    $today = $today ?? (function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d'));
+    $since = (string)(setting_raw('mentor_dormancy_since') ?? '');
+    if ($since === '') { $since = $today; if (function_exists('setting_set')) setting_set('mentor_dormancy_since', $since, 'system'); }
+    $ids = array_values(array_filter([trim((string)($mentor['volunteerId'] ?? '')), trim((string)($mentor['memberId'] ?? ''))], fn($x) => $x !== ''));
+    $last = '';
+    if ($ids) {
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $last = (string)(db_row("SELECT MAX(date) d FROM attendance WHERE studentId IN ($ph)", $ids)['d'] ?? '');
+    }
+    $joined = substr((string)($mentor['joinedAt'] ?? '') ?: (string)($mentor['createdAt'] ?? ''), 0, 10);
+    $from = max($last, $since, preg_match('/^\d{4}-\d{2}-\d{2}$/', $joined) ? $joined : '');
+    $days = (int)floor((strtotime($today . ' 00:00:00 UTC') - strtotime($from . ' 00:00:00 UTC')) / 86400);
+    return ['dormant' => $days > MENTOR_DORMANT_DAYS, 'lastSeen' => $last, 'days' => max(0, $days), 'limitDays' => MENTOR_DORMANT_DAYS];
+}
+
 function mentor_gate(array $p): array {
     $m = mentor_requester((string)($p['requesterId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'no_requester'];
@@ -209,7 +240,11 @@ function mentor_gate(array $p): array {
          * legacy action fails closed here rather than at forty call sites
          * that each have to remember. */
         $screened = function_exists('ms_clearance') ? (bool)ms_clearance($mentor)['screened'] : trim((string)($mentor['checkedAt'] ?? '')) !== '';
-        return ['ok' => true, 'member' => $m, 'role' => 'mentor', 'screened' => $screened,
+        /* Dormant (no check-in at a centre for MENTOR_DORMANT_DAYS): the portal opens, onto nobody — the same
+           fail-closed shape as unscreened. A check-in at a centre reopens it. */
+        $dorm = mentor_dormancy($mentor);
+        $reach = $screened && !$dorm['dormant'];
+        return ['ok' => true, 'member' => $m, 'role' => 'mentor', 'screened' => $screened, 'dormancy' => $dorm,
             'rank' => $isLead ? 'lead' : 'mentor',
             /* Carried so the roster can answer "who is assigned to ME". It was
              * absent, which is why the pairing an admin makes had no effect on
@@ -221,9 +256,9 @@ function mentor_gate(array $p): array {
             /* Fail CLOSED: a mentor whose record has no centre reaches no centre
              * (it used to read as "every centre"). An admin fixes the record. A
              * lead mentor's null courses — every department — is by design. */
-            'centres' => !$screened ? [] : ($centre !== '' ? [$centre] : []),
+            'centres' => !$reach ? [] : ($centre !== '' ? [$centre] : []),
             // A mentor with no department mentors across courses (that is the role); only the centre fails closed.
-            'courses' => !$screened ? [] : ((!$isLead && $dept !== '') ? [$dept] : null),
+            'courses' => !$reach ? [] : ((!$isLead && $dept !== '') ? [$dept] : null),
             // Their own centre, kept for one purpose: filing a concern
             // (member_mp_concern). Reporting is not reading a record.
             'reportCentres' => $centre !== '' ? [$centre] : null,

@@ -2039,6 +2039,35 @@ function policy_barred_repair(bool $force = false): array {
     return ['ok' => true] + $out;
 }
 
+/* ── Mentors are not on a daily register (owner, 28 Nov 2026) ─────────────────────────────────────────────
+ * "Mentors can be here just two times in the month … we should not shut down mentors from not being available."
+ * A volunteer who mentors was swept like a daily summer volunteer: every programme day without a scan was an
+ * absence, the third an EVICTION, and an eviction refuses sign-in — so a mentor keeping the agreed twice a month
+ * lost the portal and their mentees. Mentors' absences are not logged; long silence is handled by mentor_dormancy.
+ * An instructor who also mentors still teaches a class, so stays on the register. */
+function policy_mentor_volunteer_ids(): array {
+    $out = [];
+    foreach (db_all("SELECT volunteerId FROM volunteers WHERE status = 'active' AND role = 'mentor'") as $r) $out[(string)$r['volunteerId']] = true;
+    foreach (db_all("SELECT m.volunteerId FROM mentors m JOIN volunteers v ON v.volunteerId = m.volunteerId
+                     WHERE m.status = 'active' AND COALESCE(m.volunteerId, '') <> '' AND COALESCE(v.role, '') NOT IN ('instructor', 'admin')") as $r) $out[(string)$r['volunteerId']] = true;
+    return $out;
+}
+
+/** Once: take back what the daily register did to mentors — their absences are voided and each is re-evaluated,
+ *  which lifts the warnings, dormancy and evictions those absences issued. One `policy.mentor.repair` audit row. */
+function policy_mentor_absence_repair(bool $force = false): array {
+    if (!$force && (string)(setting_raw('policy_mentor_absence_repair') ?? '') !== '') return ['ok' => true, 'skipped' => 'done'];
+    $now = now_iso(); $voided = 0; $people = [];
+    foreach (array_keys(policy_mentor_volunteer_ids()) as $vid) {
+        $n = db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = 'system', voidReason = ? WHERE personId = ? AND kind IN ('absence','halfday','no_checkout')
+                       AND (voidedAt IS NULL OR voidedAt = '')", [$now, 'Mentors come twice a month by agreement — not on the daily register.', $vid]);
+        if ($n) { $voided += $n; $people[] = $vid; try { policy_relift($vid, 'volunteer'); } catch (Throwable $e) { error_log('[policy] mentor repair ' . $vid . ': ' . $e->getMessage()); } }
+    }
+    setting_set('policy_mentor_absence_repair', $now, 'system');
+    audit('policy.mentor.repair', 'system', '', ['absencesVoided' => $voided, 'mentors' => array_slice($people, 0, 500)], '');
+    return ['ok' => true, 'absencesVoided' => $voided, 'mentors' => count($people)];
+}
+
 /** The older name, kept for any caller still using it. */
 function policy_reentry_sync(string $memberId): int { return policy_fines_sync($memberId); }
 
@@ -2172,6 +2201,8 @@ function policy_sweep_absences(?string $upto = null): array {
     $absences = 0; $noCheckout = 0; $heldDays = 0;
     // A suspension bars them from the premises: a day it bars is not an absence (policy_barred_windows).
     $barred = policy_barred_windows(array_merge(array_column($students, 'studentId'), array_column($vols, 'volunteerId')), attendance_today());
+    // Mentors come twice a month by agreement: no daily register, so no absences (mentor_dormancy is their rule).
+    $mentorVols = policy_mentor_volunteer_ids();
     foreach ($days as $d) {
         $present = [];
         foreach (db_all("SELECT studentId, checkOutAt FROM attendance WHERE date = ?", [$d]) as $r) {
@@ -2193,6 +2224,7 @@ function policy_sweep_absences(?string $upto = null): array {
                 if (!programme_is_day($d, $type === 'student' ? participant_calendar_for($id, $cfg, $groupDays) : $cfg)) continue;
                 if (isset($held[(string)$row['centre']])) continue;
                 if (isset($barred[$id]) && policy_day_barred($barred[$id], $d)) continue;
+                if ($type === 'volunteer' && isset($mentorVols[$id])) continue;
                 if (!array_key_exists($id, $present)) {
                     if (policy_log($id, $type, 'absence', $d, 'No check-in scan on a programme day.')) $absences++;
                 } elseif (!empty($pol['checkoutRequired']) && $present[$id] === '' && !isset($outHeld[(string)$row['centre']])) {

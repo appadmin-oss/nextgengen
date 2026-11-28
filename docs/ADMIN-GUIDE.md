@@ -4752,6 +4752,22 @@ Someone who both teaches and mentors gets the **Instructor Portal** at `/instruc
 - **Department:** a course, which narrows the children they see. Leave it empty for a mentor who works across courses.
 - The cursor now stays in the field you are editing. Before this fix it could jump back to Full name.
 
+## Mentors come twice a month: availability and dormancy
+
+- **Mentors are not on the daily register.** They come to a centre twice a month, as agreed. A day they do not
+  scan in is not an absence, so it costs no warning, dormancy or eviction, and never stops them signing in. An
+  **instructor** who also mentors is still on the register, because they teach a class.
+- **Away is not shut out.** Between visits a mentor keeps their portal and their mentees, and can assess them.
+- **Dormancy after three months.** A mentor who has not checked in at any centre for **90 days** becomes
+  dormant. They can still sign in, read why, use the Academy and report a concern, but their mentees' records stay
+  closed. The Mentees screen says how long it has been and what to do: **check in at the desk on the next visit**,
+  and everything opens again the same day.
+- Mentors must **check in at the desk** when they come. A mentor who never scans has no record of having been.
+- The 90 days count from 28 Nov 2026 at the earliest, so nobody became dormant on the day this started.
+- **Mentors already caught by the register** (evicted or warned for "absences") were repaired once,
+  automatically: those absences are cancelled and what they caused is lifted. The audit log entry
+  `policy.mentor.repair` lists them.
+
 ## School results that read 0 everywhere
 
 - A report where every subject is 0 was not read; it is not a term of zeros. It is now refused when the child confirms it ("Every score says 0…").

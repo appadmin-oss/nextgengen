@@ -197,6 +197,8 @@ function mp_caseload_ids_read(array $g): array {
     // No child's record reaches a mentor whose safeguarding screening is not
     // recorded. The Academy can run alongside the work; the check cannot.
     if (!mp_screened($g)) return [];
+    // Dormant: months without coming to a centre (mentor_dormancy). Their mentees wait until they check in again.
+    if (!empty($g['dormancy']['dormant'])) return [];
     if (in_array($role, ['pod', 'peer'], true) || ($role === 'lead' && $mid !== '')) {
         $ids = $mid !== '' ? array_column(db_all("SELECT memberId FROM mentor_assignments WHERE mentorId = ? AND status = 'active'", [$mid]), 'memberId') : [];
         if ($role === 'lead') {
@@ -342,7 +344,9 @@ function mp_me(array $g, array $o): array {
         'academy' => $acad ? ['done' => (int)$acad['modulesDone'], 'required' => (int)$acad['modulesRequired']] : null,
         // "Start here": until it is done the portal opens on the Academy (domain/academy.php).
         'orientation' => function_exists('academy_mentor_orientation') ? academy_mentor_orientation($m) : ['ok' => true, 'required' => 0, 'done' => 0, 'mins' => 0, 'exempt' => true],
-        'screened' => mp_screened($g), 'ngg' => ($g['role'] ?? '') !== 'mentor' || !$m || !function_exists('ms_mentor_is_ngg') || ms_mentor_is_ngg($m),
+        'screened' => mp_screened($g),
+        'dormant' => !empty($g['dormancy']['dormant']), 'lastSeen' => (string)($g['dormancy']['lastSeen'] ?? ''), 'dormantAfterDays' => (int)($g['dormancy']['limitDays'] ?? 0),
+        'ngg' => ($g['role'] ?? '') !== 'mentor' || !$m || !function_exists('ms_mentor_is_ngg') || ms_mentor_is_ngg($m),
         'officer' => (function () use ($m, $g) { $o = function_exists('sg_officer') ? sg_officer((string)($m['centre'] ?? $g['mentor']['centre'] ?? '')) : null; return $o ? ['name' => (string)$o['fullName']] : null; })(),
         'centres' => mp_centres($g)['centres'], 'centreOnScreen' => mp_centres($g)['centre'],
         // Which programmes this person may mentor in: /mentor offers the NGG and Summer School portals from it.

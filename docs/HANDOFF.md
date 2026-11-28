@@ -8217,3 +8217,26 @@ browser that cached the broken bundle (served `immutable` for a year) asks for t
 - Not done: rewriting the lesson text itself. The 14 Nov measurement put the Foundation lessons at about grade 5
   by formula. If children still struggle after this, the next step is the owner choosing which courses
   to rewrite at a lower reading age, with real lessons that children found hard.
+
+
+## 28 Nov 2026 (later) — mentors: twice a month, not shut out; dormancy after three months
+
+- Owner (voice note): mentors may come "just two times in the month"; "we should not shut down mentors from not
+  being available … they should be able to assess their mentees. But when it falls into … dormancy, after maybe two
+  or three months … as a protocol, then he or she will not be able to assess."
+- **Cause**: a mentor with a volunteer record was on the volunteer daily register (`policy_sweep_absences`). Every
+  programme day without a scan was an absence (volunteer `absenceLimit` 2: warning, dormancy, then the third an
+  EVICTION). Volunteer sign-in runs `policy_gate_checkin`, so a twice-a-month mentor was refused sign-in.
+- **Fix**:
+  - `policy_mentor_volunteer_ids()`: role `mentor`, or linked to an active `mentors` row and not an
+    instructor/admin. The sweep skips their absences.
+  - `mentor_dormancy()` (mentor.php): no attendance row (volunteerId or memberId) for `MENTOR_DORMANT_DAYS` = 90,
+    counted from no earlier than `mentor_dormancy_since` (set the first time it runs) or their joining date.
+  - A dormant mentor's gate gives `centres`/`courses` [] and `mp_caseload_ids` [], the same fail-closed shape as
+    unscreened. `mp_me` carries `dormant`/`lastSeen`; the Mentees empty state explains it. One check-in reopens it.
+- **Repair**: `policy_mentor_absence_repair()` runs once (setting `policy_mentor_absence_repair`) in the hourly
+  maintenance. It voids mentors' register absences, `policy_relift` lifts what they caused, and it writes one
+  `policy.mentor.repair` audit row.
+- **Depends on** mentors scanning at the desk when they come. If centres don't scan mentors, every mentor goes
+  dormant 90 days after this ships. Say so to the owner.
+- Tests: `mentors:` checks in `api/tests/run.php`.

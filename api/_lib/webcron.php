@@ -496,6 +496,7 @@ function web_cron_maintenance(): void {
     if (function_exists('policy_sweep_absences')) policy_sweep_absences();
     if (function_exists('policy_sweep_member_absences')) policy_sweep_member_absences();
     // Once: undo what suspensions did to live members before the barred-day and lift fixes (policy_barred_repair).
+    if (function_exists('policy_mentor_absence_repair')) { try { policy_mentor_absence_repair(); } catch (Throwable $e) { error_log('[webcron] mentor repair: ' . $e->getMessage()); } }
     if (function_exists('policy_barred_repair')) { try { policy_barred_repair(); } catch (Throwable $e) { error_log('[webcron] barred repair: ' . $e->getMessage()); } }
     // A payment that went to older charges while a re-entry fee held a child out: point it at the fee.
     if (function_exists('policy_reentry_relink_all')) { try { policy_reentry_relink_all(); } catch (Throwable $e) { error_log('[webcron] reentry relink: ' . $e->getMessage()); } }

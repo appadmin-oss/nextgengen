@@ -22260,6 +22260,58 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM volunteers WHERE volunteerId IN ('VOL-OPS-C','VOL-OPS-M')");
 })();
 
+/* ══ Mentors come twice a month (owner, 28 Nov 2026, voice note) ══════════════
+ * "Mentors can be here just two times in the month … we should not shut down mentors from not being available …
+ *  when they are not available, they should be able to assess their mentees. But when it falls into … dormancy,
+ *  after maybe two or three months … then he or she will not be able to assess." */
+(function () {
+    $now = now_iso();
+    $keep = []; foreach (['policy', 'mentor_dormancy_since', 'policy_mentor_absence_repair'] as $k) $keep[$k] = setting_raw($k);
+    policy_settings_save(['enabled' => true, 'autoEnforce' => true], 'test');
+    foreach ([['VOL-TWM-1', 'mentor'], ['VOL-TWM-2', 'instructor']] as [$vid, $role])
+        db_insert('volunteers', ['volunteerId' => $vid, 'fullName' => 'Mentor ' . $vid, 'email' => strtolower($vid) . '@example.org', 'role' => $role, 'status' => 'active',
+            'centre' => 'Egbeda', 'safeguarding' => 'cleared', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['MEN-TW-1', 'VOL-TWM-1'], ['MEN-TW-2', 'VOL-TWM-2']] as [$mid, $vid])
+        db_insert('mentors', ['mentorId' => $mid, 'volunteerId' => $vid, 'fullName' => 'Mentor ' . $vid, 'email' => strtolower($vid) . '@example.org', 'status' => 'active',
+            'centre' => 'Egbeda', 'checkedAt' => '2026-01-01', 'joinedAt' => '2026-01-01', 'createdAt' => '2026-01-01T00:00:00Z']);
+    $ids = policy_mentor_volunteer_ids();
+    chk('mentors: a mentor is off the daily register; an instructor who also mentors still teaches a class, so is not', isset($ids['VOL-TWM-1']) && !isset($ids['VOL-TWM-2']));
+
+    // As the old sweep left them: a day without a scan was an absence, the third an eviction, and an eviction refuses sign-in.
+    foreach (['2026-10-03', '2026-10-10', '2026-10-17'] as $d) policy_log('VOL-TWM-1', 'volunteer', 'absence', $d, 'No check-in scan on a programme day.');
+    policy_apply('VOL-TWM-1', 'volunteer');
+    chk('mentors: (as before — three missed days evicted a twice-a-month mentor, and the gate refused them)', policy_state('VOL-TWM-1', 'volunteer')['state'] === 'evicted'
+        && empty(policy_gate_checkin('VOL-TWM-1', 'volunteer')['ok']));
+    $r = policy_mentor_absence_repair(true);
+    chk('mentors: the repair voids their register absences and lifts the eviction they caused — they can sign in again', $r['absencesVoided'] >= 3
+        && policy_state('VOL-TWM-1', 'volunteer')['state'] === 'clear' && !empty(policy_gate_checkin('VOL-TWM-1', 'volunteer')['ok']));
+    chk('mentors: …and the repair runs once', (policy_mentor_absence_repair()['skipped'] ?? '') === 'done');
+
+    // Not available is not dormant: a mentor who came a month ago reaches their mentees.
+    setting_set('mentor_dormancy_since', gmdate('Y-m-d', time() - 200 * 86400), 'system');
+    db_insert('attendance', ['cohortId' => '', 'studentId' => 'VOL-TWM-1', 'token' => '', 'date' => gmdate('Y-m-d', time() - 30 * 86400), 'checkInAt' => $now, 'method' => 'test', 'createdAt' => $now]);
+    $g = mentor_gate(['requesterId' => 'VOL-TWM-1']);
+    chk('mentors: last at a centre a month ago — not dormant, and they reach their centre', !empty($g['ok']) && empty($g['dormancy']['dormant']) && ($g['centres'] ?? []) === ['Egbeda']);
+    // Dormant: over three months without coming to a centre.
+    db_exec("UPDATE attendance SET date = ? WHERE studentId = 'VOL-TWM-1'", [gmdate('Y-m-d', time() - 120 * 86400)]);
+    $g = mentor_gate(['requesterId' => 'VOL-TWM-1']);
+    chk('mentors: four months without a check-in — dormant: the portal opens, onto nobody', !empty($g['ok']) && !empty($g['dormancy']['dormant']) && ($g['centres'] ?? null) === []);
+    $c = backend_dispatch('member.mentor.caseload', ['requesterId' => 'VOL-TWM-1']);
+    chk('mentors: …and the portal says why (dormant, last seen) rather than "nobody is paired with you"', !empty($c['ok']) && !empty($c['me']['dormant']) && $c['me']['lastSeen'] !== '' && $c['mentees'] === []);
+    db_insert('attendance', ['cohortId' => '', 'studentId' => 'VOL-TWM-1', 'token' => '', 'date' => attendance_today(), 'checkInAt' => $now, 'method' => 'test', 'createdAt' => $now]);
+    chk('mentors: one check-in at a centre opens it again the same day', empty(mentor_gate(['requesterId' => 'VOL-TWM-1'])['dormancy']['dormant']));
+    // The clock never starts before the rule did: on the day it ships, nobody is dormant for months nobody recorded.
+    setting_set('mentor_dormancy_since', attendance_today(), 'system');
+    chk('mentors: the clock starts no earlier than the rule — a mentor never seen is not dormant on day one', empty(mentor_dormancy(db_row("SELECT * FROM mentors WHERE mentorId = 'MEN-TW-2'"))['dormant']));
+
+    foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
+    db_exec("DELETE FROM attendance WHERE studentId IN ('VOL-TWM-1','VOL-TWM-2')");
+    db_exec("DELETE FROM sanctions WHERE personId IN ('VOL-TWM-1','VOL-TWM-2')");
+    db_exec("DELETE FROM infractions WHERE personId IN ('VOL-TWM-1','VOL-TWM-2')");
+    db_exec("DELETE FROM mentors WHERE mentorId IN ('MEN-TW-1','MEN-TW-2')");
+    db_exec("DELETE FROM volunteers WHERE volunteerId IN ('VOL-TWM-1','VOL-TWM-2')");
+})();
+
 /* ══ Member management: segments, bulk, merge, timeline ═══════════════════
  *
  * The dashboard reports "N members with no email" and "7 possible
