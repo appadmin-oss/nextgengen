@@ -1834,6 +1834,77 @@ function policy_fines_sync(string $memberId): int {
     }
     return $n;
 }
+/** Is this sanction tier a suspension's re-entry fee (the rulebook's, or a written rule's)? */
+function policy_is_reentry_tier(int $t): bool {
+    return ($t >= POLICY_T_REENTRY && $t < POLICY_T_RULE_FINE) || ($t >= POLICY_T_RULE_REENTRY && $t < POLICY_T_RULE_END);
+}
+
+/**
+ * The ledger entryIds of this member's re-entry fees that are still owed, oldest
+ * first. fees_post() points a payment that names nothing at these, so the money
+ * meets the charge that is holding the child out before any older one.
+ */
+function policy_reentry_owed_entries(string $memberId): array {
+    $keys = [];
+    foreach (db_all("SELECT id, tier FROM sanctions WHERE personId = ? AND kind = 'fine' AND status = 'pending' ORDER BY issuedAt, id", [$memberId]) as $s) {
+        if (policy_is_reentry_tier((int)$s['tier'])) $keys[] = 'sanction-' . (int)$s['id'];
+    }
+    if (!$keys || !function_exists('fees_charges_left')) return [];
+    $ph = implode(',', array_fill(0, count($keys), '?'));
+    $byKey = [];
+    foreach (db_all("SELECT entryId, periodKey FROM member_ledger WHERE memberId = ? AND kind = 'fine' AND direction = 'charge' AND COALESCE(voidedAt, '') = '' AND periodKey IN ($ph)",
+                    array_merge([$memberId], $keys)) as $r) $byKey[(string)$r['periodKey']] = (string)$r['entryId'];
+    if (!$byKey) return [];
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]); if (!$m) return [];
+    $left = fees_charges_left($m);
+    $out = [];
+    foreach ($keys as $k) { $e = $byKey[$k] ?? ''; if ($e !== '' && (int)($left[$e]['left'] ?? 0) > 0) $out[] = $e; }
+    return $out;
+}
+
+/**
+ * Repair for the members already stuck: payments posted AFTER a re-entry fee was
+ * charged, which named nothing, went to older charges and left the fee owed. Point
+ * the newest of them at the fee, until it is covered, then settle the fines again.
+ * Only payments made once the fee existed are used (one made before cannot have
+ * been for it), and a payment that names its charges is never touched. Totals do
+ * not move. Returns how many payments were pointed at a fee.
+ */
+function policy_reentry_relink(string $memberId): int {
+    $owed = policy_reentry_owed_entries($memberId);
+    if (!$owed) return 0;
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]); if (!$m) return 0;
+    $n = 0;
+    foreach ($owed as $entryId) {
+        $fee = db_row('SELECT createdAt FROM member_ledger WHERE entryId = ? LIMIT 1', [$entryId]); if (!$fee) continue;
+        $need = (int)(fees_charges_left($m)[$entryId]['left'] ?? 0);
+        if ($need <= 0) continue;
+        $pays = db_all("SELECT id, amount FROM member_ledger WHERE memberId = ? AND kind = 'payment' AND direction = 'credit' AND COALESCE(voidedAt, '') = ''
+                         AND COALESCE(appliesTo, '') IN ('', '[]', 'null') AND createdAt >= ? ORDER BY createdAt DESC, id DESC", [$memberId, (string)$fee['createdAt']]);
+        foreach ($pays as $p) {
+            if ($need <= 0) break;
+            db_update('member_ledger', ['appliesTo' => json_encode([$entryId])], ['id' => (int)$p['id']]);
+            $need -= (int)$p['amount']; $n++;
+        }
+    }
+    if ($n) {
+        audit('policy.reentry.relink', 'system', $memberId, ['payments' => $n], '');
+        policy_fines_sync($memberId);
+    }
+    return $n;
+}
+
+/** Run the repair over every member with a re-entry fee still owed. Cheap when there are none. */
+function policy_reentry_relink_all(): int {
+    $ids = [];
+    foreach (db_all("SELECT DISTINCT personId, tier FROM sanctions WHERE kind = 'fine' AND status = 'pending' AND tier >= ?", [POLICY_T_REENTRY]) as $r) {
+        if (policy_is_reentry_tier((int)$r['tier'])) $ids[(string)$r['personId']] = true;
+    }
+    $n = 0;
+    foreach (array_keys($ids) as $id) { try { $n += policy_reentry_relink($id); } catch (Throwable $e) { error_log('[policy] relink ' . $id . ': ' . $e->getMessage()); } }
+    return $n;
+}
+
 /** The older name, kept for any caller still using it. */
 function policy_reentry_sync(string $memberId): int { return policy_fines_sync($memberId); }
 

@@ -1,6 +1,6 @@
 {
   "buildId": "be7efe74dc",
-  "builtAt": "2026-11-27T12:07:02.569Z",
+  "builtAt": "2026-11-28T10:24:15.314Z",
   "bundle": {
     "file": "app.4db5e9d818.min.js",
     "bytes": 1686232,
@@ -119,5 +119,5 @@
     "styles-app-public.css": "styles-app-public.e56ccb3e75.css",
     "phosphor.css": "phosphor-used.2579d59753.css"
   },
-  "node": "v22.23.5"
+  "node": "v22.23.4"
 }

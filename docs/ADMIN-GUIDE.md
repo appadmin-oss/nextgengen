@@ -2455,8 +2455,12 @@ the Management notice states it, every figure editable:
 - **Suspension:** the third absence without permission in a session suspends
   for 7 days from the next day. When the week is over the child still cannot
   check in until the **₦5,000 re-entry fee** is paid or waived — a payment
-  that covers it marks it paid by itself. Lifting the suspension lifts its
-  fee.
+  that covers it marks it paid by itself. **Any payment goes to the re-entry
+  fee first**, before older fines or dues, so a family who pays exactly
+  ₦5,000 gets the child back in; the older charges stay owed. (A payment the
+  family pointed at particular charges is left as they chose.) Payments made
+  before this rule that went to older charges are re-pointed at the fee by the
+  daily job. Lifting the suspension lifts its fee.
 - **Permission:** at most 5 absences with permission are accepted in a
   session — a request that would go over is refused when it is made, and the
   desk cannot approve past it either. An absence longer than 21 days is a

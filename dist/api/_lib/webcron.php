@@ -495,6 +495,8 @@ function web_cron_maintenance(): void {
     // (person, kind, date) means a double run cannot become a double strike.
     if (function_exists('policy_sweep_absences')) policy_sweep_absences();
     if (function_exists('policy_sweep_member_absences')) policy_sweep_member_absences();
+    // A payment that went to older charges while a re-entry fee held a child out: point it at the fee.
+    if (function_exists('policy_reentry_relink_all')) { try { policy_reentry_relink_all(); } catch (Throwable $e) { error_log('[webcron] reentry relink: ' . $e->getMessage()); } }
     // Then ask guardians about the absences just logged, and announce any
     // Summer School date that has arrived (domain/make.php). No-ops unless an
     // integration subscribes; guarded inside so a fault costs nothing else.

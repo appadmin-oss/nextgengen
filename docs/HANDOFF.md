@@ -8152,3 +8152,22 @@ browser that cached the broken bundle (served `immutable` for a year) asks for t
 - Still not built: face-based age check for family accounts (needs Yoti / Smile ID).
 - Africa GATES has its own open item (the announcement pop-up not appearing): see that repo's
   `docs/handoff/NEXT-AGENT.md`.
+
+
+## 28 Nov 2026 — a suspension not lifted after the re-entry fee was paid
+
+- Owner: "The suspension of members do not get lifted even after payment."
+- **Cause**: a served suspension is held until its re-entry fee (`sanctions` fine, re-entry tier) is paid, and
+  `policy_fines_sync` marks it paid only when the ledger allocation covers it. Payments that named no charge were
+  allocated oldest-first, so a family who paid exactly ₦5,000 had it spent on the older absence fines; the re-entry
+  fee stayed `pending` and the door stayed shut. The only test paid the whole balance, which hid it.
+- **Fix**: `fees_post()` points a `payment` that names nothing at the member's still-owed re-entry fees
+  (`policy_reentry_owed_entries()`), via the existing `appliesTo` that `fees_allocate` honours. Totals do not move;
+  a payment that names its charges is never redirected.
+- **Repair for members already stuck**: `policy_reentry_relink_all()` (daily, in `webcron.php` and `run-jobs.php`)
+  points payments made after the fee was charged, that named nothing, at the fee until it is covered, then
+  re-syncs the fines. Idempotent; one `policy.reentry.relink` audit row per member repaired.
+- Not changed: a manual roster suspension (`members.status = 'suspended'`) is a staff decision with no money
+  attached and is still lifted by staff. A suspension inside its week stays until the week ends, as the rulebook says;
+  paying early only means the child returns the day it ends.
+- Tests: `re-entry first ·` and `re-entry repair ·` in `api/tests/run.php`.

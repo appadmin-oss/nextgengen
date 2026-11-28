@@ -1033,6 +1033,16 @@ function fees_post(string $memberId, string $kind, int $amount, array $opts = []
             if ($keep) $row['appliesTo'] = json_encode(array_slice($keep, 0, 50));
         }
     }
+    /* A payment that names nothing pays an owed RE-ENTRY fee first. That fee is the
+       one charge that holds a child at the door, and paying older charges first
+       meant a family who paid exactly the ₦5,000 re-entry fee saw it go to older
+       absence fines while the child stayed suspended — "the suspension is not lifted
+       after payment". Totals do not move (fees_allocate); only which charge the money
+       met. A payment that names its charges is the payer's choice and is left alone. */
+    if ($kind === 'payment' && empty($row['appliesTo']) && function_exists('policy_reentry_owed_entries')) {
+        try { if ($first = policy_reentry_owed_entries($memberId)) $row['appliesTo'] = json_encode($first); }
+        catch (Throwable $e) { error_log('[fees_post] re-entry first: ' . $e->getMessage()); }
+    }
     try {
         db_insert('member_ledger', $row);
     } catch (Throwable $e) {

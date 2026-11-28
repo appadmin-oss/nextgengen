@@ -38223,6 +38223,37 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('rulebook · once the account covers it, the fee is paid by itself and the child may come back', $sc('NGG-RB-2', 'fine', POLICY_T_REENTRY + policy_day_number($sa) * 10 + 1)['status'] === 'paid'
         && !empty(policy_gate_checkin('NGG-RB-2', 'member')['ok']));
 
+    /* The owner's report: "the suspension is not lifted even after payment". The family pays
+       EXACTLY the re-entry fee; paid oldest-first it went to the three older absence fines and
+       the child stayed at the door. A payment that names nothing now meets the re-entry fee first. */
+    $mk('NGG-RB-7'); foreach ([$ago(30), $ago(29), $ago(28)] as $d) $absent('NGG-RB-7', $d);
+    [$s7] = policy_session_bounds('NGG-RB-7', $ago(28)); $t7 = policy_day_number($s7) * 10 + 1;
+    chk('re-entry first · (served suspension, ₦5,000 re-entry fee and ₦3,000 of absence fines owed)', policy_state('NGG-RB-7', 'member')['state'] === 'suspended'
+        && fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-RB-7'"))['outstanding'] === 8000);
+    fees_post('NGG-RB-7', 'payment', 5000, ['by' => 'test', 'method' => 'cash', 'note' => 're-entry fee']);
+    chk('re-entry first · paying exactly the re-entry fee pays THAT fee and lets the child back in', $sc('NGG-RB-7', 'fine', POLICY_T_REENTRY + $t7)['status'] === 'paid'
+        && policy_state('NGG-RB-7', 'member')['state'] === 'clear' && !empty(policy_gate_checkin('NGG-RB-7', 'member')['ok']));
+    chk('re-entry first · …the totals do not move: the absence fines are still owed, ₦3,000', policy_state('NGG-RB-7', 'member')['finesOwed'] === 3000
+        && fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-RB-7'"))['outstanding'] === 3000);
+    // A payment that names its charges is the payer's choice: it is not redirected.
+    $mk('NGG-RB-8'); foreach ([$ago(30), $ago(29), $ago(28)] as $d) $absent('NGG-RB-8', $d);
+    $abs8 = db_row("SELECT entryId FROM member_ledger WHERE memberId = 'NGG-RB-8' AND periodKey = ?", ['sanction-' . $sc('NGG-RB-8', 'fine', 500000 + policy_day_number($ago(30)))['id']])['entryId'];
+    fees_post('NGG-RB-8', 'payment', 1000, ['by' => 'test', 'method' => 'cash', 'appliesTo' => [$abs8]]);
+    [$s8] = policy_session_bounds('NGG-RB-8', $ago(28));
+    chk('re-entry first · a payment naming an absence fine pays that fine, and the re-entry fee is still owed', $sc('NGG-RB-8', 'fine', 500000 + policy_day_number($ago(30)))['status'] === 'paid'
+        && $sc('NGG-RB-8', 'fine', POLICY_T_REENTRY + policy_day_number($s8) * 10 + 1)['status'] === 'pending');
+    // Repair: a member stuck from before — their payment named nothing and met the older fines.
+    $mk('NGG-RB-9'); foreach ([$ago(30), $ago(29), $ago(28)] as $d) $absent('NGG-RB-9', $d);
+    [$s9] = policy_session_bounds('NGG-RB-9', $ago(28)); $t9 = policy_day_number($s9) * 10 + 1;
+    fees_post('NGG-RB-9', 'payment', 5000, ['by' => 'test', 'method' => 'cash']);
+    db_exec("UPDATE member_ledger SET appliesTo = '' WHERE memberId = 'NGG-RB-9' AND kind = 'payment'"); policy_fines_sync('NGG-RB-9');
+    chk('re-entry repair · (stuck: ₦5,000 paid after the fee, spent on older fines, still suspended)', policy_state('NGG-RB-9', 'member')['state'] === 'suspended');
+    $rl = policy_reentry_relink_all();
+    chk('re-entry repair · the sweep points that payment at the fee and the suspension lifts', $rl >= 1 && $sc('NGG-RB-9', 'fine', POLICY_T_REENTRY + $t9)['status'] === 'paid'
+        && policy_state('NGG-RB-9', 'member')['state'] === 'clear' && policy_state('NGG-RB-9', 'member')['finesOwed'] === 3000);
+    chk('re-entry repair · run again, it changes nothing', policy_reentry_relink('NGG-RB-9') === 0);
+    chk('re-entry repair · a payment that named its charges is never re-pointed', db_row("SELECT appliesTo FROM member_ledger WHERE memberId = 'NGG-RB-8' AND kind = 'payment'")['appliesTo'] === json_encode([$abs8]));
+
     // Voiding one of the three lifts the suspension and its unpaid re-entry fee.
     foreach ([$ago(30), $ago(29), $ago(28)] as $d) $absent('NGG-RB-3', $d);
     [$sb] = policy_session_bounds('NGG-RB-3', $ago(28));
