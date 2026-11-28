@@ -188,6 +188,10 @@ function cleanup() {
     chk('Back goes BACK, instead of closing an overlay', !(await P.$('.lrn-lesson')));
 
     console.log('the address survives a cold load');
+    /* Lesson 1 was opened moments ago above, and the review deliberately waits for a later day (asking now is not
+       recall). Date that opening three days back, so this asks the real promise — it used to pass only because the
+       question form's label happened to contain the word "review". */
+    php(`db_exec("UPDATE curriculum_progress SET startedAt = ? WHERE unitId = 'LRN-U1' AND memberId = 'NGG-LRN-M1'", [gmdate('Y-m-d\\TH:i:s\\Z', time() - 3 * 86400)]);`, ['bootstrap']);
     const Q = await open('/learn/lesson/LRN-U2');
     await Q.waitForSelector('.lrn-lesson', { timeout: 60000 });
     chk('a lesson link opens that lesson, loaded cold — so it can be sent to somebody',
@@ -199,7 +203,7 @@ function cleanup() {
     /* Week 2 opens with week 1's questions — the review comes first, and
        today's teaching waits behind it. Skipping is always allowed: being
        away last week is not a reason to be shut out of this one. */
-    chk('a lesson opens with the PREVIOUS one\'s review, before today\'s teaching', !!(await Q.$('.cur-review')) || !!(await Q.$('[aria-label*="review" i]')));
+    chk('a lesson opens with the PREVIOUS one\'s review, before today\'s teaching', !!(await Q.waitForSelector('.cur-review, .lx-intro', { timeout: 30000 }).catch(() => null)));
     const skip = await Q.$('.lrn-lesson button:has-text("Skip"), .lrn-lesson button:has-text("skip")');
     if (skip) await skip.click();
     await Q.waitForSelector('.lrn-checks', { timeout: 60000 });
@@ -442,6 +446,13 @@ function cleanup() {
       const skip9 = await S.$('.lrn-lesson button:has-text("Skip")'); if (skip9) await skip9.click();
       await S.waitForSelector('.lrn-step-h', { timeout: 30000 });
       const total = Number(await S.getAttribute('.lrn-step-progress', 'aria-valuemax'));
+      /* (owner, 28 Nov 2026: "Kids cannot take the lessons … tough for them to understand") — one thing at a time:
+         nothing to answer and no materials under step 1, and help on the step itself. */
+      chk('kid-friendly: on step 1 the questions and materials wait — the page says they come after the last step',
+        await S.locator('.lrn-checks, .lrn-markread, .lrn-mynote, .lrn-deeper').count() === 0 && /come after the last step/.test(await S.innerText('.lrn-after-note')));
+      await S.click('.lrn-simpler-btn');
+      await S.waitForFunction(() => /simpler words|switched on|couldn’t answer|questions to Guide/i.test((document.querySelector('.lrn-simpler') || {}).innerText || ''), null, { timeout: 15000 });
+      chk('kid-friendly: "I don’t get this part" answers on the step — in simpler words, or honestly says why it cannot', true);
       const heads = [];
       for (let k = 0; k < total; k++) {
         heads.push(await S.innerText('.lrn-step-h'));
@@ -454,6 +465,10 @@ function cleanup() {
         heads.filter(h => /^Understand it \(\d of \d\)/.test(h)).length >= 2 && /Going further \(optional\)/.test(heads[heads.length - 1]));
       chk('lesson in steps: Next moves focus to the new step\'s heading (keyboard and screen readers)', await S.evaluate(() => !!document.activeElement && document.activeElement.classList.contains('lrn-step-h')));
       chk('lesson in steps: the last step says the lesson is read and the questions are below', /read the whole lesson/i.test(await S.innerText('.lrn-step-done')));
+      const tryAt = heads.findIndex(h => /^Now you try/.test(h)), lastUnderstand = heads.map(h => /^Understand it/.test(h)).lastIndexOf(true);
+      chk('kid-friendly: the tasks ("Now you try") come AFTER the explanation, not as step 1', tryAt > lastUnderstand && lastUnderstand >= 0, heads.join(' | '));
+      chk('kid-friendly: "Assessed this week" is not a step — those are the questions shown after the lesson', !heads.some(h => /Assessed this week/i.test(h)));
+      chk('kid-friendly: on the last step, what comes after the lesson appears', await S.locator('.lrn-checks, .lrn-markread').count() === 1 && await S.locator('.lrn-mynote').count() === 1);
       await S.click('.lrn-step-whole');
       chk('lesson in steps: "Whole lesson on one page" shows it all at once', (await S.$$('.lrn-step-h')).length === 0 && /Key words/.test(await S.innerText('.lrn-lesson')) && /Understand it/.test(await S.innerText('.lrn-lesson')));
       await S.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(S);

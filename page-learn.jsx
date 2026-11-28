@@ -975,14 +975,26 @@ function lrnLessonSteps(body) {
   if (parts[0].trim()) secs.push({ h: "Before we start", md: parts[0].trim() });
   for (let i = 1; i < parts.length; i += 2) secs.push({ h: parts[i].trim(), md: (parts[i + 1] || "").trim() });
   const isKey = x => /^key (words|terms)|^words you/i.test(x.h), isMore = x => /^(read and watch|going further|further reading)/i.test(x.h);
-  // Key words before the first explanation; further reading last.
-  const keys = secs.filter(isKey), more = secs.filter(isMore), rest = secs.filter(x => !isKey(x) && !isMore(x));
-  const firstExplain = rest.findIndex(x => /^understand|^how it works|^the idea/i.test(x.h));
-  const ordered = firstExplain >= 0 ? rest.slice(0, firstExplain).concat(keys, rest.slice(firstExplain)) : keys.concat(rest);
+  /* (owner, 28 Nov 2026: "Kids cannot take the lessons on the learn. It seems tough for them to understand.")
+     Seen on a phone: 474 of the 690 lessons OPEN with "What to do" — the tasks, before a word of the teaching —
+     so step 1 asked a child to "name the input, process, output and storage" of something nobody had told them
+     about yet. The tasks now come after the explanation, as "Now you try". "Assessed this week" (276 lessons)
+     lists the very questions shown after the lesson, so it is not a step of the teaching. */
+  const isDo = x => /^what to do$/i.test(x.h), isAssessed = x => /^assessed this week/i.test(x.h);
+  const isExplain = x => /^understand|^how it works|^the idea/i.test(x.h);
+  // Key words before the first explanation; the explanation before the tasks; further reading last.
+  const keys = secs.filter(isKey), more = secs.filter(isMore), dos = secs.filter(isDo);
+  const rest = secs.filter(x => !isKey(x) && !isMore(x) && !isDo(x) && !isAssessed(x));
+  const firstExplain = rest.findIndex(isExplain);
+  let ordered;
+  if (firstExplain >= 0) {
+    let lastExplain = firstExplain; while (lastExplain + 1 < rest.length && isExplain(rest[lastExplain + 1])) lastExplain++;
+    ordered = rest.slice(0, firstExplain).concat(keys, rest.slice(firstExplain, lastExplain + 1), dos, rest.slice(lastExplain + 1));
+  } else ordered = keys.concat(rest, dos);
   const out = [];
   ordered.concat(more).forEach(x => {
     if (!x.md) return;
-    const h = isKey(x) ? "Words you’ll meet" : isMore(x) ? "Going further (optional)" : x.h;
+    const h = isKey(x) ? "Words you’ll meet" : isMore(x) ? "Going further (optional)" : isDo(x) ? "Now you try" : x.h;
     // Cut a long section at paragraph breaks, never inside a code block; a picture or list joins the text before it.
     const blocks = /```/.test(x.md) ? [x.md] : x.md.split(/\n{2,}/);
     const chunks = []; let cur = [], n = 0;
@@ -998,11 +1010,46 @@ function lrnLessonSteps(body) {
   return out.length >= 2 ? out : null;
 }
 function lrnWholePref() { try { return localStorage.getItem("lrn.wholeLesson") === "1"; } catch (_) { return false; } }
-function LearnSteps({ steps, body, unitId }) {
+/* "I don't get this part": the step, explained again in simpler words by Guide (curriculum.ask), which already
+   has the whole lesson in front of it, here on the step — a child stuck on step 3 should not have to find
+   another screen, pick the lesson from a list and work out what to type. */
+function lrnSimplerAsk(h) {
+  return "I don’t understand the part of this lesson called “" + String(h).replace(/\s*\(\d+ of \d+\)$/, "") + "”. Explain it again in very simple words, the way you would to a 10-year-old, with one everyday example from home or school in Nigeria. Keep it short.";
+}
+function LearnSimpler({ unitId, h }) {
+  const [st, setSt] = React.useState({ busy: false, text: "", err: "" });
+  React.useEffect(() => { setSt({ busy: false, text: "", err: "" }); }, [unitId, h]);
+  const ask = async () => {
+    setSt({ busy: true, text: "", err: "" });
+    try { const r = await NGGApi.member.curriculumAsk(unitId, lrnSimplerAsk(h), []); setSt({ busy: false, text: r.answer || "", err: "" }); }
+    catch (e) {
+      const c = e && e.code;
+      setSt({ busy: false, text: "", err: c === "daily_limit" ? "You’ve used today’s questions to Guide. Ask your instructor, or try again tomorrow."
+        : c === "ai_disabled" ? "Guide isn’t switched on yet. Ask your instructor or mentor to explain this part."
+        : c === "exam_in_progress" ? "Guide is closed while your exam is running."
+        : "Guide couldn’t answer just now. Try again in a minute." });
+    }
+  };
+  return (
+    <div className="lrn-simpler">
+      {!st.text && <button type="button" className="lrn-btn is-ghost lrn-simpler-btn" onClick={ask} disabled={st.busy}>
+        <i className="ph ph-lifebuoy" aria-hidden="true"/>{st.busy ? "Making it simpler…" : "I don’t get this part"}</button>}
+      <div aria-live="polite">
+        {st.text && <div className="lrn-simpler-box"><p className="lrn-simpler-h"><i className="ph ph-sparkle" aria-hidden="true"/> In simpler words</p>
+          {st.text.split(/\n{2,}/).map((t, k) => <p key={k}>{t}</p>)}
+          <p className="lrn-note">Still stuck? Ask your instructor — that’s what they’re there for.</p></div>}
+        {st.err && <p className="lrn-note" role="alert">{st.err} <button type="button" className="lrn-link" onClick={ask}>Try again</button></p>}
+      </div>
+    </div>);
+}
+
+function LearnSteps({ steps, body, unitId, onReady }) {
   const [i, setI] = React.useState(0);
   const [whole, setWhole] = React.useState(lrnWholePref);
   const hRef = React.useRef(null), moved = React.useRef(false);
   React.useEffect(() => { setI(0); moved.current = false; }, [unitId]);
+  // The questions, materials and notes wait until the lesson has been read: tell the page when it has.
+  React.useEffect(() => { if (onReady && (whole || i === steps.length - 1)) onReady(); }, [whole, i, steps.length]);
   React.useEffect(() => { if (moved.current && hRef.current) { hRef.current.focus({ preventScroll: true }); hRef.current.scrollIntoView({ block: "start", behavior: "smooth" }); } }, [i]);
   const setWholePref = on => { setWhole(on); try { localStorage.setItem("lrn.wholeLesson", on ? "1" : "0"); } catch (_) {} };
   const go = k => { moved.current = true; setI(Math.max(0, Math.min(steps.length - 1, k))); };
@@ -1020,9 +1067,10 @@ function LearnSteps({ steps, body, unitId }) {
     <p className="lrn-note lrn-step-count" aria-hidden="true">Step {i + 1} of {steps.length}</p>
     <h3 className="lrn-step-h" ref={hRef} tabIndex={-1}>{st.h}</h3>
     <CurriculumText text={st.md}/>
+    {!st.optional && <LearnSimpler unitId={unitId} h={st.h}/>}
     <div className="lrn-step-nav">
       <button type="button" className="lrn-btn is-ghost" onClick={() => go(i - 1)} disabled={i === 0}><i className="ph ph-arrow-left" aria-hidden="true"/> Back</button>
-      {last ? <p className="lrn-step-done" role="status"><i className="ph-fill ph-check-circle" aria-hidden="true"/> You’ve read the whole lesson. The questions are below.</p>
+      {last ? <p className="lrn-step-done" role="status"><i className="ph-fill ph-check-circle" aria-hidden="true"/> Well done — you’ve read the whole lesson. The slides and questions are below.</p>
         : <button type="button" className="lrn-btn" onClick={() => go(i + 1)}>{steps[i + 1].optional ? "Going further (optional)" : "Next"} <i className="ph ph-arrow-right" aria-hidden="true"/></button>}
     </div>
   </>;
@@ -1037,6 +1085,8 @@ function LearnLesson({ unitId, onDone, units }) {
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState(null);
   const [started, setStarted] = React.useState(false);
+  const [readIt, setReadIt] = React.useState(false);
+  React.useEffect(() => { setReadIt(false); }, [unitId]);
   const load = React.useCallback(() => {
     setErr(""); setD(null);
     return NGGApi.member.curriculumUnit(unitId).then(r => { setD(r); setAnswers({}); setResult(null); setStarted(false); setSaved(!!(r.mine && r.mine.saved)); })
@@ -1058,6 +1108,11 @@ function LearnLesson({ unitId, onDone, units }) {
      skip is always there: being away last week is not a reason to be shut out
      of this week. */
   const opened = started || !d.review;
+  /* One thing at a time. In steps, the materials, the questions, notes, "go deeper" and feedback used to sit
+     under step 1 — a page six screens long with the test's rules in it before a child had read a line. They
+     wait now until the last step (or the whole-lesson view), and are there at once for a lesson already sat. */
+  const steps = lrnLessonSteps(u.body);
+  const after = !steps || readIt || !!(p && (p.status === "completed" || p.attempts > 0));
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
@@ -1124,30 +1179,31 @@ function LearnLesson({ unitId, onDone, units }) {
 
       {opened && (u.body || u.materials.length > 0) && (
         <section className="lrn-sec">
-          {lrnLessonSteps(u.body) ? <LearnSteps steps={lrnLessonSteps(u.body)} body={u.body} unitId={unitId}/> : <>
+          {steps ? <LearnSteps steps={steps} body={u.body} unitId={unitId} onReady={() => setReadIt(true)}/> : <>
             <div className="lrn-sec-bar">
               <h2 className="lrn-sec-h">The lesson</h2>
               <LearnReadAloud text={u.body} label="the lesson"/>
             </div>
             <CurriculumText text={u.body}/>
           </>}
-          <CurriculumMaterials materials={u.materials} fileUrl={curMemberFile}/>
+          {after ? <CurriculumMaterials materials={u.materials} fileUrl={curMemberFile}/>
+            : <p className="lrn-note lrn-after-note"><i className="ph ph-info" aria-hidden="true"/> The slides, pictures and questions come after the last step.</p>}
         </section>
       )}
 
-      {opened && u.checks.length > 0 && (
+      {opened && after && u.checks.length > 0 && (
         /* These are the questions asked at the START of the next session, a
            week from now. They stay reachable here on purpose: a member who
            wants to try them now should be able to, and the last lesson of a
            course has no next session to be asked in. */
-        <form className="lrn-sec lrn-checks" onSubmit={submit} aria-label="Next session's review">
-          <h2 className="lrn-sec-h">Next session's review</h2>
-          <p className="lrn-note">
-            You'll be asked {u.checks.length === 1 ? "this" : "these"} at the start of your next session, from memory.
-            Have a go now if you like — passing today still finishes the lesson, and you will be asked again from memory, because it is the remembering a week later that makes it stick.
-            Pass mark {u.passMark}%. A wrong answer is marked, not given away: the answers appear once you pass, or after {(p && p.revealAfter) || 3} tries.
-            {p && p.attempts > 0 ? " Attempts so far: " + p.attempts + "." : ""}
-          </p>
+        <form className="lrn-sec lrn-checks" onSubmit={submit} aria-label="Check what you learned">
+          <h2 className="lrn-sec-h">Check what you learned</h2>
+          <ul className="lrn-note lrn-check-rules">
+            <li>Answer {u.checks.length === 1 ? "this question" : "these " + u.checks.length + " questions"} to finish the lesson. You pass with {u.passMark}%.</li>
+            <li>Got one wrong? You can try again. The answers show after you pass, or after {(p && p.revealAfter) || 3} tries.</li>
+            <li>You’ll see {u.checks.length === 1 ? "it" : "them"} again at your next session, to help you remember.</li>
+            {p && p.attempts > 0 && <li>Tries so far: {p.attempts}.</li>}
+          </ul>
           {u.checks.map((c, i) => (
             <CurCheckField key={c.checkId} c={c} n={i + 1} value={answers[c.checkId]}
                            onChange={v => setAnswers(a => ({ ...a, [c.checkId]: v }))}
@@ -1164,7 +1220,7 @@ function LearnLesson({ unitId, onDone, units }) {
         </form>
       )}
 
-      {opened && u.checks.length === 0 && (
+      {opened && after && u.checks.length === 0 && (
         <section className="lrn-sec lrn-markread">
           {p && p.status === "completed"
             ? <p className="lrn-result"><i className="ph-fill ph-check-circle" aria-hidden="true"/> You have finished this lesson.</p>
@@ -1173,12 +1229,12 @@ function LearnLesson({ unitId, onDone, units }) {
         </section>
       )}
 
-      {opened && <LearnNote unitId={unitId} mine={d.mine} onSaved={onDone}/>}
-      {opened && <LearnDeeper unitId={unitId}/>}
+      {opened && after && <LearnNote unitId={unitId} mine={d.mine} onSaved={onDone}/>}
+      {opened && after && <LearnDeeper unitId={unitId}/>}
 
       {/* Last, after the work, because that is when somebody knows how it
           went. Never a gate on any of it. */}
-      {opened && <DashLessonFeedback unitId={unitId} mine={d.feedback} onSaved={() => {}}/>}
+      {opened && after && <DashLessonFeedback unitId={unitId} mine={d.feedback} onSaved={() => {}}/>}
 
       {(prev || next) && (
         <nav className="lrn-pager" aria-label="Lessons in this course">

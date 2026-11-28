@@ -18234,6 +18234,16 @@ button.m9x-ev-sum { cursor: pointer; }
 .lrn-step-h:focus-visible { outline: 2px solid var(--lrn-accent); outline-offset: 3px; border-radius: 4px; }
 .lrn-step-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
 .lrn-step-done { display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--lrn-ok); font-weight: 600; }
+.lrn-simpler { margin: 14px 0 4px; }
+.lrn-simpler-btn { gap: 8px; }
+.lrn-simpler-box { margin-top: 10px; padding: 14px var(--lrn-sp); border-radius: var(--lrn-r-sm); background: var(--lrn-s2); border-left: 4px solid var(--lrn-gold); }
+.lrn-simpler-box p { margin: 0 0 10px; line-height: 1.6; }
+.lrn-simpler-box p:last-child { margin-bottom: 0; }
+.lrn-simpler-h { display: flex; align-items: center; gap: 6px; font-weight: 650; color: var(--lrn-ink); }
+.lrn-link { background: none; border: 0; padding: 0; min-height: var(--lrn-tap); color: var(--lrn-accent); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.lrn-after-note { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+.lrn-check-rules { margin: 0 0 14px; padding-left: 20px; }
+.lrn-check-rules li { margin: 4px 0; }
 
 /* ── The shop's till (cr-tab-shop.jsx, CrShopTill): goods on the left, the sale on the right; one column when the
    panel itself is narrow (a container query, never the window's width). ── */

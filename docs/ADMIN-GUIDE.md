@@ -1917,6 +1917,25 @@ be skipped — being away is not a reason to be shut out of this week), what
 they'll learn, the lesson itself with **Read it to me** and a speed control,
 next session's questions, and *How did that go?* at the end.
 
+**A long lesson is shown one step at a time**, built for children:
+
+- The order is: **Words you'll meet**, then the explanation (*Understand
+  it*, in short pieces), then **Now you try** (the class tasks — they used to
+  come first, before anything had been explained), then practising at home
+  and the rest, with *Going further* last and optional.
+- *Assessed this week* is not shown as a step: those are the questions the
+  lesson ends with.
+- The slides, pictures, questions, notes and *Go deeper* appear **after the
+  last step**, so a child sees one thing at a time. A lesson they have
+  already sat shows everything at once.
+- Every step has **I don't get this part**: Guide (the study helper)
+  explains that part again in simpler words, with an everyday example. It
+  uses the member's daily Guide questions; if Guide is switched off, the
+  button says so and tells them to ask their instructor.
+- **Whole lesson on one page** is still there for anyone who prefers it.
+- The questions are introduced in plain words: answer them to finish the
+  lesson, you can try again, and you'll see them again next session.
+
 **How the week-later review works (and what counts).** Each lesson's questions
 are asked again at the start of the member's next lesson **in the same
 course**, from memory. Three rules decide it:

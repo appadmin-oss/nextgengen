@@ -8193,3 +8193,27 @@ browser that cached the broken bundle (served `immutable` for a year) asks for t
      suspension and fee they triggered.
   One `policy.barred.repair` audit row lists the members repaired (Control Room → audit log).
 - Tests: `staff lift ·`, `barred days ·`, `barred repair ·` in `api/tests/run.php`.
+
+
+## 28 Nov 2026 (later) — Learn: lessons a child can follow
+
+- Owner: "Kids cannot take the lessons on the learn. It seems tough for them to understand."
+- Looked at it as a child does: the shipped Data Appreciation lessons in the real app at 390px.
+  - Step 1 was **"What to do"** in 474 of the 690 shipped lessons: the tasks, before a word of the teaching.
+  - Under step 1 sat the materials, all the questions with a paragraph of rules, notes, "Go deeper" and the feedback.
+    The 14 Nov steps were buried.
+- Changed (page-learn.jsx only; no lesson text was rewritten):
+  - `lrnLessonSteps`: Words you'll meet → Understand it → **Now you try** (was "What to do") → the rest → Going
+    further. "Assessed this week" (276 lessons) is dropped from the steps: it repeats the questions shown after.
+  - `LearnLesson`: in step mode, materials, questions, notes, Go deeper and feedback wait until the last step
+    (`onReady`), or show at once for a lesson already sat or in whole-lesson view.
+  - `LearnSimpler`: "I don't get this part" on every step asks `curriculum.ask` (Guide) for that part in simpler
+    words with an everyday example. Daily limit, Guide off and the exam lock each get an honest message.
+  - The questions' intro is three plain sentences instead of one paragraph of rules.
+- Tests: `tests/learn-app.test.js` 69/0, with five new `kid-friendly:` checks. Its "lesson opens with the
+  PREVIOUS one's review" check had passed only because the question form's label contained "review". Lesson 1
+  was opened seconds earlier, and the review deliberately waits a day, so it never ran for real. The fixture now
+  dates that opening three days back.
+- Not done: rewriting the lesson text itself. The 14 Nov measurement put the Foundation lessons at about grade 5
+  by formula. If children still struggle after this, the next step is the owner choosing which courses
+  to rewrite at a lower reading age, with real lessons that children found hard.
