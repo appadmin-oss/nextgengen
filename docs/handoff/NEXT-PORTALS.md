@@ -18,6 +18,10 @@ already matched the v4 design and was left alone.
      streak, badges, points). Do not ship the board with sample copy: a child would see somebody else's name.
    - Pick desktop or phone by the portal container's width, not the viewport (phone below 760px), and keep
      every other section on `Mp9View`. `PetMini` is a slot (handoff §4.5).
+   - What the 9–13 board shows, checked against the code: streak, points, level, daily quests, promises,
+     courage dare, mood check, the Helper, the Saturday schedule all have sources in `src/modules/member9` /
+     `api/domain`. **The proverb of the week has none** — leave that card out, or ask the owner for a source;
+     never ship it with the sample proverb. About 70 sample strings in all; budget a full session.
    - Prove with `tests/member-v9.test.js` (60 checks today) and add a check that no sample name ("Ada") renders.
 2. **Family v4 Today + child switcher** (handoff §4.6): same method; `fp3-app.jsx` is the controller to extend.
 3. **Learn and Labs v2** (handoff §4.7).
