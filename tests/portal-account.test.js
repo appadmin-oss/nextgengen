@@ -201,7 +201,8 @@ async function as(memberId, admin, viewport) {
     chk('Journal: Today has “Write today’s reflection”, opening the journal’s writer in the same tab',
       !!jl && /Write today’s reflection/.test(await jl.innerText()) && (await jl.getAttribute('href')) === '/journal/?write=1' && !(await jl.getAttribute('target')));
     const apps = await mb.innerText('aside nav [role="group"][aria-label="Your apps"]').catch(() => '');
-    chk('Sidebar: on a wide screen, “Your apps” holds the Anchor Journal and the Community', /Anchor Journal/.test(apps) && /Community/.test(apps));
+    chk('Sidebar: on a wide screen, “Your apps” holds the Anchor Journal and the Labs; Community is in the menu itself, once', /Anchor Journal/.test(apps) && /Labs/.test(apps) && !/Community/.test(apps)
+      && (await mb.innerText('aside nav')).split('Community').length - 1 === 1);
     await mb.click('aside nav [role="group"][aria-label="Your apps"] button:has-text("Anchor Journal")');
     await mb.waitForURL(/\/journal\//, { timeout: 15000 }).catch(() => {});
     chk('Sidebar: Anchor Journal opens the journal in the same tab', /\/journal\//.test(mb.url()));

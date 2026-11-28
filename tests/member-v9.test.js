@@ -186,7 +186,7 @@ async function as(memberId, admin, viewport) {
     chk('Notifications: the action marks it read', q(`array_values(array_filter(backend_dispatch('member.notifications', ['memberId' => 'NGG-MV-K1'])['notifications'], fn($n) => $n['notifId'] === 'N-MV-1'))[0]['readAt'] ?? ''`) !== '');
     chk('Notifications: and opens where it points (the mentor chat)', !(await mb.isVisible('.m9n-panel')) && /Coach Eke|Mentor/i.test(await mb.innerText('main')) && await mb.isVisible('main [aria-label="Message"]'));
     await shot(mb, 'notifications');
-    await mb.click('aside nav button:has-text("Today")').catch(() => {}); await settle(mb);
+    await mb.click('aside nav button:has-text("Home")').catch(() => {}); await settle(mb);
 
     // ── My mentor ──
     await nav(mb, 'Mentor');
@@ -209,7 +209,7 @@ async function as(memberId, admin, viewport) {
     chk('Mentor: the relationship check is the child’s side, four answers', q(`db_row("SELECT answers FROM mentor_rel_checks WHERE subjectId = 'NGG-MV-K1' AND side = 'child'")['answers'] ?? ''`) === '[5,5,5,5]');
 
     // ── My growth ──
-    await nav(mb, 'Grow');
+    await nav(mb, 'Progress');
     await mb.waitForFunction(() => /My Leadership Index/.test(document.querySelector('main').innerText), null, { timeout: 20000 });
     await mb.click('main [role="tab"]:has-text("My view")');
     const growTxt = await main(mb);
@@ -224,7 +224,7 @@ async function as(memberId, admin, viewport) {
     php(`db_insert('mentor_reviews', ['subjectId' => 'NGG-MV-K1', 'period' => '2026-W42', 'mentorId' => 'NGG-MV-M1', 'answers' => '{}', 'evalJson' => json_encode(['date' => '2026-10-17', 'by' => 'Ngozi', 'strength' => 'Led the huddle calmly', 'next' => 'Hand the assignment in at check-in',
       'criteria' => ['punctuality' => 'Strong', 'assignment' => 'Not yet', 'participation' => 'Demonstrated', 'respect' => 'Strong', 'teamwork' => 'Demonstrated', 'courage' => 'Emerging', 'initiative' => 'Emerging', 'reflection' => 'Demonstrated'], 'staffNote' => 'SECRET-STAFF-NOTE'])]);`);
     // Loaded once a visit, so a fresh visit picks it up.
-    await mb.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(mb); await mb.waitForSelector('.m9-app main', { timeout: 60000 }); await nav(mb, 'Grow');
+    await mb.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(mb); await mb.waitForSelector('.m9-app main', { timeout: 60000 }); await nav(mb, 'Progress');
     await mb.waitForFunction(() => /Led the huddle calmly/.test((document.querySelector('.m9x-ev') || {}).innerText || ''), null, { timeout: 20000 });
     const evT = await mb.innerText('.m9x-ev');
     chk('Growth: the evaluation shows each criterion, the strength and the next step', /Punctuality/.test(evT) && /Strong/.test(evT) && /Hand the assignment in/.test(evT));
@@ -266,7 +266,7 @@ async function as(memberId, admin, viewport) {
     await mb.goBack({ waitUntil: 'domcontentloaded' });
     await waitForBoot(mb);
     await mb.waitForSelector('.m9-app main', { timeout: 60000 });
-    await nav(mb, 'Learn', 'Opportunities');
+    await nav(mb, 'Opportunities');
     await mb.waitForFunction(() => /Girls in Tech/.test(document.querySelector('main').innerText), null, { timeout: 20000 });
     const opp = await main(mb);
     chk('Opportunities: only the open ones that fit a 14-year-old', /Girls in Tech/.test(opp) && !/school leavers/.test(opp) && !/Closed competition/.test(opp));
@@ -275,7 +275,7 @@ async function as(memberId, admin, viewport) {
     chk('Opportunities: Save is the member’s own bookmark', /OPP-FIT/.test(q(`db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-MV-K1' AND stateKey = 'mp9.opps'")['stateValue'] ?? ''`)));
 
     // ── Records: a request to the desk ──
-    await nav(mb, 'Account', 'My requests');
+    await nav(mb, 'Help', 'My requests');
     await mb.click('main button[aria-pressed]:has-text("Correct my details")');
     await mb.fill('main label:has-text("What needs changing") input', 'My school is now Egbeda Grammar.');
     await mb.click('main button:has-text("Send")');
@@ -283,7 +283,7 @@ async function as(memberId, admin, viewport) {
     chk('Records: a request reaches the desk', q(`(int)db_row("SELECT COUNT(*) c FROM member_requests WHERE memberId = 'NGG-MV-K1' AND kind = 'details'")['c']`) === 1);
 
     // ── Help: a concern ──
-    await nav(mb, 'Account', 'Help');
+    await nav(mb, 'Help');
     await mb.click('main button[aria-pressed]:has-text("Someone is bullying me")');
     await mb.fill('main textarea', 'Two older boys keep taking my lunch at the gate.');
     await mb.click('main button:has-text("Send privately")');
@@ -292,7 +292,7 @@ async function as(memberId, admin, viewport) {
     await shot(mb, 'help');
 
     // ── Me: the gate pass ──
-    await nav(mb, 'Account');
+    await nav(mb, 'My Genius ID');
     await mb.click('main button:has-text("Show at the gate")');
     await mb.waitForSelector('[role="dialog"] img[alt="Your gate pass QR code"]', { timeout: 20000 }).catch(() => {});
     chk('Me: the gate pass is the member’s real QR', await mb.isVisible('[role="dialog"] img[alt="Your gate pass QR code"]'));
@@ -320,15 +320,19 @@ async function as(memberId, admin, viewport) {
     await kid.waitForSelector('.m9x-kid', { timeout: 60000 }).catch(() => {});
     const kidNav = await kid.innerText('aside nav').catch(() => '');
     chk('Simple view: on by default for an 11-year-old, with big buttons on Today (the journal among them)', await kid.isVisible('.m9x-kid') && (await kid.$$('.m9x-kid-tile')).length === 5 && /My journal/.test(await kid.innerText('.m9x-kid')));
-    chk('Simple view: five plainly named areas, no Money or Account in the nav', /My mentor/.test(kidNav) && /Help/.test(kidNav) && /\bMe\b/.test(kidNav) && !/Money|Account/.test(kidNav));
+    // One menu for every member (portals v10): the simple view has the SAME places as the full
+    // view, so a child who moves up never relearns where anything is — only plainer words inside.
+    chk('Simple view: the same menu as everybody (Home, Missions, Learn, Mentor, Progress, Community, My Genius ID, Help), no Money or Account', ['Home', 'Missions', 'Learn', 'Mentor', 'Progress', 'Community', 'My Genius ID', 'Help'].every(l => kidNav.includes(l)) && !/Money|Account|Grow\b/.test(kidNav));
     await kid.click('.m9x-kid-tile:has-text("My lessons")'); await settle(kid);
     chk('Simple view: a big button opens its page, with plain tab names', /My lessons/.test(await kid.innerText('main nav').catch(() => '')));
-    await kid.click('aside nav button:has-text("Help")'); await kid.click('main nav button:has-text("My profile")'); await settle(kid);
+    // For a child, My Genius ID is one page — their profile — so it opens straight there, no tab row.
+    await kid.click('aside nav button:has-text("My Genius ID")'); await settle(kid);
     chk('Profile: the view switch says which view is on', (await kid.getAttribute('.m9x-view-opt:has-text("Simple")', 'aria-pressed')) === 'true');
     await kid.click('.m9x-view-opt:has-text("Full")');
-    await kid.waitForFunction(() => /Account/.test((document.querySelector('aside nav') || {}).innerText || ''), null, { timeout: 10000 }).catch(() => {});
+    // One menu for both views now: what changes is the wording inside it ("My profile" → "Profile & ID card").
+    await kid.waitForFunction(() => /Profile & ID card/.test((document.querySelector('main nav') || {}).innerText || ''), null, { timeout: 10000 }).catch(() => {});
     await kid.waitForTimeout(400);
-    chk('Profile: switching to Full is the member’s own choice, saved', q(`db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-MV-K2' AND stateKey = 'mp9.view'")['stateValue'] ?? ''`).replace(/"/g, '') === 'full' && /Account/.test(await kid.innerText('aside nav')));
+    chk('Profile: switching to Full is the member’s own choice, saved', q(`db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-MV-K2' AND stateKey = 'mp9.view'")['stateValue'] ?? ''`).replace(/"/g, '') === 'full' && /Profile & ID card/.test(await kid.innerText('main nav')));
     chk('Full view by default from 13: a 14-year-old sees no big buttons', !(await mb.isVisible('.m9x-kid')));
     await shot(kid, 'kid-profile');
 

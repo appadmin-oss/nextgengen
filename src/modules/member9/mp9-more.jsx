@@ -9,7 +9,9 @@ const MP9_JOURNAL_URL = "/journal/";
    area it duplicated, so a child saw the same word twice and two different pages behind it. One
    "Labs" entry (owner: "it should just say labs") opens the Labs hub, which lists every subject Lab
    from NGG_LABS, so a new Lab needs no change here. */
-const MP9_APPS = [["Anchor Journal", "ph ph-notebook", MP9_JOURNAL_URL], ["Labs", "ph ph-flask", "/study/labs"], ["Community", "ph ph-users-three", "/community"]];
+/* "Community" is a menu area now (the portal's projects, and the NGG Community app inside it),
+   so it is not offered twice under two meanings. */
+const MP9_APPS = [["Anchor Journal", "ph ph-notebook", MP9_JOURNAL_URL], ["Labs", "ph ph-flask", "/study/labs"]];
 /* The idea sheet's chips, and the topic the server keeps for each (MEMBER_FEEDBACK_TOPICS). */
 const MP9_IDEA_TOPICS = { "How NGG is going for me": "experience", "An activity idea": "idea", "Something NGG should change": "change", "Something I love": "love", "Something in the portal isn’t working": "app" };
 /* The experience scale, 1 to 5, as MEMBER_FEEDBACK_RATINGS words it. Faces as well as words: the youngest members read the face first. */
@@ -21,13 +23,39 @@ const MP9_RATINGS = [[1, "Not good", "ph ph-smiley-sad"], [2, "Not great", "ph p
 /* The simple view's areas: five places, each named for what a child goes
    there to do. Money is a guardian's business at this age and stays out of
    the nav (its screen still opens from a link); Records is "My requests". */
-function mp9SimpleAreas(older) {
-  return [["Today", "ph ph-sun-horizon", [["today", "Today"]]],
-    ["My mentor", "ph ph-handshake", [["mentor", "Talk to my mentor"], ["companion", "How my week went"], ["community", "Projects & ideas"]]],
-    ["Learn", "ph ph-book-open-text", [["learn", "My lessons"], ["sat", "This Saturday"], ["timetable", "My week"], ["tools", "Labs & tools ↗"]].concat(older ? [["opps", "Opportunities"]] : [])],
-    ["Me", "ph ph-star", [["growth", "My goals"], ["passport", "My badges"], ["journal", "My journal"], ["results", "My school report"]]],
-    ["Help", "ph ph-lifebuoy", [["help", "Get help"], ["support", "Ask the NGG team"], ["me", "My profile"], ["records", "My requests"]].concat(older ? [["money", "Money"]] : [])]];
+/* ── ONE MENU (portals redesign v10, docs/design/portals/member-portal-v10-*.dc.html) ──────────
+   Members called the portal "hard to use" and "patchy", and the menu was why: two different
+   menus (the full view and the simple view named and grouped the same screens differently),
+   five areas with their own second row of tabs, and groupings a child could not predict —
+   Projects under Mentor, the week's mission under Learn, badges under Grow, profile and money
+   and help in one "Account", and "Community" twice (a portal screen and an app link).
+
+   Now one menu for every member, in the design's words and order: Home, Missions, Learn,
+   Mentor, Progress, Community, (Opportunities from 14), My Genius ID, Help. Every screen that
+   existed is still in it (tests/member-v9.test.js walks them). The simple view keeps only its
+   plainer WORDS for the youngest members (NN/g: vocabulary per age band); the places are the
+   same, so a child who moves up never relearns where anything is. On a phone the bar holds the
+   design's five: Home, Missions, Learn, Mentor, Me — and "Me" is everything else, one tap away.
+   Labels always show beside their icons (NN/g, Google "Designing for kids"): an icon alone is a
+   guess for a child. */
+function mp9Areas(older, simple) {
+  const w = (full, kid) => simple ? kid : full;
+  return [["Home", "ph ph-house", [["today", w("Today", "Today")]]],
+    ["Missions", "ph ph-flag-banner", [["sat", w("This Saturday", "This Saturday")], ["timetable", w("Timetable", "When to come")]]],
+    ["Learn", "ph ph-book-open-text", [["learn", w("Lessons", "My lessons")], ["tools", "Labs & tools ↗"]]],
+    ["Mentor", "ph ph-handshake", [["mentor", w("My mentor", "Talk to my mentor")], ["companion", w("My week", "How my week went")]]],
+    ["Progress", "ph ph-chart-line-up", [["growth", w("Goals & scores", "My goals")], ["passport", w("Badges", "My badges")], ["results", w("School results", "My school report")], ["journal", w("Journal", "My journal")]]],
+    ["Community", "ph ph-users-three", [["community", w("Projects & ideas", "Projects & ideas")], ["commapp", "NGG Community ↗"]]]]
+    .concat(older ? [["Opportunities", "ph ph-compass", [["opps", w("Opportunities", "Things to apply for")]]]] : [])
+    /* Everything about ASKING NGG and hearing back is in Help — a concern, a question, and the
+       requests already sent (ID photo, details, dues). My Genius ID is only you: the card,
+       the profile, and money where it applies. Two places for "what I asked" is the patchiness
+       this menu exists to remove (owner, 28 Nov 2026). */
+    .concat([["My Genius ID", "ph ph-identification-card", [["me", w("Profile & ID card", "My profile")]].concat(older || !simple ? [["money", "Money"]] : [])],
+      ["Help", "ph ph-lifebuoy", [["help", w("Help", "Get help")], ["support", w("Ask NGG", "Ask the NGG team")], ["records", w("My requests", "My requests")]]]]);
 }
+/* The phone bar: the design's five. Anything else lives under "Me" (the More screen). */
+const MP9_TABS = ["Home", "Missions", "Learn", "Mentor"];
 const MP9_SIMPLE_SUBS = { mentor: "Send a message or a voice note", companion: "Tell us about your week", community: "See what your club is sharing", learn: "Your lessons and homework", sat: "What happens this Saturday",
   timetable: "When to come to the centre", tools: "The Labs, flashcards and a focus timer · opens in its own app", growth: "What you’re working towards", passport: "Badges you’ve earned", journal: "Write about your day",
   results: "Add your school report", help: "Ask a grown-up at NGG for help", support: "When something isn’t working", me: "Your name, photo and settings", records: "Things you’ve asked us for", opps: "Things you can apply for" };
@@ -735,10 +763,7 @@ Object.assign(Mp9Portal.prototype, {
     const BADGE = { mentor: unreadChat ? String(unreadChat) : "", results: resDue, learn: learnN, money: owed };
     const bdg = id => BADGE[id] || "";
     const simple = this.simple();
-    const areas = (simple ? mp9SimpleAreas(older) : [["Today", "ph ph-sun-horizon", [["today", "Today"]]], ["Mentor", "ph ph-handshake", [["mentor", "My mentor"], ["companion", "My week"], ["community", "Projects & ideas"]]],
-      ["Grow", "ph ph-plant", [["growth", "Goals & scores"], ["results", "School results"], ["passport", "Badges"], ["journal", "Journal"]]],
-      ["Learn", "ph ph-book-open-text", [["learn", "Lessons"], ["sat", "Saturday"], ["timetable", "Timetable"], ["tools", "Labs & tools ↗"]].concat(older ? [["opps", "Opportunities"]] : [])],
-      ["Account", "ph ph-user-circle", [["me", "Profile"], ["money", "Money"], ["records", "My requests"], ["support", "Ask NGG"], ["help", "Help"]]]])
+    const areas = mp9Areas(older, simple)
       .map(([label, icon, kids]) => { const bb = kids.map(([id]) => bdg(id)).filter(Boolean); return { label, icon, kids, ids: kids.map(k => k[0]), badge: bb.length === 1 ? bb[0] : bb.length ? String(bb.length) : "" }; });
     const area = areas.find(a => a.ids.includes(cur)) || areas[0];
     const acc = a => MP9_ACCENT[MP9_AREA_OF[a.ids[0]] || "today"] || "#0b0b0c", accOn = acc(area);
@@ -748,11 +773,14 @@ Object.assign(Mp9Portal.prototype, {
       h: "Your apps", hasH: true, items: MP9_APPS.map(([label, icon, url]) => ({ label, icon, cur: undefined, bg: "transparent", sh: "none", fw: 500, badge: "", hasBadge: false,
         go: () => { try { location.assign(url); } catch (_) {} } })) }];
     const areaTabs = area.kids.map(([id, l]) => { const on = cur === id; const bb = bdg(id); return { l, on: on ? "true" : "false", fg: on ? accOn : "#5a5a60", fw: on ? 600 : 500, bar: on ? accOn : "transparent", badge: bb, hasBadge: !!bb, go: () => this.go(id) }; });
-    const tabbar = areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, fw: on ? 600 : 500, fg: on ? acc(a) : "#626a6e", go: () => this.go(a.ids[0]), hasBadge: !!a.badge }; });
-    const subs = { support: "Cases you’ve opened with the NGG team", sat: "This week's plan and mission", journal: "Opens in its own app", tools: "The Labs, flashcards, focus timer and tools · opens in its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
+    const tabAreas = areas.filter(a => MP9_TABS.includes(a.label)), rest = areas.filter(a => !MP9_TABS.includes(a.label));
+    const meOn = cur === "more" || rest.includes(area), meBadge = rest.some(a => a.badge);
+    const tabbar = tabAreas.map(a => { const on = !meOn && a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, fw: on ? 600 : 500, fg: on ? acc(a) : "#626a6e", go: () => this.go(a.ids[0]), hasBadge: !!a.badge }; })
+      .concat([{ label: "Me", icon: meOn ? "ph-fill ph-user-circle" : "ph ph-user-circle", cur: meOn ? "page" : undefined, fw: meOn ? 600 : 500, fg: meOn ? "#0b0b0c" : "#626a6e", go: () => this.go("more"), hasBadge: meBadge }]);
+    const subs = { commapp: "Posts, files and chats with your club · opens in its own app", support: "Cases you’ve opened with the NGG team", sat: "This week's plan and mission", journal: "Opens in its own app", tools: "The Labs, flashcards, focus timer and tools · opens in its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
     if (simple) Object.assign(subs, MP9_SIMPLE_SUBS);
     const flat = [].concat(...areas.map(a => a.kids.map(([id, l]) => ({ id, label: l, icon: a.icon }))));
-    const moreGroups = areas.slice(1).map(a => ({ h: a.label, items: a.kids.map(([id, label]) => ({ label, icon: a.icon, badge: bdg(id), hasBadge: !!bdg(id), d: subs[id] || "", go: () => this.go(id) })) }));
+    const moreGroups = rest.map(a => ({ h: a.label, items: a.kids.map(([id, label]) => ({ label, icon: a.icon, badge: bdg(id), hasBadge: !!bdg(id), d: subs[id] || "", go: () => this.go(id) })) }));
     const actions = [["Write in my journal", "ph ph-pencil-simple-line", () => { location.href = "/journal/"; }], ["Upload my school results", "ph ph-exam", () => this.go("results")], ["Add proof for a mission", "ph ph-camera", () => this.go("sat")],
       ["Message my mentor", "ph ph-chat-circle-text", () => this.go("mentor")], ["Show my gate pass", "ph ph-qr-code", () => this.openSheet({ k: "gate" })], ["Ask my parent to pay", "ph ph-hand-waving", () => this.go("money", { askFocus: true })],
       ["Ask for a change of mentor", "ph ph-arrows-left-right", () => this.openSheet({ k: "change" })], ["Share an idea or tell us what to improve", "ph ph-lightbulb", () => this.openSheet({ k: "idea" })], ["Change my password", "ph ph-key", () => this.openSheet({ k: "password" })], ["Sign out", "ph ph-sign-out", () => nggPortalSignOut(this.props.onSignOut)], ["Edit my profile", "ph ph-user", () => this.openSheet({ k: "profile" })], ["Take the tour again", "ph ph-compass", () => window.nggGuide("member")], ["Two-step sign-in", "ph ph-shield-check", () => window.nggMfa && window.nggMfa("manage")], ["Tell us about something", "ph ph-lifebuoy", () => this.go("help")],
@@ -762,7 +790,7 @@ Object.assign(Mp9Portal.prototype, {
     const items = flat.map(x => ({ t: x.label, k: "Go to", icon: x.icon, run: () => this.go(x.id) })).concat(actions.map(([t2, icon, run]) => ({ t: t2, k: "Do", icon, run }))).filter(x => !q || x.t.toLowerCase().includes(q));
     const pi = Math.min(s.palI, Math.max(0, items.length - 1));
     return {
-      navGroups, tabbar, moreGroups, areaTabs, hasAreaTabs: area.kids.length > 1, areaLabel: area.label, title: cur === "today" ? (this.state.w >= 760 ? "Good " + mp9Greeting() + ", " + this.me().first : "Today") : area.label,
+      navGroups, tabbar, moreGroups, areaTabs, hasAreaTabs: area.kids.length > 1, areaLabel: area.label, title: cur === "today" ? (this.state.w >= 760 ? "Good " + mp9Greeting() + ", " + this.me().first : "Today") : cur === "more" ? "Me" : area.label,
       subtitle: cur === "today" ? (this.me().week ? "Week " + this.me().week + " of " + this.me().weeks + " · " + this.me().stage : this.me().stage) : subs[cur] || "",
       showBack: this.state.w < 760 && cur !== "today" && s.hist.length > 0, goToday: () => this.goBack(),
       openPal: () => this.setState({ pal: true, palQ: "", palI: 0 }), closePal: () => this.setState({ pal: false }), palOn: s.pal, palQ: s.palQ, onPalQ: e => this.setState({ palQ: e.target.value, palI: 0 }),
